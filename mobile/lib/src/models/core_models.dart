@@ -1,3 +1,61 @@
+class PairingSessionModel {
+  const PairingSessionModel({
+    required this.pairingId,
+    required this.challenge,
+    required this.status,
+    required this.nodeId,
+    required this.nodeFingerprint,
+    required this.expiresAt,
+    this.pairingToken,
+  });
+
+  final String pairingId;
+  final String? pairingToken;
+  final String challenge;
+  final String status;
+  final String nodeId;
+  final String nodeFingerprint;
+  final DateTime expiresAt;
+
+  factory PairingSessionModel.fromJson(Map<String, dynamic> json) {
+    return PairingSessionModel(
+      pairingId: json['pairing_id'] as String,
+      pairingToken: json['pairing_token'] as String?,
+      challenge: json['challenge'] as String,
+      status: json['status'] as String,
+      nodeId: json['node_id'] as String,
+      nodeFingerprint: json['node_fingerprint'] as String,
+      expiresAt: DateTime.parse(json['expires_at'] as String),
+    );
+  }
+}
+
+class PairingCompletionModel {
+  const PairingCompletionModel({
+    required this.node,
+    required this.deviceId,
+    required this.accessToken,
+    required this.refreshToken,
+  });
+
+  final GatewayNode node;
+  final String deviceId;
+  final String accessToken;
+  final String refreshToken;
+
+  factory PairingCompletionModel.fromJson(Map<String, dynamic> json) {
+    final device = Map<String, dynamic>.from(json['device'] as Map);
+    final tokens = Map<String, dynamic>.from(json['tokens'] as Map);
+    return PairingCompletionModel(
+      node:
+          GatewayNode.fromJson(Map<String, dynamic>.from(json['node'] as Map)),
+      deviceId: device['device_id'] as String,
+      accessToken: tokens['access_token'] as String,
+      refreshToken: tokens['refresh_token'] as String,
+    );
+  }
+}
+
 class GatewayNode {
   const GatewayNode({
     required this.nodeId,
@@ -66,6 +124,7 @@ class ApprovalRequestModel {
     required this.requestedTool,
     required this.riskLevel,
     required this.summary,
+    required this.fullPayloadRedacted,
     required this.state,
     required this.expiresAt,
     required this.options,
@@ -80,6 +139,7 @@ class ApprovalRequestModel {
   final String requestedTool;
   final String riskLevel;
   final String summary;
+  final Map<String, dynamic> fullPayloadRedacted;
   final String state;
   final DateTime expiresAt;
   final List<String> options;
@@ -95,6 +155,8 @@ class ApprovalRequestModel {
       requestedTool: json['requested_tool'] as String,
       riskLevel: json['risk_level'] as String,
       summary: json['summary'] as String,
+      fullPayloadRedacted:
+          Map<String, dynamic>.from(json['full_payload_redacted'] as Map),
       state: json['state'] as String,
       expiresAt: DateTime.parse(json['expires_at'] as String),
       options: _stringList(json['options']),
@@ -191,5 +253,7 @@ class DashboardSnapshot {
 }
 
 List<String> _stringList(Object? value) {
-  return (value as List<dynamic>? ?? const []).map((item) => item as String).toList();
+  return (value as List<dynamic>? ?? const [])
+      .map((item) => item as String)
+      .toList();
 }

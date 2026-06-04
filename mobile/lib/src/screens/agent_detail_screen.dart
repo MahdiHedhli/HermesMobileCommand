@@ -50,7 +50,8 @@ class AgentDetailScreen extends StatelessWidget {
                     DetailRow(label: 'Team', value: agent.team),
                     DetailRow(label: 'Node', value: agent.node),
                     DetailRow(label: 'Mission', value: agent.currentMission),
-                    DetailRow(label: 'Last activity', value: agent.lastActivity),
+                    DetailRow(
+                        label: 'Last activity', value: agent.lastActivity),
                   ],
                 ),
               ),
@@ -98,7 +99,8 @@ class AgentDetailScreen extends StatelessWidget {
                     child: CommandButton(
                       label: 'TUA',
                       icon: Icons.support_agent_outlined,
-                      onPressed: () => Navigator.of(context).pushNamed(HermesRoutes.tua),
+                      onPressed: () =>
+                          Navigator.of(context).pushNamed(HermesRoutes.tua),
                     ),
                   ),
                   const SizedBox(width: 10),
@@ -106,7 +108,8 @@ class AgentDetailScreen extends StatelessWidget {
                     child: CommandButton(
                       label: 'TUI',
                       icon: Icons.terminal_outlined,
-                      onPressed: () => Navigator.of(context).pushNamed(HermesRoutes.tui),
+                      onPressed: () =>
+                          Navigator.of(context).pushNamed(HermesRoutes.tui),
                     ),
                   ),
                 ],

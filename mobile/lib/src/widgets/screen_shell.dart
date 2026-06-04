@@ -22,7 +22,8 @@ class ScreenShell extends StatelessWidget {
         actions: [
           if (selectedRoute != HermesRoutes.settings)
             IconButton(
-              onPressed: () => Navigator.of(context).pushNamed(HermesRoutes.settings),
+              onPressed: () =>
+                  Navigator.of(context).pushNamed(HermesRoutes.settings),
               icon: const Icon(Icons.settings_outlined),
               tooltip: 'Settings',
             ),
@@ -38,11 +39,16 @@ class ScreenShell extends StatelessWidget {
           }
         },
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.space_dashboard_outlined), label: 'Home'),
-          NavigationDestination(icon: Icon(Icons.hub_outlined), label: 'Agents'),
-          NavigationDestination(icon: Icon(Icons.route_outlined), label: 'Missions'),
-          NavigationDestination(icon: Icon(Icons.mic_none_outlined), label: 'Voice'),
-          NavigationDestination(icon: Icon(Icons.inbox_outlined), label: 'Inbox'),
+          NavigationDestination(
+              icon: Icon(Icons.space_dashboard_outlined), label: 'Home'),
+          NavigationDestination(
+              icon: Icon(Icons.hub_outlined), label: 'Agents'),
+          NavigationDestination(
+              icon: Icon(Icons.route_outlined), label: 'Missions'),
+          NavigationDestination(
+              icon: Icon(Icons.mic_none_outlined), label: 'Voice'),
+          NavigationDestination(
+              icon: Icon(Icons.inbox_outlined), label: 'Inbox'),
         ],
       ),
     );

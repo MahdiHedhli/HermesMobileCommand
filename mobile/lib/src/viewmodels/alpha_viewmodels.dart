@@ -77,7 +77,13 @@ class ApprovalDetailViewModel {
 
   final AlphaRepository repository;
 
-  Future<ApprovalAlpha> load(String approvalId) => repository.loadApproval(approvalId);
+  Future<ApprovalAlpha> load(String approvalId) =>
+      repository.loadApproval(approvalId);
+
+  Future<ApprovalAlpha> approveOnce(String approvalId) =>
+      repository.approveOnce(approvalId);
+
+  Future<ApprovalAlpha> deny(String approvalId) => repository.deny(approvalId);
 
   List<String> get moreActions => const [
         'Approve Once',
@@ -135,7 +141,8 @@ class TuaViewModel extends ChangeNotifier {
     _draftReplies.add(
       const AssistanceMessageAlpha(
         sender: 'You',
-        body: 'Return control with the current constraints and summarize before writing.',
+        body:
+            'Return control with the current constraints and summarize before writing.',
         timeLabel: 'now',
         fromUser: true,
       ),
@@ -149,11 +156,22 @@ class TuiViewModel {
 
   final AlphaRepository repository;
 
-  Future<TerminalSessionAlpha> load(String sessionId) => repository.loadTerminalSession(sessionId);
+  Future<TerminalSessionAlpha> load(String sessionId) =>
+      repository.loadTerminalSession(sessionId);
 
   List<String> keysForPage(TerminalKeyPage page) {
     return switch (page) {
-      TerminalKeyPage.controls => ['ESC', 'TAB', 'CTRL', 'ALT', 'CMD', 'Left', 'Up', 'Down', 'Right'],
+      TerminalKeyPage.controls => [
+          'ESC',
+          'TAB',
+          'CTRL',
+          'ALT',
+          'CMD',
+          'Left',
+          'Up',
+          'Down',
+          'Right'
+        ],
       TerminalKeyPage.symbols => ['/', '~', '|', '&', r'$', ';', ':'],
       TerminalKeyPage.brackets => ['{}', '[]', '()', '<>'],
       TerminalKeyPage.functions => [

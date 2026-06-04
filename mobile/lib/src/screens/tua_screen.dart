@@ -37,7 +37,8 @@ class _TuaScreenState extends State<TuaScreen> {
     if (_loadedRoute) {
       return;
     }
-    final sessionId = ModalRoute.of(context)?.settings.arguments as String? ?? 'assist-release';
+    final sessionId = ModalRoute.of(context)?.settings.arguments as String? ??
+        'assist-release';
     _load = _viewModel.load(sessionId);
     _loadedRoute = true;
   }
@@ -64,17 +65,21 @@ class _TuaScreenState extends State<TuaScreen> {
             builder: (context, _) {
               final session = _viewModel.session;
               if (session == null) {
-                return const Center(child: Text('Assistance session unavailable'));
+                return const Center(
+                    child: Text('Assistance session unavailable'));
               }
               return Column(
                 children: [
-                  _SessionHeader(session: session, returnedToAgent: _viewModel.returnedToAgent),
+                  _SessionHeader(
+                      session: session,
+                      returnedToAgent: _viewModel.returnedToAgent),
                   Expanded(
                     child: ListView.builder(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                       itemCount: _viewModel.messages.length,
                       itemBuilder: (context, index) {
-                        return _MessageBubble(message: _viewModel.messages[index]);
+                        return _MessageBubble(
+                            message: _viewModel.messages[index]);
                       },
                     ),
                   ),
@@ -116,17 +121,20 @@ class _SessionHeader extends StatelessWidget {
             Row(
               children: [
                 StatusPill(
-                  label: returnedToAgent ? 'returned' : _stateLabel(session.state),
+                  label:
+                      returnedToAgent ? 'returned' : _stateLabel(session.state),
                   color: returnedToAgent
                       ? Theme.of(context).colorScheme.primary
                       : Theme.of(context).colorScheme.secondary,
                 ),
                 const Spacer(),
-                Text(session.node, style: Theme.of(context).textTheme.labelMedium),
+                Text(session.node,
+                    style: Theme.of(context).textTheme.labelMedium),
               ],
             ),
             const SizedBox(height: 12),
-            Text(session.agentName, style: Theme.of(context).textTheme.titleLarge),
+            Text(session.agentName,
+                style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 4),
             Text(session.mission),
             const SizedBox(height: 10),
@@ -146,13 +154,14 @@ class _MessageBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bubbleColor = message.fromUser
-        ? Theme.of(context).colorScheme.primary.withOpacity(0.18)
+        ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.18)
         : Theme.of(context).colorScheme.surface;
     final borderColor = message.fromUser
-        ? Theme.of(context).colorScheme.primary.withOpacity(0.55)
+        ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.55)
         : Theme.of(context).colorScheme.outlineVariant;
     return Align(
-      alignment: message.fromUser ? Alignment.centerRight : Alignment.centerLeft,
+      alignment:
+          message.fromUser ? Alignment.centerRight : Alignment.centerLeft,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 320),
         child: Padding(
@@ -166,8 +175,9 @@ class _MessageBubble extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.all(12),
               child: Column(
-                crossAxisAlignment:
-                    message.fromUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                crossAxisAlignment: message.fromUser
+                    ? CrossAxisAlignment.end
+                    : CrossAxisAlignment.start,
                 children: [
                   Text(
                     '${message.sender} - ${message.timeLabel}',
@@ -203,7 +213,9 @@ class _ReplyBar extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surface,
-          border: Border(top: BorderSide(color: Theme.of(context).colorScheme.outlineVariant)),
+          border: Border(
+              top: BorderSide(
+                  color: Theme.of(context).colorScheme.outlineVariant)),
         ),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),

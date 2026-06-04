@@ -58,17 +58,20 @@ class _InboxScreenState extends State<InboxScreen> {
                     _FilterChip(
                       label: 'Approvals',
                       selected: _viewModel.filter == InboxKind.approval,
-                      onTap: () => setState(() => _viewModel.filter = InboxKind.approval),
+                      onTap: () => setState(
+                          () => _viewModel.filter = InboxKind.approval),
                     ),
                     _FilterChip(
                       label: 'Assistance',
                       selected: _viewModel.filter == InboxKind.assistance,
-                      onTap: () => setState(() => _viewModel.filter = InboxKind.assistance),
+                      onTap: () => setState(
+                          () => _viewModel.filter = InboxKind.assistance),
                     ),
                     _FilterChip(
                       label: 'Security',
                       selected: _viewModel.filter == InboxKind.security,
-                      onTap: () => setState(() => _viewModel.filter = InboxKind.security),
+                      onTap: () => setState(
+                          () => _viewModel.filter = InboxKind.security),
                     ),
                   ],
                 ),
@@ -98,7 +101,8 @@ class _FilterChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(right: 8),
-      child: FilterChip(selected: selected, label: Text(label), onSelected: (_) => onTap()),
+      child: FilterChip(
+          selected: selected, label: Text(label), onSelected: (_) => onTap()),
     );
   }
 }
@@ -121,7 +125,8 @@ class _InboxRow extends StatelessWidget {
               clipBehavior: Clip.none,
               children: [
                 CircleAvatar(
-                  backgroundColor: _kindColor(context, item.kind).withOpacity(0.16),
+                  backgroundColor:
+                      _kindColor(context, item.kind).withValues(alpha: 0.16),
                   foregroundColor: _kindColor(context, item.kind),
                   child: Icon(_kindIcon(item.kind)),
                 ),
@@ -147,9 +152,12 @@ class _InboxRow extends StatelessWidget {
                   Row(
                     children: [
                       Expanded(
-                        child: Text(item.title, style: Theme.of(context).textTheme.titleMedium),
+                        child: Text(item.title,
+                            style: Theme.of(context).textTheme.titleMedium),
                       ),
-                      StatusPill(label: item.priority, color: _kindColor(context, item.kind)),
+                      StatusPill(
+                          label: item.priority,
+                          color: _kindColor(context, item.kind)),
                     ],
                   ),
                   const SizedBox(height: 6),
@@ -168,11 +176,13 @@ class _InboxRow extends StatelessWidget {
 
 void _openItem(BuildContext context, InboxItem item) {
   if (item.kind == InboxKind.approval) {
-    Navigator.of(context).pushNamed(HermesRoutes.approvalDetail, arguments: item.id);
+    Navigator.of(context)
+        .pushNamed(HermesRoutes.approvalDetail, arguments: item.id);
     return;
   }
   if (item.kind == InboxKind.security) {
-    Navigator.of(context).pushNamed(HermesRoutes.approvalDetail, arguments: 'appr-network');
+    Navigator.of(context)
+        .pushNamed(HermesRoutes.approvalDetail, arguments: 'appr-network');
     return;
   }
   if (item.kind == InboxKind.assistance) {

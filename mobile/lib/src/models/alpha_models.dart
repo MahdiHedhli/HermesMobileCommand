@@ -128,6 +128,7 @@ class ApprovalAlpha {
     required this.node,
     required this.session,
     required this.risk,
+    required this.state,
     required this.requestedTool,
     required this.summary,
     required this.payloadPreview,
@@ -141,11 +142,31 @@ class ApprovalAlpha {
   final String node;
   final String session;
   final String risk;
+  final String state;
   final String requestedTool;
   final String summary;
   final String payloadPreview;
   final String expiresIn;
   final List<String> constraints;
+
+  ApprovalAlpha copyWith({
+    String? state,
+  }) {
+    return ApprovalAlpha(
+      id: id,
+      title: title,
+      agentName: agentName,
+      node: node,
+      session: session,
+      risk: risk,
+      state: state ?? this.state,
+      requestedTool: requestedTool,
+      summary: summary,
+      payloadPreview: payloadPreview,
+      expiresIn: expiresIn,
+      constraints: constraints,
+    );
+  }
 }
 
 class AssistanceMessageAlpha {

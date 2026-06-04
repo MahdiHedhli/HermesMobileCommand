@@ -112,9 +112,9 @@ class StatusPill extends StatelessWidget {
   Widget build(BuildContext context) {
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: color.withOpacity(0.16),
+        color: color.withValues(alpha: 0.16),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withOpacity(0.55)),
+        border: Border.all(color: color.withValues(alpha: 0.55)),
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
@@ -176,7 +176,9 @@ class AgentStatusPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StatusPill(label: _agentStatusLabel(status), color: _agentStatusColor(context, status));
+    return StatusPill(
+        label: _agentStatusLabel(status),
+        color: _agentStatusColor(context, status));
   }
 }
 
@@ -190,7 +192,9 @@ class MissionStatePill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return StatusPill(label: _missionStateLabel(state), color: _missionStateColor(context, state));
+    return StatusPill(
+        label: _missionStateLabel(state),
+        color: _missionStateColor(context, state));
   }
 }
 

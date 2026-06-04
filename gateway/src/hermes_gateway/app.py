@@ -5,6 +5,7 @@ from datetime import timedelta
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, status
+from fastapi.middleware.cors import CORSMiddleware
 
 from .config import Settings
 from .ids import new_id
@@ -57,6 +58,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = resolved_settings
     app.state.store = store
+    if resolved_settings.cors_allowed_origin_regex:
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origin_regex=resolved_settings.cors_allowed_origin_regex,
+            allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+            allow_headers=["*"],
+        )
 
     async def require_signed_device(request: Request) -> VerifiedDevice:
         return await verify_signed_request(request, store=store, settings=resolved_settings)

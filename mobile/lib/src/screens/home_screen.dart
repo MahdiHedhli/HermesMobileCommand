@@ -89,7 +89,8 @@ class HomeScreen extends StatelessWidget {
                             ],
                           ),
                         ),
-                        Text(activity.timeLabel, style: Theme.of(context).textTheme.labelSmall),
+                        Text(activity.timeLabel,
+                            style: Theme.of(context).textTheme.labelSmall),
                       ],
                     ),
                   ),
@@ -142,9 +143,12 @@ class _ApprovalCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              StatusPill(label: approval.risk, color: riskColor(context, approval.risk)),
+              StatusPill(
+                  label: approval.risk,
+                  color: riskColor(context, approval.risk)),
               const Spacer(),
-              Text(approval.expiresIn, style: Theme.of(context).textTheme.labelMedium),
+              Text(approval.expiresIn,
+                  style: Theme.of(context).textTheme.labelMedium),
             ],
           ),
           const SizedBox(height: 12),
@@ -171,7 +175,8 @@ class _MissionCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(mission.title, style: Theme.of(context).textTheme.titleMedium),
+                Text(mission.title,
+                    style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 4),
                 Text('${mission.agentName} - ${mission.progressLabel}'),
               ],

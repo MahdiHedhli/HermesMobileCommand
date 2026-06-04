@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '../models/alpha_models.dart';
 import '../models/core_models.dart';
 import 'agents_repository.dart';
@@ -27,8 +29,10 @@ class GatewayAlphaRepository implements AlphaRepository {
     final snapshot = await dashboardRepository.loadSnapshot();
     final fallbackHome = await fallback.loadHome();
     final agents = snapshot.agents.map(_agentFromGateway).toList();
-    final approvals = snapshot.pendingApprovals.map(_approvalFromGateway).toList();
-    final notifications = snapshot.notifications.map(_inboxFromNotification).toList();
+    final approvals =
+        snapshot.pendingApprovals.map(_approvalFromGateway).toList();
+    final notifications =
+        snapshot.notifications.map(_inboxFromNotification).toList();
     final onlineAgents = agents
         .where((agent) => agent.status != AgentRunStatus.offline)
         .length
@@ -121,6 +125,18 @@ class GatewayAlphaRepository implements AlphaRepository {
   }
 
   @override
+  Future<ApprovalAlpha> approveOnce(String approvalId) async {
+    final approval = await approvalsRepository.approveOnce(approvalId);
+    return _approvalFromGateway(approval);
+  }
+
+  @override
+  Future<ApprovalAlpha> deny(String approvalId) async {
+    final approval = await approvalsRepository.deny(approvalId);
+    return _approvalFromGateway(approval);
+  }
+
+  @override
   Future<AssistanceSessionAlpha> loadAssistanceSession(String sessionId) {
     return fallback.loadAssistanceSession(sessionId);
   }
@@ -138,8 +154,11 @@ FleetAgent _agentFromGateway(GatewayAgent agent) {
     team: agent.nodeId,
     status: _statusFromGateway(agent.status),
     node: agent.nodeId,
-    currentMission: agent.currentTarget ?? agent.currentTool ?? 'No active mission',
-    lastActivity: agent.activeSessionId == null ? 'idle' : 'session ${agent.activeSessionId}',
+    currentMission:
+        agent.currentTarget ?? agent.currentTool ?? 'No active mission',
+    lastActivity: agent.activeSessionId == null
+        ? 'idle'
+        : 'session ${agent.activeSessionId}',
     capabilities: [
       if (agent.currentTool != null) agent.currentTool!,
       if (agent.currentTarget != null) 'targeted',
@@ -157,9 +176,10 @@ ApprovalAlpha _approvalFromGateway(ApprovalRequestModel approval) {
     node: approval.nodeId,
     session: approval.sessionId,
     risk: approval.riskLevel,
+    state: approval.state,
     requestedTool: approval.requestedTool,
     summary: approval.summary,
-    payloadPreview: 'action_id: ${approval.actionId}',
+    payloadPreview: jsonEncode(approval.fullPayloadRedacted),
     expiresIn: _timeUntil(approval.expiresAt),
     constraints: approval.options,
   );

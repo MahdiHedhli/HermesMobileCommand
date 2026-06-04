@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'repositories/mock_alpha_repository.dart';
+import 'app_runtime.dart';
 import 'screens/agent_detail_screen.dart';
 import 'screens/agents_screen.dart';
 import 'screens/approval_detail_screen.dart';
@@ -26,18 +26,18 @@ class HermesRoutes {
   static const voice = '/voice';
   static const settings = '/settings';
 
-  static const _repository = MockAlphaRepository();
-
-  static Map<String, WidgetBuilder> get routes => {
-        home: (_) => const HomeScreen(repository: _repository),
-        agents: (_) => const AgentsScreen(repository: _repository),
-        agentDetail: (_) => const AgentDetailScreen(repository: _repository),
-        missions: (_) => const MissionsScreen(repository: _repository),
-        inbox: (_) => const InboxScreen(repository: _repository),
-        approvalDetail: (_) => const ApprovalDetailScreen(repository: _repository),
-        tua: (_) => const TuaScreen(repository: _repository),
-        tui: (_) => const TuiScreen(repository: _repository),
-        voice: (_) => const VoiceScreen(repository: _repository),
+  static Map<String, WidgetBuilder> routes(HermesAppRuntime runtime) => {
+        home: (_) => HomeScreen(repository: runtime.alphaRepository),
+        agents: (_) => AgentsScreen(repository: runtime.alphaRepository),
+        agentDetail: (_) =>
+            AgentDetailScreen(repository: runtime.alphaRepository),
+        missions: (_) => MissionsScreen(repository: runtime.alphaRepository),
+        inbox: (_) => InboxScreen(repository: runtime.alphaRepository),
+        approvalDetail: (_) =>
+            ApprovalDetailScreen(repository: runtime.alphaRepository),
+        tua: (_) => TuaScreen(repository: runtime.alphaRepository),
+        tui: (_) => TuiScreen(repository: runtime.alphaRepository),
+        voice: (_) => VoiceScreen(repository: runtime.alphaRepository),
         settings: (_) => const SettingsScreen(),
       };
 }

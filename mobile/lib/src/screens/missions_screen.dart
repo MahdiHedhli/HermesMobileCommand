@@ -64,7 +64,8 @@ class _MissionRow extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(mission.title, style: Theme.of(context).textTheme.titleMedium),
+                    Text(mission.title,
+                        style: Theme.of(context).textTheme.titleMedium),
                     const SizedBox(height: 4),
                     Text('${mission.agentName} - ${mission.team}'),
                   ],
@@ -74,7 +75,8 @@ class _MissionRow extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          Text(mission.progressLabel, style: Theme.of(context).textTheme.bodyLarge),
+          Text(mission.progressLabel,
+              style: Theme.of(context).textTheme.bodyLarge),
           const SizedBox(height: 8),
           Text(mission.lastEvent, style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 14),
@@ -82,7 +84,8 @@ class _MissionRow extends StatelessWidget {
             children: [
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () => Navigator.of(context).pushNamed(HermesRoutes.tua, arguments: mission.id),
+                  onPressed: () => Navigator.of(context)
+                      .pushNamed(HermesRoutes.tua, arguments: mission.id),
                   icon: const Icon(Icons.support_agent_outlined),
                   label: const Text('TUA'),
                 ),
@@ -90,7 +93,8 @@ class _MissionRow extends StatelessWidget {
               const SizedBox(width: 10),
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed: () => Navigator.of(context).pushNamed(HermesRoutes.tui, arguments: mission.id),
+                  onPressed: () => Navigator.of(context)
+                      .pushNamed(HermesRoutes.tui, arguments: mission.id),
                   icon: const Icon(Icons.terminal_outlined),
                   label: const Text('TUI'),
                 ),

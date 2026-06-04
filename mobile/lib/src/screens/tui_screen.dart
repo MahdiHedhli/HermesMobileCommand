@@ -38,7 +38,8 @@ class _TuiScreenState extends State<TuiScreen> {
     if (_loadedRoute) {
       return;
     }
-    final sessionId = ModalRoute.of(context)?.settings.arguments as String? ?? 'terminal-release';
+    final sessionId = ModalRoute.of(context)?.settings.arguments as String? ??
+        'terminal-release';
     _session = _viewModel.load(sessionId);
     _loadedRoute = true;
   }
@@ -85,13 +86,15 @@ class _TerminalHeader extends StatelessWidget {
         padding: const EdgeInsets.all(14),
         child: Row(
           children: [
-            Icon(Icons.terminal_outlined, color: Theme.of(context).colorScheme.primary),
+            Icon(Icons.terminal_outlined,
+                color: Theme.of(context).colorScheme.primary),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(session.agentName, style: Theme.of(context).textTheme.titleMedium),
+                  Text(session.agentName,
+                      style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 2),
                   Text('${session.node} - ${session.mission}'),
                 ],
@@ -126,13 +129,15 @@ class _TerminalPane extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: const Color(0xFF080A0A),
-          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+          border:
+              Border.all(color: Theme.of(context).colorScheme.outlineVariant),
           borderRadius: BorderRadius.circular(8),
         ),
         child: ListView(
           padding: const EdgeInsets.all(14),
           children: [
-            ...session.scrollback.map((line) => SelectableText(line, style: terminalStyle)),
+            ...session.scrollback
+                .map((line) => SelectableText(line, style: terminalStyle)),
             SelectableText('${session.prompt} ', style: terminalStyle),
           ],
         ),
@@ -159,7 +164,9 @@ class _KeyboardAccessory extends StatelessWidget {
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surface,
-          border: Border(top: BorderSide(color: Theme.of(context).colorScheme.outlineVariant)),
+          border: Border(
+              top: BorderSide(
+                  color: Theme.of(context).colorScheme.outlineVariant)),
         ),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
@@ -184,7 +191,8 @@ class _KeyboardAccessory extends StatelessWidget {
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: keys.map((label) => _TerminalKey(label: label)).toList(),
+                children:
+                    keys.map((label) => _TerminalKey(label: label)).toList(),
               ),
             ],
           ),
@@ -221,8 +229,12 @@ class _TerminalKey extends StatelessWidget {
   }
 }
 
-Future<void> _copyScrollback(BuildContext context, TerminalSessionAlpha session) async {
+Future<void> _copyScrollback(
+    BuildContext context, TerminalSessionAlpha session) async {
   await Clipboard.setData(ClipboardData(text: session.scrollback.join('\n')));
+  if (!context.mounted) {
+    return;
+  }
   ScaffoldMessenger.of(context).showSnackBar(
     const SnackBar(content: Text('Terminal scrollback copied')),
   );

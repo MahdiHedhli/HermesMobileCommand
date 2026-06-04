@@ -27,7 +27,8 @@ class VoiceScreen extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    Icon(Icons.mic_none_outlined, color: Theme.of(context).colorScheme.primary),
+                    Icon(Icons.mic_none_outlined,
+                        color: Theme.of(context).colorScheme.primary),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
@@ -49,29 +50,39 @@ class VoiceScreen extends StatelessWidget {
             ),
           ),
           const SectionHeader(title: 'Planned Modes'),
-          _VoiceModeRow(
+          const _VoiceModeRow(
             icon: Icons.radio_button_checked,
             title: 'Push To Talk',
-            detail: 'MVP path for sending short operator instructions to Hermes voice mode.',
+            detail:
+                'MVP path for sending short operator instructions to Hermes voice mode.',
           ),
-          _VoiceModeRow(
+          const _VoiceModeRow(
             icon: Icons.sync_alt_outlined,
             title: 'Half Duplex',
-            detail: 'Walkie-talkie style turn taking for interventions during active missions.',
+            detail:
+                'Walkie-talkie style turn taking for interventions during active missions.',
           ),
-          _VoiceModeRow(
+          const _VoiceModeRow(
             icon: Icons.graphic_eq_outlined,
             title: 'Full Duplex',
-            detail: 'Future WebRTC voice session with explicit approval confirmation phrases.',
+            detail:
+                'Future WebRTC voice session with explicit approval confirmation phrases.',
           ),
           const SectionHeader(title: 'Safety Hooks'),
-          AlphaPanel(
+          const AlphaPanel(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
-                DetailRow(label: 'Approvals', value: 'Voice approval requires confirmation phrase.'),
-                DetailRow(label: 'Audit', value: 'Every voice callback and decision is logged.'),
-                DetailRow(label: 'Fallback', value: 'Text TUA remains available when audio is unavailable.'),
+              children: [
+                DetailRow(
+                    label: 'Approvals',
+                    value: 'Voice approval requires confirmation phrase.'),
+                DetailRow(
+                    label: 'Audit',
+                    value: 'Every voice callback and decision is logged.'),
+                DetailRow(
+                    label: 'Fallback',
+                    value:
+                        'Text TUA remains available when audio is unavailable.'),
               ],
             ),
           ),

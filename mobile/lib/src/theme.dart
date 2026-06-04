@@ -31,7 +31,7 @@ ThemeData hermesTheme() {
     ),
     navigationBarTheme: NavigationBarThemeData(
       backgroundColor: surface,
-      indicatorColor: primary.withOpacity(0.16),
+      indicatorColor: primary.withValues(alpha: 0.16),
       labelTextStyle: WidgetStateProperty.resolveWith(
         (_) => const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
       ),

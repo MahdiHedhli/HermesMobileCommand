@@ -18,10 +18,12 @@ class DashboardRepository {
     return DashboardSnapshot(
       nodes: _list(inventory['nodes']).map(GatewayNode.fromJson).toList(),
       agents: _list(agents['agents']).map(GatewayAgent.fromJson).toList(),
-      pendingApprovals:
-          _list(approvals['approvals']).map(ApprovalRequestModel.fromJson).toList(),
-      notifications:
-          _list(notifications['notifications']).map(NotificationRecord.fromJson).toList(),
+      pendingApprovals: _list(approvals['approvals'])
+          .map(ApprovalRequestModel.fromJson)
+          .toList(),
+      notifications: _list(notifications['notifications'])
+          .map(NotificationRecord.fromJson)
+          .toList(),
     );
   }
 }

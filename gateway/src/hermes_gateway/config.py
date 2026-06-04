@@ -17,6 +17,7 @@ class Settings:
     database_path: str = ".hermes-mobile-gateway/gateway.sqlite3"
     pairing_ttl_seconds: int = 300
     allowed_hermes_callers: tuple[str, ...] = ()
+    cors_allowed_origin_regex: str | None = r"^http://(localhost|127\.0\.0\.1):[0-9]+$"
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -34,6 +35,11 @@ class Settings:
             ),
             allowed_hermes_callers=_csv_env("HERMES_ALLOWED_HERMES_CALLERS")
             or _csv_env("HERMES_GATEWAY_ALLOWED_HERMES_CALLERS"),
+            cors_allowed_origin_regex=os.getenv(
+                "HERMES_GATEWAY_CORS_ALLOWED_ORIGIN_REGEX",
+                cls.cors_allowed_origin_regex or "",
+            )
+            or None,
         )
 
     @property

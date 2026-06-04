@@ -12,7 +12,8 @@ class AgentsRepository {
       query: {'node_id': nodeId},
     );
     return (response['agents'] as List<dynamic>? ?? const [])
-        .map((item) => GatewayAgent.fromJson(Map<String, dynamic>.from(item as Map)))
+        .map((item) =>
+            GatewayAgent.fromJson(Map<String, dynamic>.from(item as Map)))
         .toList();
   }
 

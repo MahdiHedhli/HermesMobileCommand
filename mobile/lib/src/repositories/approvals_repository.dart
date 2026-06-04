@@ -32,6 +32,7 @@ class ApprovalsRepository {
 
 List<ApprovalRequestModel> _approvals(Map<String, dynamic> response) {
   return (response['approvals'] as List<dynamic>? ?? const [])
-      .map((item) => ApprovalRequestModel.fromJson(Map<String, dynamic>.from(item as Map)))
+      .map((item) =>
+          ApprovalRequestModel.fromJson(Map<String, dynamic>.from(item as Map)))
       .toList();
 }

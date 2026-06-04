@@ -7,6 +7,8 @@ abstract class AlphaRepository {
   Future<List<MissionSummary>> loadMissions();
   Future<List<InboxItem>> loadInbox();
   Future<ApprovalAlpha> loadApproval(String approvalId);
+  Future<ApprovalAlpha> approveOnce(String approvalId);
+  Future<ApprovalAlpha> deny(String approvalId);
   Future<AssistanceSessionAlpha> loadAssistanceSession(String sessionId);
   Future<TerminalSessionAlpha> loadTerminalSession(String sessionId);
 }

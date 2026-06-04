@@ -12,7 +12,8 @@ class NotificationsRepository {
       query: {'category': category},
     );
     return (response['notifications'] as List<dynamic>? ?? const [])
-        .map((item) => NotificationRecord.fromJson(Map<String, dynamic>.from(item as Map)))
+        .map((item) =>
+            NotificationRecord.fromJson(Map<String, dynamic>.from(item as Map)))
         .toList();
   }
 }

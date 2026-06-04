@@ -12,7 +12,8 @@ class EventsRepository {
       query: {'after': after},
     );
     return (response['events'] as List<dynamic>? ?? const [])
-        .map((item) => GatewayEvent.fromJson(Map<String, dynamic>.from(item as Map)))
+        .map((item) =>
+            GatewayEvent.fromJson(Map<String, dynamic>.from(item as Map)))
         .toList();
   }
 }

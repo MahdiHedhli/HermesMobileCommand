@@ -7,7 +7,7 @@ import '../viewmodels/alpha_viewmodels.dart';
 import '../widgets/alpha_components.dart';
 import '../widgets/screen_shell.dart';
 
-class ApprovalDetailScreen extends StatelessWidget {
+class ApprovalDetailScreen extends StatefulWidget {
   const ApprovalDetailScreen({
     required this.repository,
     super.key,
@@ -16,15 +16,45 @@ class ApprovalDetailScreen extends StatelessWidget {
   final AlphaRepository repository;
 
   @override
+  State<ApprovalDetailScreen> createState() => _ApprovalDetailScreenState();
+}
+
+class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
+  late final ApprovalDetailViewModel _viewModel;
+  late Future<ApprovalAlpha> _approval;
+  String _approvalId = 'appr-shell';
+  bool _busy = false;
+  bool _loadedRoute = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _viewModel = ApprovalDetailViewModel(widget.repository);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final argument = ModalRoute.of(context)?.settings.arguments;
+    final approvalId = argument is String ? argument : 'appr-shell';
+    if (!_loadedRoute || approvalId != _approvalId) {
+      _approvalId = approvalId;
+      _approval = _viewModel.load(_approvalId);
+      _loadedRoute = true;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final viewModel = ApprovalDetailViewModel(repository);
-    final approvalId = ModalRoute.of(context)?.settings.arguments as String? ?? 'appr-shell';
     return ScreenShell(
       title: 'Approval',
       selectedRoute: HermesRoutes.inbox,
       body: FutureBuilder<ApprovalAlpha>(
-        future: viewModel.load(approvalId),
+        future: _approval,
         builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return _ApprovalError(error: snapshot.error.toString());
+          }
           final approval = snapshot.data;
           if (approval == null) {
             return const Center(child: CircularProgressIndicator());
@@ -38,8 +68,10 @@ class ApprovalDetailScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(approval.summary, style: Theme.of(context).textTheme.bodyLarge),
+                    Text(approval.summary,
+                        style: Theme.of(context).textTheme.bodyLarge),
                     const SizedBox(height: 14),
+                    DetailRow(label: 'State', value: approval.state),
                     DetailRow(label: 'Tool', value: approval.requestedTool),
                     DetailRow(label: 'Agent', value: approval.agentName),
                     DetailRow(label: 'Node', value: approval.node),
@@ -83,11 +115,78 @@ class ApprovalDetailScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 22),
-              _ApprovalActions(viewModel: viewModel, approval: approval),
+              _ApprovalActions(
+                viewModel: _viewModel,
+                approval: approval,
+                busy: _busy,
+                onDecision: _submitDecision,
+              ),
             ],
           );
         },
       ),
+    );
+  }
+
+  Future<void> _submitDecision(
+      String action, Future<ApprovalAlpha> Function() submit) async {
+    setState(() => _busy = true);
+    try {
+      final updated = await submit();
+      setState(() {
+        _approval = Future.value(updated);
+      });
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('$action submitted')),
+      );
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.toString())),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+      }
+    }
+  }
+}
+
+class _ApprovalError extends StatelessWidget {
+  const _ApprovalError({required this.error});
+
+  final String error;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      children: [
+        AlphaPanel(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              StatusPill(
+                  label: 'gateway error',
+                  color: Theme.of(context).colorScheme.error),
+              const SizedBox(height: 12),
+              Text(error),
+              const SizedBox(height: 14),
+              OutlinedButton.icon(
+                onPressed: () =>
+                    Navigator.of(context).pushNamed(HermesRoutes.settings),
+                icon: const Icon(Icons.settings_outlined),
+                label: const Text('Open Settings'),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
@@ -105,7 +204,13 @@ class _ApprovalHeader extends StatelessWidget {
         children: [
           Row(
             children: [
-              StatusPill(label: approval.risk, color: riskColor(context, approval.risk)),
+              StatusPill(
+                  label: approval.risk,
+                  color: riskColor(context, approval.risk)),
+              const SizedBox(width: 8),
+              StatusPill(
+                  label: approval.state,
+                  color: _stateColor(context, approval.state)),
               const Spacer(),
               Text(
                 approval.expiresIn,
@@ -138,13 +243,19 @@ class _ApprovalActions extends StatelessWidget {
   const _ApprovalActions({
     required this.viewModel,
     required this.approval,
+    required this.busy,
+    required this.onDecision,
   });
 
   final ApprovalDetailViewModel viewModel;
   final ApprovalAlpha approval;
+  final bool busy;
+  final Future<void> Function(
+      String action, Future<ApprovalAlpha> Function() submit) onDecision;
 
   @override
   Widget build(BuildContext context) {
+    final pending = approval.state == 'pending';
     return Column(
       children: [
         Row(
@@ -154,7 +265,12 @@ class _ApprovalActions extends StatelessWidget {
                 label: 'Approve',
                 icon: Icons.verified_outlined,
                 primary: true,
-                onPressed: () => _showAction(context, 'Approve Once'),
+                onPressed: busy || !pending
+                    ? () {}
+                    : () => onDecision(
+                          'Approve Once',
+                          () => viewModel.approveOnce(approval.id),
+                        ),
               ),
             ),
             const SizedBox(width: 10),
@@ -163,7 +279,12 @@ class _ApprovalActions extends StatelessWidget {
                 label: 'Deny',
                 icon: Icons.block_outlined,
                 destructive: true,
-                onPressed: () => _showAction(context, 'Deny'),
+                onPressed: busy || !pending
+                    ? () {}
+                    : () => onDecision(
+                          'Deny',
+                          () => viewModel.deny(approval.id),
+                        ),
               ),
             ),
           ],
@@ -193,7 +314,10 @@ class _ApprovalActions extends StatelessWidget {
             children: [
               Text(
                 'Decision Options',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 8),
               ...viewModel.moreActions.map(
@@ -222,10 +346,6 @@ class _ApprovalActions extends StatelessWidget {
       Navigator.of(context).pushNamed(HermesRoutes.tui, arguments: approval.id);
       return;
     }
-    _showAction(context, action);
-  }
-
-  void _showAction(BuildContext context, String action) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('$action selected for ${approval.agentName}')),
     );
@@ -245,5 +365,15 @@ IconData _actionIcon(String action) {
     'Stop Task' => Icons.stop_circle_outlined,
     'Stop Agent' => Icons.power_settings_new,
     _ => Icons.block_outlined,
+  };
+}
+
+Color _stateColor(BuildContext context, String state) {
+  return switch (state) {
+    'approved' => Theme.of(context).colorScheme.primary,
+    'denied' => Theme.of(context).colorScheme.error,
+    'expired' => Theme.of(context).colorScheme.outline,
+    'cancelled' => Theme.of(context).colorScheme.outline,
+    _ => Theme.of(context).colorScheme.secondary,
   };
 }

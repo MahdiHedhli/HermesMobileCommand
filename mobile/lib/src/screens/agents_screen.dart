@@ -53,7 +53,8 @@ class _AgentsScreenState extends State<AgentsScreen> {
                   prefixIcon: Icon(Icons.search),
                   hintText: 'Search agents, teams, nodes, missions',
                 ),
-                onChanged: (value) => setState(() => _viewModel.searchQuery = value),
+                onChanged: (value) =>
+                    setState(() => _viewModel.searchQuery = value),
               ),
               const SizedBox(height: 12),
               SingleChildScrollView(
@@ -66,7 +67,8 @@ class _AgentsScreenState extends State<AgentsScreen> {
                         child: FilterChip(
                           selected: _viewModel.teamFilter == team,
                           label: Text(team),
-                          onSelected: (_) => setState(() => _viewModel.teamFilter = team),
+                          onSelected: (_) =>
+                              setState(() => _viewModel.teamFilter = team),
                         ),
                       ),
                     ),
@@ -124,7 +126,8 @@ class _AgentRow extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: Text(agent.name, style: Theme.of(context).textTheme.titleMedium),
+                  child: Text(agent.name,
+                      style: Theme.of(context).textTheme.titleMedium),
                 ),
                 AgentStatusPill(status: agent.status),
               ],
@@ -132,11 +135,13 @@ class _AgentRow extends StatelessWidget {
             const SizedBox(height: 8),
             Text('${agent.team} - ${agent.node}'),
             const SizedBox(height: 6),
-            Text(agent.currentMission, style: Theme.of(context).textTheme.bodyLarge),
+            Text(agent.currentMission,
+                style: Theme.of(context).textTheme.bodyLarge),
             const SizedBox(height: 10),
             Row(
               children: [
-                Icon(Icons.schedule_outlined, size: 16, color: Theme.of(context).colorScheme.outline),
+                Icon(Icons.schedule_outlined,
+                    size: 16, color: Theme.of(context).colorScheme.outline),
                 const SizedBox(width: 6),
                 Expanded(child: Text(agent.lastActivity)),
                 if (agent.approvalCount > 0)

@@ -1,19 +1,28 @@
 import 'package:flutter/material.dart';
 
+import 'app_runtime.dart';
 import 'routes.dart';
 import 'theme.dart';
 
 class HermesMobileApp extends StatelessWidget {
-  const HermesMobileApp({super.key});
+  const HermesMobileApp({
+    required this.runtime,
+    super.key,
+  });
+
+  final HermesAppRuntime runtime;
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Hermes Control',
-      theme: hermesTheme(),
-      initialRoute: HermesRoutes.dashboard,
-      routes: HermesRoutes.routes,
-      debugShowCheckedModeBanner: false,
+    return HermesRuntimeScope(
+      runtime: runtime,
+      child: MaterialApp(
+        title: 'Hermes Control',
+        theme: hermesTheme(),
+        initialRoute: HermesRoutes.dashboard,
+        routes: HermesRoutes.routes(runtime),
+        debugShowCheckedModeBanner: false,
+      ),
     );
   }
 }

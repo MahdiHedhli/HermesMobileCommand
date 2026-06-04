@@ -1,6 +1,7 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
+
+import 'package:http/http.dart' as http;
 
 import '../config/gateway_config.dart';
 import '../security/device_request_signer.dart';
@@ -9,12 +10,12 @@ class GatewayApiClient {
   GatewayApiClient({
     required this.config,
     required this.signer,
-    HttpClient? httpClient,
-  }) : _httpClient = httpClient ?? HttpClient();
+    http.Client? httpClient,
+  }) : _httpClient = httpClient ?? http.Client();
 
   final GatewayConfig config;
   final DeviceRequestSigner signer;
-  final HttpClient _httpClient;
+  final http.Client _httpClient;
 
   Future<Map<String, dynamic>> getJson(
     String path, {
@@ -55,26 +56,27 @@ class GatewayApiClient {
     final bodyBytes = method == 'GET'
         ? Uint8List(0)
         : Uint8List.fromList(utf8.encode(jsonEncode(_withoutNullValues(body))));
-    final request = await _httpClient.openUrl(method, uri);
-    request.headers.contentType = ContentType.json;
+    final request = http.Request(method, uri);
+    request.headers['Content-Type'] = 'application/json';
 
     if (signed) {
-      final pathWithQuery = uri.hasQuery ? '${uri.path}?${uri.query}' : uri.path;
+      final pathWithQuery =
+          uri.hasQuery ? '${uri.path}?${uri.query}' : uri.path;
       final signedHeaders = await signer.sign(
         method: method,
         pathWithQuery: pathWithQuery,
         body: bodyBytes,
       );
       for (final entry in signedHeaders.values.entries) {
-        request.headers.set(entry.key, entry.value);
+        request.headers[entry.key] = entry.value;
       }
     }
 
     if (bodyBytes.isNotEmpty) {
-      request.add(bodyBytes);
+      request.bodyBytes = bodyBytes;
     }
-    final response = await request.close();
-    final responseText = await response.transform(utf8.decoder).join();
+    final response = await _httpClient.send(request);
+    final responseText = await response.stream.bytesToString();
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw GatewayApiException(
         statusCode: response.statusCode,

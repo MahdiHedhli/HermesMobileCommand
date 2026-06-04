@@ -136,8 +136,12 @@ class SQLiteStore:
                     resource_scope TEXT,
                     state TEXT NOT NULL,
                     options_json TEXT NOT NULL,
+                    decision_scope TEXT,
+                    decision_actor_device_id TEXT,
+                    decision_metadata_json TEXT NOT NULL DEFAULT '{}',
                     requested_at TEXT NOT NULL,
-                    expires_at TEXT NOT NULL
+                    expires_at TEXT NOT NULL,
+                    decided_at TEXT
                 );
 
                 CREATE TABLE IF NOT EXISTS notifications (
@@ -190,6 +194,24 @@ class SQLiteStore:
                 );
                 """
             )
+            self._ensure_column(db, "approval_requests", "decision_scope", "TEXT")
+            self._ensure_column(db, "approval_requests", "decision_actor_device_id", "TEXT")
+            self._ensure_column(
+                db,
+                "approval_requests",
+                "decision_metadata_json",
+                "TEXT NOT NULL DEFAULT '{}'",
+            )
+            self._ensure_column(db, "approval_requests", "decided_at", "TEXT")
+
+    def _ensure_column(
+        self, db: sqlite3.Connection, table_name: str, column_name: str, definition: str
+    ) -> None:
+        columns = {
+            row["name"] for row in db.execute(f"PRAGMA table_info({table_name})").fetchall()
+        }
+        if column_name not in columns:
+            db.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}")
 
     def upsert_node(self, node: dict[str, Any]) -> dict[str, Any]:
         created_at = node.get("created_at") or utc_iso()
@@ -644,11 +666,35 @@ class SQLiteStore:
             rows = db.execute(sql, args).fetchall()
         return [self._approval_from_row(row) for row in rows]
 
-    def resolve_approval(self, approval_id: str, state: str) -> None:
+    def resolve_approval(
+        self,
+        approval_id: str,
+        state: str,
+        *,
+        decision_scope: str | None = None,
+        decision_actor_device_id: str | None = None,
+        decision_metadata: dict[str, Any] | None = None,
+    ) -> None:
+        decided_at = utc_iso()
         with self.connect() as db:
             db.execute(
-                "UPDATE approval_requests SET state = ? WHERE approval_id = ?",
-                (state, approval_id),
+                """
+                UPDATE approval_requests
+                SET state = ?,
+                    decision_scope = ?,
+                    decision_actor_device_id = ?,
+                    decision_metadata_json = ?,
+                    decided_at = ?
+                WHERE approval_id = ?
+                """,
+                (
+                    state,
+                    decision_scope,
+                    decision_actor_device_id,
+                    json.dumps(decision_metadata or {}),
+                    decided_at,
+                    approval_id,
+                ),
             )
 
     def _approval_from_row(self, row: sqlite3.Row) -> dict[str, Any]:
@@ -657,6 +703,10 @@ class SQLiteStore:
             approval.pop("full_payload_redacted_json")
         )
         approval["options"] = json.loads(approval.pop("options_json"))
+        approval["decision_metadata"] = json.loads(
+            approval.pop("decision_metadata_json", "{}") or "{}"
+        )
+        approval.pop("decision_actor_device_id", None)
         approval.pop("payload_hash", None)
         approval.pop("requested_at", None)
         return approval

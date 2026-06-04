@@ -26,6 +26,7 @@ tags:
   - name: events
   - name: audit
   - name: interventions
+  - name: hermes-tools
   - name: voice
 paths:
   /health:
@@ -218,7 +219,8 @@ paths:
     post:
       tags: [inventory]
       summary: Register or update the local Hermes node
-      description: Hermes-facing skeleton endpoint for local node metadata registration.
+      description: Hermes-local endpoint restricted to loopback callers unless explicitly allowlisted.
+      security: []
       requestBody:
         required: true
         content:
@@ -232,12 +234,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Node"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /inventory:
     get:
       tags: [inventory]
       summary: Get node and agent inventory
       parameters:
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
         - name: include_stale
           in: query
           schema:
@@ -257,6 +265,10 @@ paths:
       summary: Get node detail
       parameters:
         - $ref: "#/components/parameters/NodeId"
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
       responses:
         "200":
           description: Node detail
@@ -272,6 +284,10 @@ paths:
       tags: [inventory]
       summary: List agents
       parameters:
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
         - name: node_id
           in: query
           schema:
@@ -300,6 +316,10 @@ paths:
       summary: Get agent detail
       parameters:
         - $ref: "#/components/parameters/AgentId"
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
         - name: node_id
           in: query
           required: true
@@ -318,6 +338,10 @@ paths:
       tags: [chat]
       summary: List sessions
       parameters:
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
         - name: node_id
           in: query
           schema:
@@ -350,6 +374,10 @@ paths:
       summary: Get session detail
       parameters:
         - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
         - name: node_id
           in: query
           required: true
@@ -369,6 +397,10 @@ paths:
       summary: Get current activity for a session
       parameters:
         - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
         - name: node_id
           in: query
           required: true
@@ -461,7 +493,8 @@ paths:
     post:
       tags: [approvals]
       summary: Create a pending approval request
-      description: Hermes-local endpoint. Unknown actions default to pending/blocked.
+      description: Hermes-local endpoint restricted to loopback callers unless explicitly allowlisted. Unknown actions default to pending/blocked.
+      security: []
       requestBody:
         required: true
         content:
@@ -475,6 +508,54 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApprovalRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /hermes/tools/approval_requested:
+    post:
+      tags: [hermes-tools]
+      summary: Hermes tool adapter call to request user approval
+      description: Hermes-local tool-shaped endpoint restricted to loopback callers unless explicitly allowlisted.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HermesApprovalRequestedRequest"
+      responses:
+        "201":
+          description: Approval request created in pending state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /hermes/tools/approval_status:
+    post:
+      tags: [hermes-tools]
+      summary: Hermes tool adapter call to poll approval status
+      description: Hermes-local endpoint that returns decision state without exposing device secrets.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovalStatusRequest"
+      responses:
+        "200":
+          description: Current approval state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalStatusResponse"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /approvals/{approval_id}:
     get:
@@ -628,7 +709,8 @@ paths:
     post:
       tags: [notifications]
       summary: Hermes-facing request to send a mobile notification
-      description: Called by Hermes or the gateway adapter, not directly by arbitrary mobile clients.
+      description: Hermes-local endpoint restricted to loopback callers unless explicitly allowlisted. Called by Hermes or the gateway adapter, not directly by arbitrary mobile clients.
+      security: []
       requestBody:
         required: true
         content:
@@ -642,6 +724,32 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Notification"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+
+  /hermes/tools/mobile_notify:
+    post:
+      tags: [hermes-tools]
+      summary: Hermes tool adapter call to request mobile notification
+      description: Tool-shaped alias for `mobile_notify`, restricted to loopback callers unless explicitly allowlisted.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MobileNotifyRequest"
+      responses:
+        "202":
+          description: Notification accepted or queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Notification"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "422":
           $ref: "#/components/responses/Unprocessable"
 
@@ -650,6 +758,10 @@ paths:
       tags: [notifications]
       summary: List notification records
       parameters:
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
         - name: category
           in: query
           schema:
@@ -678,6 +790,10 @@ paths:
       summary: Query audit events
       description: Return append-only audit events for forensic review and mobile history views.
       parameters:
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
         - name: node_id
           in: query
           schema:
@@ -726,6 +842,10 @@ paths:
       tags: [events]
       summary: Backfill events by cursor
       parameters:
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
         - name: after
           in: query
           schema:
@@ -1343,6 +1463,14 @@ components:
           type: array
           items:
             enum: [approve_once, approve_for_session, approve_for_agent, approve_permanent, deny, always_deny, pause_agent, terminate_task]
+        decision_scope:
+          $ref: "#/components/schemas/ApprovalScope"
+        decided_at:
+          type: string
+          format: date-time
+        decision_metadata:
+          type: object
+          additionalProperties: true
 
     CreateApprovalRequest:
       type: object
@@ -1384,6 +1512,71 @@ components:
         expires_at:
           type: string
           format: date-time
+
+    HermesApprovalRequestedRequest:
+      type: object
+      required:
+        - requested_tool
+        - risk_level
+        - summary
+        - payload_redacted
+        - agent_id
+        - session_id
+        - expires_in_seconds
+      properties:
+        requested_tool:
+          type: string
+        risk_level:
+          $ref: "#/components/schemas/RiskLevel"
+        summary:
+          type: string
+        payload_redacted:
+          type: object
+          additionalProperties: true
+        agent_id:
+          type: string
+        session_id:
+          type: string
+        expires_in_seconds:
+          type: integer
+          minimum: 1
+          maximum: 86400
+        suggested_scopes:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApprovalScope"
+        action_id:
+          type: string
+        node_id:
+          type: string
+        risk_category:
+          type: string
+        resource_scope:
+          type: string
+
+    ApprovalStatusRequest:
+      type: object
+      required: [approval_id]
+      properties:
+        approval_id:
+          type: string
+
+    ApprovalStatusResponse:
+      type: object
+      required: [approval_id, state]
+      properties:
+        approval_id:
+          type: string
+        state:
+          $ref: "#/components/schemas/ApprovalState"
+        selected_scope:
+          $ref: "#/components/schemas/ApprovalScope"
+        decided_at:
+          type: string
+          format: date-time
+        decision_metadata:
+          type: object
+          additionalProperties: true
 
     ApprovalDecisionRequest:
       type: object
@@ -1453,8 +1646,10 @@ components:
       properties:
         title:
           type: string
+          maxLength: 120
         body:
           type: string
+          maxLength: 800
         urgency:
           $ref: "#/components/schemas/NotificationUrgency"
         category:
@@ -1490,6 +1685,10 @@ components:
           $ref: "#/components/schemas/NotificationUrgency"
         state:
           enum: [queued, dispatched, rate_limited, deduped, failed, opened]
+        title_safe:
+          type: string
+        body_safe:
+          type: string
         created_at:
           type: string
           format: date-time

@@ -8,11 +8,14 @@ from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSock
 
 from .config import Settings
 from .ids import new_id
+from .local_binding import HermesLocalCaller, verify_hermes_local_request
 from .schemas import (
     Agent,
     ApprovalDecisionRequest,
     ApprovalDecisionResponse,
     ApprovalRequest,
+    ApprovalStatusRequest,
+    ApprovalStatusResponse,
     AuthTokenSet,
     CompletePairingRequest,
     CompletePairingResponse,
@@ -20,6 +23,7 @@ from .schemas import (
     CreatePairingSessionRequest,
     Device,
     GatewayHealth,
+    HermesApprovalRequestedRequest,
     InterventionRequest,
     InterventionResponse,
     Inventory,
@@ -35,6 +39,8 @@ from .signing import VerifiedDevice, verify_signed_request
 from .store import SQLiteStore
 
 DEFAULT_PERMISSIONS = ["read_state", "chat", "approve", "intervene"]
+MAX_NOTIFICATION_TITLE_CHARS = 120
+MAX_NOTIFICATION_BODY_CHARS = 800
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -55,7 +61,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def require_signed_device(request: Request) -> VerifiedDevice:
         return await verify_signed_request(request, store=store, settings=resolved_settings)
 
+    def require_hermes_local_request(request: Request) -> HermesLocalCaller:
+        return verify_hermes_local_request(
+            request,
+            store=store,
+            settings=resolved_settings,
+        )
+
     signed_device_dependency = Depends(require_signed_device)
+    hermes_local_dependency = Depends(require_hermes_local_request)
 
     @app.get("/v1/health", response_model=GatewayHealth)
     def health() -> GatewayHealth:
@@ -74,7 +88,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     @app.post("/v1/nodes/register", response_model=Node, status_code=status.HTTP_201_CREATED)
-    def register_node(payload: NodeRegistration, request: Request) -> Node:
+    def register_node(
+        payload: NodeRegistration,
+        request: Request,
+        _caller: HermesLocalCaller = hermes_local_dependency,
+    ) -> Node:
         node_id = payload.node_id or resolved_settings.node_id
         node = store.upsert_node(
             {
@@ -105,25 +123,77 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return Node.model_validate(node)
 
     @app.get("/v1/inventory", response_model=Inventory)
-    def inventory() -> Inventory:
+    def inventory(_device: VerifiedDevice = signed_device_dependency) -> Inventory:
         return Inventory(nodes=[Node.model_validate(node) for node in store.list_nodes()])
 
     @app.get("/v1/nodes/{node_id}", response_model=Node)
-    def get_node(node_id: str) -> Node:
+    def get_node(
+        node_id: str,
+        _device: VerifiedDevice = signed_device_dependency,
+    ) -> Node:
         try:
             return Node.model_validate(store.get_node(node_id))
         except KeyError as exc:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "node not found") from exc
 
     @app.get("/v1/agents")
-    def list_agents(node_id: str | None = None) -> dict[str, list[Agent]]:
+    def list_agents(
+        node_id: str | None = None,
+        _device: VerifiedDevice = signed_device_dependency,
+    ) -> dict[str, list[Agent]]:
         return {"agents": [Agent.model_validate(agent) for agent in store.list_agents(node_id)]}
+
+    @app.get("/v1/agents/{agent_id}", response_model=Agent)
+    def get_agent(
+        agent_id: str,
+        node_id: str,
+        _device: VerifiedDevice = signed_device_dependency,
+    ) -> Agent:
+        try:
+            return Agent.model_validate(store.get_agent(node_id, agent_id))
+        except KeyError as exc:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "agent not found") from exc
 
     @app.get("/v1/sessions")
     def list_sessions(
-        node_id: str | None = None, agent_id: str | None = None
+        node_id: str | None = None,
+        agent_id: str | None = None,
+        _device: VerifiedDevice = signed_device_dependency,
     ) -> dict[str, list[dict[str, Any]]]:
         return {"sessions": store.list_sessions(node_id=node_id, agent_id=agent_id)}
+
+    @app.get("/v1/sessions/{session_id}")
+    def get_session(
+        session_id: str,
+        node_id: str,
+        _device: VerifiedDevice = signed_device_dependency,
+    ) -> dict[str, Any]:
+        try:
+            return store.get_session(node_id, session_id)
+        except KeyError as exc:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found") from exc
+
+    @app.get("/v1/sessions/{session_id}/activity")
+    def get_session_activity(
+        session_id: str,
+        node_id: str,
+        _device: VerifiedDevice = signed_device_dependency,
+    ) -> dict[str, Any]:
+        try:
+            session = store.get_session(node_id, session_id)
+        except KeyError as exc:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found") from exc
+        events = [
+            event
+            for event in store.list_events_after(limit=25)
+            if event.get("node_id") == node_id and event.get("session_id") == session_id
+        ]
+        return {
+            "session": session,
+            "recent_events": events,
+            "terminal_tail": None,
+            "browser_state": None,
+        }
 
     @app.post(
         "/v1/pairing/start",
@@ -299,54 +369,66 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     @app.post("/v1/approvals", response_model=ApprovalRequest, status_code=status.HTTP_201_CREATED)
-    def create_approval(payload: CreateApprovalRequest, request: Request) -> ApprovalRequest:
-        node_id = payload.node_id or resolved_settings.node_id
-        approval_id = new_id("appr")
-        approval = store.create_approval(
-            {
-                "approval_id": approval_id,
-                "action_id": payload.action_id,
-                "node_id": node_id,
-                "agent_id": payload.agent_id,
-                "session_id": payload.session_id,
-                "requested_tool": payload.requested_tool,
-                "risk_level": payload.risk_level,
-                "risk_category": payload.risk_category or "unknown_action",
-                "summary": payload.summary,
-                "full_payload_redacted": payload.full_payload_redacted,
-                "resource_scope": payload.resource_scope,
-                "state": "pending",
-                "options": payload.options or ["deny"],
-                "expires_at": payload.expires_at.isoformat(),
-            }
+    def create_approval(
+        payload: CreateApprovalRequest,
+        request: Request,
+        _caller: HermesLocalCaller = hermes_local_dependency,
+    ) -> ApprovalRequest:
+        return _create_approval_request(
+            store=store,
+            settings=resolved_settings,
+            request=request,
+            payload=payload,
         )
-        store.append_audit_event(
-            event_type="approval_requested",
-            actor_type="hermes",
-            actor_id=payload.agent_id,
-            node_id=node_id,
+
+    @app.post(
+        "/v1/hermes/tools/approval_requested",
+        response_model=ApprovalRequest,
+        status_code=status.HTTP_201_CREATED,
+    )
+    def hermes_approval_requested(
+        payload: HermesApprovalRequestedRequest,
+        request: Request,
+        _caller: HermesLocalCaller = hermes_local_dependency,
+    ) -> ApprovalRequest:
+        approval_payload = CreateApprovalRequest(
+            action_id=payload.action_id or new_id("act"),
+            node_id=payload.node_id,
             agent_id=payload.agent_id,
             session_id=payload.session_id,
-            approval_id=approval_id,
-            request_id=_request_id(request),
-            payload_redacted={
-                "requested_tool": payload.requested_tool,
-                "risk_level": payload.risk_level,
-                "risk_category": payload.risk_category or "unknown_action",
-            },
+            requested_tool=payload.requested_tool,
+            risk_level=payload.risk_level,
+            risk_category=payload.risk_category,
+            summary=payload.summary,
+            full_payload_redacted=payload.payload_redacted,
+            resource_scope=payload.resource_scope,
+            options=_approval_options_from_scopes(payload.suggested_scopes),
+            expires_at=expires_in(payload.expires_in_seconds),
         )
-        store.create_event(
-            node_id=node_id,
-            agent_id=payload.agent_id,
-            session_id=payload.session_id,
-            event_type="approval.requested",
-            payload={
-                "approval_id": approval_id,
-                "state": "pending",
-                "risk_level": payload.risk_level,
-            },
+        return _create_approval_request(
+            store=store,
+            settings=resolved_settings,
+            request=request,
+            payload=approval_payload,
         )
-        return ApprovalRequest.model_validate(approval)
+
+    @app.post("/v1/hermes/tools/approval_status", response_model=ApprovalStatusResponse)
+    def hermes_approval_status(
+        payload: ApprovalStatusRequest,
+        _caller: HermesLocalCaller = hermes_local_dependency,
+    ) -> ApprovalStatusResponse:
+        _expire_pending_approvals(store)
+        try:
+            approval = store.get_approval(payload.approval_id)
+        except KeyError as exc:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "approval not found") from exc
+        return ApprovalStatusResponse(
+            approval_id=approval["approval_id"],
+            state=approval["state"],
+            selected_scope=approval["decision_scope"] if approval["state"] == "approved" else None,
+            decided_at=approval["decided_at"],
+            decision_metadata=approval["decision_metadata"],
+        )
 
     @app.get("/v1/approvals")
     def list_approvals(
@@ -459,59 +541,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response_model=Notification,
         status_code=status.HTTP_202_ACCEPTED,
     )
-    def mobile_notify(payload: MobileNotifyRequest, request: Request) -> Notification:
-        if has_secret_text(payload.title, payload.body):
-            store.append_audit_event(
-                event_type="notification_rejected",
-                actor_type="hermes",
-                actor_id=payload.agent_id,
-                node_id=resolved_settings.node_id,
-                agent_id=payload.agent_id,
-                session_id=payload.session_id,
-                request_id=_request_id(request),
-                payload_redacted={"category": payload.category, "reason": "secret_scan_failed"},
-            )
-            raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_CONTENT,
-                "notification body is not safe",
-            )
-        notification = store.create_notification(
-            {
-                "node_id": resolved_settings.node_id,
-                "agent_id": payload.agent_id,
-                "session_id": payload.session_id,
-                "action_id": payload.action_id,
-                "category": payload.category,
-                "urgency": payload.urgency,
-                "title_safe": payload.title,
-                "body_safe": payload.body,
-                "dedupe_key": payload.dedupe_key,
-                "state": "queued",
-            }
+    def mobile_notify(
+        payload: MobileNotifyRequest,
+        request: Request,
+        _caller: HermesLocalCaller = hermes_local_dependency,
+    ) -> Notification:
+        return _create_mobile_notification(
+            store=store,
+            settings=resolved_settings,
+            request=request,
+            payload=payload,
         )
-        store.append_audit_event(
-            event_type="notification_queued",
-            actor_type="hermes",
-            actor_id=payload.agent_id,
-            node_id=resolved_settings.node_id,
-            agent_id=payload.agent_id,
-            session_id=payload.session_id,
-            notification_id=notification["notification_id"],
-            request_id=_request_id(request),
-            payload_redacted={"category": payload.category, "urgency": payload.urgency},
+
+    @app.post(
+        "/v1/hermes/tools/mobile_notify",
+        response_model=Notification,
+        status_code=status.HTTP_202_ACCEPTED,
+    )
+    def hermes_mobile_notify(
+        payload: MobileNotifyRequest,
+        request: Request,
+        _caller: HermesLocalCaller = hermes_local_dependency,
+    ) -> Notification:
+        return _create_mobile_notification(
+            store=store,
+            settings=resolved_settings,
+            request=request,
+            payload=payload,
         )
-        store.create_event(
-            node_id=resolved_settings.node_id,
-            agent_id=payload.agent_id,
-            session_id=payload.session_id,
-            event_type="notification.created",
-            payload={
-                "notification_id": notification["notification_id"],
-                "category": payload.category,
-                "urgency": payload.urgency,
-            },
-        )
-        return Notification.model_validate(notification)
 
     @app.get("/v1/notifications")
     def list_notifications(
@@ -555,7 +612,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     @app.get("/v1/events")
-    def list_events(after: str | None = None, limit: int = 500) -> dict[str, Any]:
+    def list_events(
+        after: str | None = None,
+        limit: int = 500,
+        _device: VerifiedDevice = signed_device_dependency,
+    ) -> dict[str, Any]:
         events = store.list_events_after(after=after, limit=limit)
         return {"events": events, "next_cursor": events[-1]["cursor"] if events else after}
 
@@ -619,6 +680,145 @@ def _ensure_local_node(store: SQLiteStore, settings: Settings) -> None:
     )
 
 
+def _create_approval_request(
+    *,
+    store: SQLiteStore,
+    settings: Settings,
+    request: Request,
+    payload: CreateApprovalRequest,
+) -> ApprovalRequest:
+    node_id = payload.node_id or settings.node_id
+    approval_id = new_id("appr")
+    approval = store.create_approval(
+        {
+            "approval_id": approval_id,
+            "action_id": payload.action_id,
+            "node_id": node_id,
+            "agent_id": payload.agent_id,
+            "session_id": payload.session_id,
+            "requested_tool": payload.requested_tool,
+            "risk_level": payload.risk_level,
+            "risk_category": payload.risk_category or "unknown_action",
+            "summary": payload.summary,
+            "full_payload_redacted": payload.full_payload_redacted,
+            "resource_scope": payload.resource_scope,
+            "state": "pending",
+            "options": payload.options or ["deny"],
+            "expires_at": payload.expires_at.isoformat(),
+        }
+    )
+    store.append_audit_event(
+        event_type="approval_requested",
+        actor_type="hermes",
+        actor_id=payload.agent_id,
+        node_id=node_id,
+        agent_id=payload.agent_id,
+        session_id=payload.session_id,
+        approval_id=approval_id,
+        request_id=_request_id(request),
+        payload_redacted={
+            "requested_tool": payload.requested_tool,
+            "risk_level": payload.risk_level,
+            "risk_category": payload.risk_category or "unknown_action",
+        },
+    )
+    store.create_event(
+        node_id=node_id,
+        agent_id=payload.agent_id,
+        session_id=payload.session_id,
+        event_type="approval.requested",
+        payload={
+            "approval_id": approval_id,
+            "state": "pending",
+            "risk_level": payload.risk_level,
+        },
+    )
+    return ApprovalRequest.model_validate(approval)
+
+
+def _create_mobile_notification(
+    *,
+    store: SQLiteStore,
+    settings: Settings,
+    request: Request,
+    payload: MobileNotifyRequest,
+) -> Notification:
+    rejection_reason = _notification_rejection_reason(payload)
+    if rejection_reason:
+        store.append_audit_event(
+            event_type="notification_rejected",
+            actor_type="hermes",
+            actor_id=payload.agent_id,
+            node_id=settings.node_id,
+            agent_id=payload.agent_id,
+            session_id=payload.session_id,
+            request_id=_request_id(request),
+            payload_redacted={"category": payload.category, "reason": rejection_reason},
+        )
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "notification body is not safe",
+        )
+    notification = store.create_notification(
+        {
+            "node_id": settings.node_id,
+            "agent_id": payload.agent_id,
+            "session_id": payload.session_id,
+            "action_id": payload.action_id,
+            "category": payload.category,
+            "urgency": payload.urgency,
+            "title_safe": payload.title,
+            "body_safe": payload.body,
+            "dedupe_key": payload.dedupe_key,
+            "state": "queued",
+        }
+    )
+    store.append_audit_event(
+        event_type="notification_queued",
+        actor_type="hermes",
+        actor_id=payload.agent_id,
+        node_id=settings.node_id,
+        agent_id=payload.agent_id,
+        session_id=payload.session_id,
+        notification_id=notification["notification_id"],
+        request_id=_request_id(request),
+        payload_redacted={"category": payload.category, "urgency": payload.urgency},
+    )
+    store.create_event(
+        node_id=settings.node_id,
+        agent_id=payload.agent_id,
+        session_id=payload.session_id,
+        event_type="notification.created",
+        payload={
+            "notification_id": notification["notification_id"],
+            "category": payload.category,
+            "urgency": payload.urgency,
+        },
+    )
+    return Notification.model_validate(notification)
+
+
+def _notification_rejection_reason(payload: MobileNotifyRequest) -> str | None:
+    if len(payload.title) > MAX_NOTIFICATION_TITLE_CHARS:
+        return "title_too_large"
+    if len(payload.body) > MAX_NOTIFICATION_BODY_CHARS:
+        return "body_too_large"
+    if has_secret_text(payload.title, payload.body):
+        return "secret_scan_failed"
+    return None
+
+
+def _approval_options_from_scopes(scopes: list[str]) -> list[str]:
+    scope_options = {
+        "once": "approve_once",
+        "session": "approve_for_session",
+        "agent": "approve_for_agent",
+        "permanent": "approve_permanent",
+    }
+    options = [scope_options[scope] for scope in scopes if scope in scope_options]
+    return [*options, "deny"] if options else ["deny"]
+
+
 def _expire_pairing_if_needed(store: SQLiteStore, pairing: dict[str, Any]) -> dict[str, Any]:
     if pairing["status"] == "pending" and parse_utc(pairing["expires_at"]) <= now_utc():
         store.set_pairing_status(pairing["pairing_id"], "expired")
@@ -631,7 +831,11 @@ def _expire_pairing_if_needed(store: SQLiteStore, pairing: dict[str, Any]) -> di
 def _expire_pending_approvals(store: SQLiteStore) -> None:
     for approval in store.list_approvals(state="pending"):
         if parse_utc(approval["expires_at"]) <= now_utc():
-            store.resolve_approval(approval["approval_id"], "expired")
+            store.resolve_approval(
+                approval["approval_id"],
+                "expired",
+                decision_metadata={"reason": "expiry_scan"},
+            )
             request_id = new_id("req")
             store.append_audit_event(
                 event_type="approval_expired",
@@ -672,7 +876,11 @@ def _transition_approval(
         raise HTTPException(status.HTTP_409_CONFLICT, "approval is not pending")
 
     if target_state in {"approved", "denied"} and parse_utc(approval["expires_at"]) <= now_utc():
-        store.resolve_approval(approval_id, "expired")
+        store.resolve_approval(
+            approval_id,
+            "expired",
+            decision_metadata={"reason": "decision_after_expiry"},
+        )
         store.append_audit_event(
             event_type="approval_expired",
             actor_type="gateway",
@@ -693,7 +901,13 @@ def _transition_approval(
         )
         raise HTTPException(status.HTTP_409_CONFLICT, "approval expired")
 
-    store.resolve_approval(approval_id, target_state)
+    store.resolve_approval(
+        approval_id,
+        target_state,
+        decision_scope=scope,
+        decision_actor_device_id=actor_device_id,
+        decision_metadata={"decision": decision, "state": target_state},
+    )
     event_type = {
         "approved": "approval_decision",
         "denied": "approval_decision",

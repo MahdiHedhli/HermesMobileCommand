@@ -268,6 +268,20 @@ Recovery must not be possible through unauthenticated remote access.
 | Revoke device | required | | | | required | |
 | Start voice session | required | | | | | required |
 
+## Hermes-Local Binding Controls
+
+Slice 003 separates Hermes-local tool calls from mobile control calls.
+
+Hermes-local endpoints, including node registration, `mobile_notify`, `approval_requested`, and `approval_status`, are accepted only from loopback callers by default:
+
+- `127.0.0.1`
+- `::1`
+- `localhost`
+
+If Hermes and the gateway are intentionally split across private infrastructure, the gateway can allow exact caller addresses through `HERMES_ALLOWED_HERMES_CALLERS` or `HERMES_GATEWAY_ALLOWED_HERMES_CALLERS`.
+
+Non-loopback, non-allowlisted Hermes-local calls fail closed with `403` and create `hermes_local_request_rejected` audit events. Mobile-facing reads and approval decisions continue to require signed device requests.
+
 ## Security Defaults
 
 - Pairing disabled unless explicitly started.

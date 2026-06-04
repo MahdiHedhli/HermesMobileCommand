@@ -16,6 +16,7 @@ class Settings:
     hermes_version: str | None = None
     database_path: str = ".hermes-mobile-gateway/gateway.sqlite3"
     pairing_ttl_seconds: int = 300
+    allowed_hermes_callers: tuple[str, ...] = ()
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -31,8 +32,15 @@ class Settings:
             pairing_ttl_seconds=int(
                 os.getenv("HERMES_PAIRING_TTL_SECONDS", str(cls.pairing_ttl_seconds))
             ),
+            allowed_hermes_callers=_csv_env("HERMES_ALLOWED_HERMES_CALLERS")
+            or _csv_env("HERMES_GATEWAY_ALLOWED_HERMES_CALLERS"),
         )
 
     @property
     def database_file(self) -> Path:
         return Path(self.database_path)
+
+
+def _csv_env(name: str) -> tuple[str, ...]:
+    value = os.getenv(name, "")
+    return tuple(part.strip() for part in value.split(",") if part.strip())

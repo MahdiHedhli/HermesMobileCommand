@@ -88,9 +88,16 @@ Rules:
 | --- | --- | --- |
 | `POST /v1/pairing/start` | unauthenticated bootstrap | Local operator pairing ceremony |
 | `POST /v1/pairing/complete` | pairing token | Registers device public key |
+| `POST /v1/nodes/register` | Hermes-local binding | Loopback by default; allowlisted private callers may be configured |
+| `GET /v1/inventory` | signed device request | Mobile inventory snapshot |
+| `GET /v1/agents` | signed device request | Mobile agent list |
+| `GET /v1/agents/{agent_id}` | signed device request | Mobile agent detail |
+| `GET /v1/sessions` | signed device request | Mobile session list |
 | `GET /v1/devices` | signed device request | Device management |
 | `DELETE /v1/devices/{device_id}` | signed device request | Revokes device and tokens |
-| `POST /v1/approvals` | Hermes-local | Creates pending approval request |
+| `POST /v1/approvals` | Hermes-local binding | Creates pending approval request |
+| `POST /v1/hermes/tools/approval_requested` | Hermes-local binding | Tool-shaped approval request |
+| `POST /v1/hermes/tools/approval_status` | Hermes-local binding | Tool-shaped approval status polling |
 | `GET /v1/approvals` | signed device request | Mobile approval queue |
 | `GET /v1/approvals/{approval_id}` | signed device request | Approval detail |
 | `POST /v1/approvals/{approval_id}/decisions` | signed device request | Generic approve/deny |
@@ -98,9 +105,11 @@ Rules:
 | `POST /v1/approvals/{approval_id}/deny` | signed device request | Convenience denial |
 | `POST /v1/approvals/{approval_id}/expire` | signed device request | Manual expiry |
 | `POST /v1/approvals/{approval_id}/cancel` | signed device request | Manual cancel |
-| `POST /v1/notifications/mobile_notify` | Hermes-local | Provider dispatch still out of scope |
+| `POST /v1/notifications/mobile_notify` | Hermes-local binding | Provider dispatch still out of scope |
+| `POST /v1/hermes/tools/mobile_notify` | Hermes-local binding | Tool-shaped notification request |
 | `GET /v1/notifications` | signed device request | Notification history |
 | `GET /v1/audit/events` | signed device request | Audit history |
+| `GET /v1/events` | signed device request | Event backfill |
 | `GET /v1/events/stream` | paired device access token | WebSocket stream |
 | `POST /v1/sessions/{session_id}/interventions` | signed device request | Placeholder only; does not execute intervention |
 

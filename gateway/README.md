@@ -11,6 +11,7 @@ This service is intentionally self-hosted and local-first:
 - WebSocket event stream with persisted cursor backfill
 - `mobile_notify` endpoint with durable notification and audit records
 - Fail-closed approval decision skeleton
+- Hermes tool adapter with loopback-first binding controls
 
 Run locally:
 
@@ -27,3 +28,21 @@ uv run --project gateway ruff check
 
 The default bind should remain local or private-network only. Do not expose this
 gateway on the public internet.
+
+Hermes-local tool calls should use loopback by default:
+
+```python
+from hermes_gateway.hermes_adapter import HermesToolAdapter
+
+adapter = HermesToolAdapter(gateway_base_url="http://127.0.0.1:8787/v1")
+```
+
+If Hermes and the gateway are intentionally split across private infrastructure,
+set `HERMES_ALLOWED_HERMES_CALLERS` or `HERMES_GATEWAY_ALLOWED_HERMES_CALLERS`
+to exact allowed caller addresses.
+
+Run the E2E smoke path:
+
+```bash
+uv run --project gateway python gateway/scripts/e2e_smoke.py
+```

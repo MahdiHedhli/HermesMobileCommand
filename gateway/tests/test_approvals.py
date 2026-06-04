@@ -38,7 +38,7 @@ def test_approve_once_creates_audit_and_event(client: TestClient) -> None:
     assert response.json()["state"] == "approved"
     assert response.json()["applied_scope"] == "once"
     assert audit_exists(client, paired, "approval_decision")
-    assert approval_event_exists(client, approval["approval_id"], "approved")
+    assert approval_event_exists(client, paired, approval["approval_id"], "approved")
 
 
 def test_deny_approval(client: TestClient) -> None:
@@ -131,7 +131,7 @@ def test_expired_approval_cannot_be_approved(client: TestClient) -> None:
 
     assert response.status_code == 409
     assert response.json()["detail"] == "approval expired"
-    assert approval_event_exists(client, approval["approval_id"], "expired")
+    assert approval_event_exists(client, paired, approval["approval_id"], "expired")
 
 
 def test_invalid_approval_id_rejected(client: TestClient) -> None:
@@ -184,8 +184,14 @@ def audit_exists(client: TestClient, paired: dict, event_type: str) -> bool:
     return bool(response.json()["audit_events"])
 
 
-def approval_event_exists(client: TestClient, approval_id: str, state: str) -> bool:
-    response = client.get("/v1/events")
+def approval_event_exists(client: TestClient, paired: dict, approval_id: str, state: str) -> bool:
+    response = signed_request(
+        client,
+        "GET",
+        "/v1/events",
+        private_key=paired["private_key"],
+        device_id=paired["device"]["device_id"],
+    )
     assert response.status_code == 200
     return any(
         event["type"] == "approval.resolved"

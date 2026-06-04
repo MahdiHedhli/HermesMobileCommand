@@ -30,7 +30,7 @@ def client(tmp_path: Path) -> Generator[TestClient]:
         database_path=str(tmp_path / "gateway.sqlite3"),
         pairing_ttl_seconds=60,
     )
-    with TestClient(create_app(settings)) as test_client:
+    with TestClient(create_app(settings), client=("127.0.0.1", 50000)) as test_client:
         yield test_client
 
 

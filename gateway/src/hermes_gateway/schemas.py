@@ -190,6 +190,9 @@ class ApprovalRequest(BaseModel):
     state: ApprovalState
     expires_at: datetime
     options: list[str]
+    decision_scope: ApprovalScope | None = None
+    decided_at: datetime | None = None
+    decision_metadata: dict[str, Any] | None = None
 
 
 class CreateApprovalRequest(StrictModel):
@@ -205,6 +208,33 @@ class CreateApprovalRequest(StrictModel):
     resource_scope: str | None = None
     options: list[str] = Field(default_factory=lambda: ["approve_once", "deny"])
     expires_at: datetime
+
+
+class HermesApprovalRequestedRequest(StrictModel):
+    requested_tool: str
+    risk_level: RiskLevel
+    summary: str
+    payload_redacted: dict[str, Any]
+    agent_id: str
+    session_id: str
+    expires_in_seconds: int = Field(ge=1, le=86_400)
+    suggested_scopes: list[ApprovalScope] = Field(default_factory=lambda: ["once"])
+    action_id: str | None = None
+    node_id: str | None = None
+    risk_category: str | None = None
+    resource_scope: str | None = None
+
+
+class ApprovalStatusRequest(StrictModel):
+    approval_id: str
+
+
+class ApprovalStatusResponse(BaseModel):
+    approval_id: str
+    state: ApprovalState
+    selected_scope: ApprovalScope | None = None
+    decided_at: datetime | None = None
+    decision_metadata: dict[str, Any] | None = None
 
 
 class ApprovalDecisionRequest(StrictModel):

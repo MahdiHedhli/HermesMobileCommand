@@ -37,7 +37,13 @@ def test_mobile_notify_creates_notification_and_audit_event(client: TestClient) 
     assert audit_events
     assert audit_events[0]["notification_id"] == notification["notification_id"]
 
-    events = client.get("/v1/events")
+    events = signed_request(
+        client,
+        "GET",
+        "/v1/events",
+        private_key=paired["private_key"],
+        device_id=paired["device"]["device_id"],
+    )
     assert events.status_code == 200
     assert any(event["type"] == "notification.created" for event in events.json()["events"])
 

@@ -1,0 +1,1390 @@
+openapi: 3.1.0
+info:
+  title: Hermes Mobile Control Plane Gateway API
+  version: 0.1.0
+  description: >
+    Implementation-ready API contract for Hermes Control Gateway. The API is
+    self-hosted first and intended to run beside each Hermes install. WebSocket
+    event streaming is documented as an HTTP upgrade endpoint with event schemas.
+servers:
+  - url: https://{gateway_host}/v1
+    description: Direct gateway over Tailscale, trusted local network, HTTPS, or future relay
+    variables:
+      gateway_host:
+        default: 100.64.0.10:8787
+security:
+  - bearerAuth: []
+tags:
+  - name: health
+  - name: pairing
+  - name: auth
+  - name: devices
+  - name: inventory
+  - name: chat
+  - name: approvals
+  - name: notifications
+  - name: events
+  - name: audit
+  - name: interventions
+  - name: voice
+paths:
+  /health:
+    get:
+      tags: [health]
+      summary: Gateway health snapshot
+      security: []
+      responses:
+        "200":
+          description: Gateway health
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GatewayHealth"
+
+  /pairing/sessions:
+    post:
+      tags: [pairing]
+      summary: Create a short-lived pairing session
+      description: Started from a trusted local admin context on the Hermes host.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePairingSessionRequest"
+      responses:
+        "201":
+          description: Pairing challenge created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PairingSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /pairing/sessions/{pairing_id}:
+    get:
+      tags: [pairing]
+      summary: Read pairing session status
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/PairingId"
+      responses:
+        "200":
+          description: Pairing status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PairingSession"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /pairing/complete:
+    post:
+      tags: [pairing]
+      summary: Complete device pairing
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompletePairingRequest"
+      responses:
+        "200":
+          description: Device registered and node credentials issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompletePairingResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /auth/token/refresh:
+    post:
+      tags: [auth]
+      summary: Refresh a device-bound session token
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/DeviceIdHeader"
+        - $ref: "#/components/parameters/DeviceSignatureHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshTokenRequest"
+      responses:
+        "200":
+          description: New session tokens
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthTokenSet"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /devices:
+    get:
+      tags: [devices]
+      summary: List registered devices
+      responses:
+        "200":
+          description: Registered devices
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [devices]
+                properties:
+                  devices:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Device"
+
+  /devices/{device_id}:
+    delete:
+      tags: [devices]
+      summary: Revoke a device
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/DeviceSignatureHeader"
+      responses:
+        "204":
+          description: Device revoked
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /devices/{device_id}/rotate-key:
+    post:
+      tags: [devices]
+      summary: Rotate a device public key
+      parameters:
+        - $ref: "#/components/parameters/DeviceId"
+        - $ref: "#/components/parameters/DeviceSignatureHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RotateDeviceKeyRequest"
+      responses:
+        "200":
+          description: Device key rotated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Device"
+
+  /inventory:
+    get:
+      tags: [inventory]
+      summary: Get node and agent inventory
+      parameters:
+        - name: include_stale
+          in: query
+          schema:
+            type: boolean
+            default: true
+      responses:
+        "200":
+          description: Inventory snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Inventory"
+
+  /nodes/{node_id}:
+    get:
+      tags: [inventory]
+      summary: Get node detail
+      parameters:
+        - $ref: "#/components/parameters/NodeId"
+      responses:
+        "200":
+          description: Node detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /agents:
+    get:
+      tags: [inventory]
+      summary: List agents
+      parameters:
+        - name: node_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/AgentStatus"
+      responses:
+        "200":
+          description: Agents
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [agents]
+                properties:
+                  agents:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Agent"
+
+  /agents/{agent_id}:
+    get:
+      tags: [inventory]
+      summary: Get agent detail
+      parameters:
+        - $ref: "#/components/parameters/AgentId"
+        - name: node_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Agent detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+
+  /sessions:
+    get:
+      tags: [chat]
+      summary: List sessions
+      parameters:
+        - name: node_id
+          in: query
+          schema:
+            type: string
+        - name: agent_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            $ref: "#/components/schemas/SessionStatus"
+      responses:
+        "200":
+          description: Sessions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sessions]
+                properties:
+                  sessions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Session"
+
+  /sessions/{session_id}:
+    get:
+      tags: [chat]
+      summary: Get session detail
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - name: node_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Session detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+
+  /sessions/{session_id}/activity:
+    get:
+      tags: [chat]
+      summary: Get current activity for a session
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - name: node_id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Live activity snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LiveActivity"
+
+  /conversations/{conversation_id}/messages:
+    get:
+      tags: [chat]
+      summary: List conversation messages
+      parameters:
+        - $ref: "#/components/parameters/ConversationId"
+        - name: after
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Messages
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [messages]
+                properties:
+                  messages:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ConversationMessage"
+    post:
+      tags: [chat]
+      summary: Send a chat message into a conversation
+      parameters:
+        - $ref: "#/components/parameters/ConversationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateMessageRequest"
+      responses:
+        "202":
+          description: Message accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationMessage"
+
+  /approvals:
+    get:
+      tags: [approvals]
+      summary: List approval requests
+      parameters:
+        - name: state
+          in: query
+          schema:
+            $ref: "#/components/schemas/ApprovalState"
+        - name: node_id
+          in: query
+          schema:
+            type: string
+        - name: agent_id
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Approval requests
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [approvals]
+                properties:
+                  approvals:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ApprovalRequest"
+
+  /approvals/{approval_id}:
+    get:
+      tags: [approvals]
+      summary: Get approval detail
+      parameters:
+        - $ref: "#/components/parameters/ApprovalId"
+      responses:
+        "200":
+          description: Approval detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalRequest"
+
+  /approvals/{approval_id}/decisions:
+    post:
+      tags: [approvals]
+      summary: Submit a signed approval decision
+      parameters:
+        - $ref: "#/components/parameters/ApprovalId"
+        - $ref: "#/components/parameters/DeviceIdHeader"
+        - $ref: "#/components/parameters/DeviceSignatureHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApprovalDecisionRequest"
+      responses:
+        "200":
+          description: Decision accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalDecisionResponse"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /sessions/{session_id}/interventions:
+    post:
+      tags: [interventions]
+      summary: Apply an emergency or live intervention
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/DeviceIdHeader"
+        - $ref: "#/components/parameters/DeviceSignatureHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InterventionRequest"
+      responses:
+        "202":
+          description: Intervention accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InterventionResponse"
+
+  /notifications/mobile_notify:
+    post:
+      tags: [notifications]
+      summary: Hermes-facing request to send a mobile notification
+      description: Called by Hermes or the gateway adapter, not directly by arbitrary mobile clients.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MobileNotifyRequest"
+      responses:
+        "202":
+          description: Notification accepted or queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Notification"
+        "422":
+          $ref: "#/components/responses/Unprocessable"
+
+  /notifications:
+    get:
+      tags: [notifications]
+      summary: List notification records
+      parameters:
+        - name: category
+          in: query
+          schema:
+            $ref: "#/components/schemas/NotificationCategory"
+        - name: after
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Notifications
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [notifications]
+                properties:
+                  notifications:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Notification"
+
+  /audit/events:
+    get:
+      tags: [audit]
+      summary: Query audit events
+      description: Return append-only audit events for forensic review and mobile history views.
+      parameters:
+        - name: node_id
+          in: query
+          schema:
+            type: string
+        - name: agent_id
+          in: query
+          schema:
+            type: string
+        - name: session_id
+          in: query
+          schema:
+            type: string
+        - name: event_type
+          in: query
+          schema:
+            type: string
+        - name: after
+          in: query
+          schema:
+            type: string
+            description: Cursor or audit event ID to resume after
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+            maximum: 1000
+      responses:
+        "200":
+          description: Audit event page
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [audit_events]
+                properties:
+                  audit_events:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AuditEvent"
+                  next_cursor:
+                    type: string
+
+  /events:
+    get:
+      tags: [events]
+      summary: Backfill events by cursor
+      parameters:
+        - name: after
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 500
+            maximum: 2000
+      responses:
+        "200":
+          description: Event backfill
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [events]
+                properties:
+                  events:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/EventEnvelope"
+                  next_cursor:
+                    type: string
+
+  /events/stream:
+    get:
+      tags: [events]
+      summary: WebSocket event stream
+      description: >
+        Upgrade to WebSocket. Query parameters may include `after`, `node_id`,
+        `agent_id`, `session_id`, and repeated `event_type`. Server emits
+        EventEnvelope messages.
+      parameters:
+        - name: after
+          in: query
+          schema:
+            type: string
+      responses:
+        "101":
+          description: Switching Protocols to WebSocket
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /voice/sessions:
+    post:
+      tags: [voice]
+      summary: Create a voice session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateVoiceSessionRequest"
+      responses:
+        "201":
+          description: Voice session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceSession"
+
+  /voice/sessions/{voice_session_id}:
+    get:
+      tags: [voice]
+      summary: Get voice session detail
+      parameters:
+        - $ref: "#/components/parameters/VoiceSessionId"
+      responses:
+        "200":
+          description: Voice session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceSession"
+    delete:
+      tags: [voice]
+      summary: End a voice session
+      parameters:
+        - $ref: "#/components/parameters/VoiceSessionId"
+      responses:
+        "204":
+          description: Voice session ended
+
+  /voice/sessions/{voice_session_id}/turns:
+    post:
+      tags: [voice]
+      summary: Submit a push-to-talk audio or transcript turn
+      parameters:
+        - $ref: "#/components/parameters/VoiceSessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateVoiceTurnRequest"
+      responses:
+        "202":
+          description: Voice turn accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceTurn"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    ApprovalId:
+      name: approval_id
+      in: path
+      required: true
+      schema: {type: string}
+    AgentId:
+      name: agent_id
+      in: path
+      required: true
+      schema: {type: string}
+    ConversationId:
+      name: conversation_id
+      in: path
+      required: true
+      schema: {type: string}
+    DeviceId:
+      name: device_id
+      in: path
+      required: true
+      schema: {type: string}
+    DeviceIdHeader:
+      name: X-Hermes-Device-Id
+      in: header
+      required: true
+      schema: {type: string}
+    DeviceSignatureHeader:
+      name: X-Hermes-Device-Signature
+      in: header
+      required: true
+      schema: {type: string}
+    NodeId:
+      name: node_id
+      in: path
+      required: true
+      schema: {type: string}
+    PairingId:
+      name: pairing_id
+      in: path
+      required: true
+      schema: {type: string}
+    SessionId:
+      name: session_id
+      in: path
+      required: true
+      schema: {type: string}
+    VoiceSessionId:
+      name: voice_session_id
+      in: path
+      required: true
+      schema: {type: string}
+
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: Missing or invalid authentication
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: Not authorized
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: Resource conflict or already resolved
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unprocessable:
+      description: Request rejected by policy or validation
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Error:
+      type: object
+      required: [error, request_id]
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        request_id:
+          type: string
+
+    GatewayHealth:
+      type: object
+      required: [node_id, status, gateway_version, checked_at]
+      properties:
+        node_id:
+          type: string
+        status:
+          enum: [healthy, degraded, unhealthy]
+        gateway_version:
+          type: string
+        hermes_version:
+          type: string
+        checked_at:
+          type: string
+          format: date-time
+        services:
+          type: object
+          additionalProperties:
+            enum: [healthy, degraded, unhealthy, unavailable]
+
+    CreatePairingSessionRequest:
+      type: object
+      required: [display_name]
+      properties:
+        display_name:
+          type: string
+        requested_permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Permission"
+
+    PairingSession:
+      type: object
+      required: [pairing_id, challenge, status, node_id, node_fingerprint, expires_at]
+      properties:
+        pairing_id:
+          type: string
+        challenge:
+          type: string
+        status:
+          enum: [pending, completed, expired, cancelled]
+        node_id:
+          type: string
+        node_fingerprint:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+
+    CompletePairingRequest:
+      type: object
+      required: [pairing_id, challenge_response, device_public_key, device]
+      properties:
+        pairing_id:
+          type: string
+        challenge_response:
+          type: string
+        device_public_key:
+          type: string
+        device:
+          $ref: "#/components/schemas/DeviceRegistration"
+
+    CompletePairingResponse:
+      type: object
+      required: [node, device, tokens]
+      properties:
+        node:
+          $ref: "#/components/schemas/Node"
+        device:
+          $ref: "#/components/schemas/Device"
+        tokens:
+          $ref: "#/components/schemas/AuthTokenSet"
+
+    RefreshTokenRequest:
+      type: object
+      required: [refresh_token, signed_nonce]
+      properties:
+        refresh_token:
+          type: string
+        signed_nonce:
+          type: string
+
+    AuthTokenSet:
+      type: object
+      required: [access_token, refresh_token, expires_at]
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+
+    Permission:
+      enum: [read_state, chat, approve, intervene, manage_devices, voice]
+
+    DeviceRegistration:
+      type: object
+      required: [device_name, platform, app_instance_id]
+      properties:
+        device_name:
+          type: string
+        platform:
+          enum: [ios, android]
+        app_instance_id:
+          type: string
+        app_version:
+          type: string
+        push_token:
+          type: string
+
+    Device:
+      type: object
+      required: [device_id, device_name, platform, status, permissions, registered_at]
+      properties:
+        device_id:
+          type: string
+        device_name:
+          type: string
+        platform:
+          enum: [ios, android]
+        status:
+          enum: [active, revoked, lost, rotating, disabled]
+        permissions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Permission"
+        registered_at:
+          type: string
+          format: date-time
+        last_seen_at:
+          type: string
+          format: date-time
+
+    RotateDeviceKeyRequest:
+      type: object
+      required: [old_key_signature, new_device_public_key]
+      properties:
+        old_key_signature:
+          type: string
+        new_device_public_key:
+          type: string
+
+    Inventory:
+      type: object
+      required: [nodes]
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/Node"
+
+    Node:
+      type: object
+      required: [node_id, display_name, environment, health, capabilities]
+      properties:
+        node_id:
+          type: string
+        display_name:
+          type: string
+        environment:
+          $ref: "#/components/schemas/Environment"
+        gateway_base_url:
+          type: string
+        health:
+          enum: [online, degraded, offline, unknown]
+        tags:
+          type: array
+          items: {type: string}
+        capabilities:
+          type: array
+          items:
+            $ref: "#/components/schemas/Capability"
+        agents:
+          type: array
+          items:
+            $ref: "#/components/schemas/Agent"
+
+    Environment:
+      enum: [homelab, laptop, cloud, workstation, vps, work_vm, custom]
+
+    Capability:
+      type: object
+      required: [name, status]
+      properties:
+        name:
+          type: string
+        status:
+          enum: [available, disabled, requires_pairing, requires_permission, unsupported, degraded]
+
+    AgentStatus:
+      enum: [idle, running, blocked, paused, stopping, offline, error, quarantined]
+
+    Agent:
+      type: object
+      required: [agent_id, node_id, display_name, status, capabilities]
+      properties:
+        agent_id:
+          type: string
+        node_id:
+          type: string
+        display_name:
+          type: string
+        agent_kind:
+          type: string
+        status:
+          $ref: "#/components/schemas/AgentStatus"
+        active_session_id:
+          type: string
+        current_tool:
+          type: string
+        current_target:
+          type: string
+        tags:
+          type: array
+          items: {type: string}
+        capabilities:
+          type: array
+          items:
+            $ref: "#/components/schemas/Capability"
+        last_seen_at:
+          type: string
+          format: date-time
+
+    SessionStatus:
+      enum: [active, blocked, paused, completed, failed, cancelled]
+
+    Session:
+      type: object
+      required: [session_id, node_id, agent_id, status, started_at]
+      properties:
+        session_id:
+          type: string
+        conversation_id:
+          type: string
+        node_id:
+          type: string
+        agent_id:
+          type: string
+        status:
+          $ref: "#/components/schemas/SessionStatus"
+        title:
+          type: string
+        summary:
+          type: string
+        current_plan:
+          type: string
+        current_tool:
+          type: string
+        current_target:
+          type: string
+        started_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    LiveActivity:
+      type: object
+      properties:
+        session:
+          $ref: "#/components/schemas/Session"
+        recent_events:
+          type: array
+          items:
+            $ref: "#/components/schemas/EventEnvelope"
+        terminal_tail:
+          type: string
+        browser_state:
+          type: object
+          additionalProperties: true
+
+    ConversationMessage:
+      type: object
+      required: [message_id, conversation_id, role, content, created_at]
+      properties:
+        message_id:
+          type: string
+        conversation_id:
+          type: string
+        role:
+          enum: [user, assistant, system, tool]
+        content:
+          type: string
+        redacted:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    CreateMessageRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+        target_agent_id:
+          type: string
+        idempotency_key:
+          type: string
+
+    ApprovalState:
+      enum: [pending, approved, denied, expired, cancelled]
+
+    RiskLevel:
+      enum: [low, medium, high, critical]
+
+    ApprovalScope:
+      enum: [once, session, agent, permanent]
+
+    ApprovalRequest:
+      type: object
+      required:
+        - approval_id
+        - action_id
+        - node_id
+        - agent_id
+        - session_id
+        - requested_tool
+        - risk_level
+        - summary
+        - full_payload_redacted
+        - state
+        - expires_at
+        - options
+      properties:
+        approval_id:
+          type: string
+        action_id:
+          type: string
+        node_id:
+          type: string
+        agent_id:
+          type: string
+        session_id:
+          type: string
+        requested_tool:
+          type: string
+        risk_level:
+          $ref: "#/components/schemas/RiskLevel"
+        risk_category:
+          type: string
+        summary:
+          type: string
+        full_payload_redacted:
+          type: object
+          additionalProperties: true
+        resource_scope:
+          type: string
+        state:
+          $ref: "#/components/schemas/ApprovalState"
+        expires_at:
+          type: string
+          format: date-time
+        options:
+          type: array
+          items:
+            enum: [approve_once, approve_for_session, approve_for_agent, approve_permanent, deny, always_deny, pause_agent, terminate_task]
+
+    ApprovalDecisionRequest:
+      type: object
+      required: [decision_id, decision, scope, signed_payload, signature]
+      properties:
+        decision_id:
+          type: string
+        decision:
+          enum: [approve, deny]
+        scope:
+          $ref: "#/components/schemas/ApprovalScope"
+        control:
+          enum: [pause, kill_task, kill_agent, quarantine_agent]
+        signed_payload:
+          type: object
+          additionalProperties: true
+        signature:
+          type: string
+
+    ApprovalDecisionResponse:
+      type: object
+      required: [approval_id, state]
+      properties:
+        approval_id:
+          type: string
+        state:
+          $ref: "#/components/schemas/ApprovalState"
+        applied_scope:
+          $ref: "#/components/schemas/ApprovalScope"
+
+    InterventionRequest:
+      type: object
+      required: [intervention_id, type, reason, signed_payload, signature]
+      properties:
+        intervention_id:
+          type: string
+        type:
+          enum: [pause, resume, inject_instruction, cancel_task, kill_task, kill_agent, quarantine_agent, emergency_stop]
+        reason:
+          type: string
+        instruction:
+          type: string
+        signed_payload:
+          type: object
+          additionalProperties: true
+        signature:
+          type: string
+
+    InterventionResponse:
+      type: object
+      required: [intervention_id, resulting_state]
+      properties:
+        intervention_id:
+          type: string
+        resulting_state:
+          type: string
+
+    NotificationCategory:
+      enum: [approval_required, security_alert, agent_blocked, task_complete, system_health, voice_callback]
+
+    NotificationUrgency:
+      enum: [low, normal, high, critical]
+
+    MobileNotifyRequest:
+      type: object
+      required: [title, body, urgency, category, agent_id, session_id]
+      properties:
+        title:
+          type: string
+        body:
+          type: string
+        urgency:
+          $ref: "#/components/schemas/NotificationUrgency"
+        category:
+          $ref: "#/components/schemas/NotificationCategory"
+        agent_id:
+          type: string
+        session_id:
+          type: string
+        action_id:
+          type: string
+        deep_link:
+          type: string
+        dedupe_key:
+          type: string
+
+    Notification:
+      type: object
+      required: [notification_id, category, urgency, state, created_at]
+      properties:
+        notification_id:
+          type: string
+        node_id:
+          type: string
+        agent_id:
+          type: string
+        session_id:
+          type: string
+        action_id:
+          type: string
+        category:
+          $ref: "#/components/schemas/NotificationCategory"
+        urgency:
+          $ref: "#/components/schemas/NotificationUrgency"
+        state:
+          enum: [queued, dispatched, rate_limited, deduped, failed, opened]
+        created_at:
+          type: string
+          format: date-time
+
+    AuditEvent:
+      type: object
+      required:
+        - audit_event_id
+        - event_type
+        - actor_type
+        - actor_id
+        - node_id
+        - request_id
+        - previous_hash
+        - hash
+        - created_at
+      properties:
+        audit_event_id:
+          type: string
+        event_type:
+          type: string
+        actor_type:
+          enum: [user, device, gateway, hermes, agent, system]
+        actor_id:
+          type: string
+        node_id:
+          type: string
+        agent_id:
+          type: string
+        session_id:
+          type: string
+        approval_id:
+          type: string
+        notification_id:
+          type: string
+        voice_session_id:
+          type: string
+        request_id:
+          type: string
+        previous_hash:
+          type: string
+        hash:
+          type: string
+        payload_redacted:
+          type: object
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+
+    EventEnvelope:
+      type: object
+      required: [event_id, cursor, node_id, type, occurred_at, payload]
+      properties:
+        event_id:
+          type: string
+        cursor:
+          type: string
+        node_id:
+          type: string
+        agent_id:
+          type: string
+        session_id:
+          type: string
+        conversation_id:
+          type: string
+        type:
+          type: string
+        severity:
+          enum: [debug, info, warning, error, critical]
+        occurred_at:
+          type: string
+          format: date-time
+        payload:
+          type: object
+          additionalProperties: true
+
+    CreateVoiceSessionRequest:
+      type: object
+      required: [node_id, agent_id, session_id, mode]
+      properties:
+        node_id:
+          type: string
+        agent_id:
+          type: string
+        session_id:
+          type: string
+        mode:
+          enum: [push_to_talk, half_duplex, full_duplex]
+
+    VoiceSession:
+      type: object
+      required: [voice_session_id, node_id, agent_id, session_id, mode, state, started_at]
+      properties:
+        voice_session_id:
+          type: string
+        node_id:
+          type: string
+        agent_id:
+          type: string
+        session_id:
+          type: string
+        mode:
+          enum: [push_to_talk, half_duplex, full_duplex]
+        state:
+          enum: [starting, active, paused, ended, failed]
+        started_at:
+          type: string
+          format: date-time
+        ended_at:
+          type: string
+          format: date-time
+
+    CreateVoiceTurnRequest:
+      type: object
+      required: [turn_id, input_type]
+      properties:
+        turn_id:
+          type: string
+        input_type:
+          enum: [audio_reference, transcript]
+        audio_reference:
+          type: string
+        transcript:
+          type: string
+
+    VoiceTurn:
+      type: object
+      required: [turn_id, voice_session_id, state, created_at]
+      properties:
+        turn_id:
+          type: string
+        voice_session_id:
+          type: string
+        state:
+          enum: [accepted, processing, completed, failed]
+        transcript:
+          type: string
+        response_text:
+          type: string
+        response_audio_reference:
+          type: string
+        created_at:
+          type: string
+          format: date-time

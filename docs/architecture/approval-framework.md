@@ -72,6 +72,63 @@ State definitions:
 - `expired`: No longer actionable because `expires_at` elapsed.
 - `cancelled`: Underlying task, requester, or agent no longer needs the approval.
 
+## Advanced Approval Responses
+
+The compact approval states remain the durable terminal state model. Advanced mobile UX is represented through an `ApprovalResponse` record so the gateway can distinguish final state from the exact user intent.
+
+Supported response decision types:
+
+- `approved_once`
+- `approved_session`
+- `approved_agent`
+- `approved_forever`
+- `denied`
+- `modified`
+- `needs_info`
+- `escalated_tua`
+- `escalated_tui`
+- `pause_agent`
+- `stop_task`
+- `stop_agent`
+
+`modified`, `needs_info`, `escalated_tua`, and `escalated_tui` do not automatically resolve the approval. They keep the approval pending unless Hermes, gateway policy, or the user later produces a terminal decision.
+
+`approved_forever` is a policy action. It must require a second confirmation, create or propose an `ApprovalPolicy`, and must not be the default action for high or critical risk requests.
+
+### ApprovalResponse Contract
+
+Required fields:
+
+- `approval_response_id`
+- `approval_id`
+- `decision_type`
+- `decided_by_device_id`
+- `decided_at`
+
+Optional fields:
+
+- `user_message`
+- `replacement_action`
+- `constraints`
+- `approved_scope`
+- `policy_created`
+- `expires_at`
+- `assistance_session_id`
+- `terminal_session_id`
+
+### Approval Constraints
+
+Approval constraints express user safety boundaries. Examples:
+
+- only this directory
+- read-only first
+- do not touch auth
+- ask again before writing
+- only run tests
+- only approve listed tools
+
+If Hermes or gateway policy cannot enforce the constraints, the action remains blocked.
+
 ## Approval Request Contract
 
 Required fields:

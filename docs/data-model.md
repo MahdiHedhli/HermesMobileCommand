@@ -11,14 +11,24 @@ erDiagram
   USER ||--o{ DEVICE : owns
   USER ||--o{ AUDIT_EVENT : acts
   NODE ||--o{ AGENT : hosts
+  TEAM ||--o{ AGENT_TEAM_MEMBERSHIP : groups
+  AGENT ||--o{ AGENT_TEAM_MEMBERSHIP : joins
   NODE ||--o{ DEVICE : trusts
   NODE ||--o{ AUDIT_EVENT : records
   AGENT ||--o{ SESSION : runs
   SESSION ||--o{ CONVERSATION : contains
   CONVERSATION ||--o{ MESSAGE : has
   SESSION ||--o{ APPROVAL_REQUEST : requires
+  APPROVAL_REQUEST ||--o{ APPROVAL_RESPONSE : receives
+  APPROVAL_RESPONSE ||--o{ APPROVAL_CONSTRAINT : constrains
+  APPROVAL_POLICY ||--o{ APPROVAL_RESPONSE : created_by
   SESSION ||--o{ NOTIFICATION : triggers
   SESSION ||--o{ VOICE_SESSION : uses
+  SESSION ||--o{ TERMINAL_SESSION : opens
+  TERMINAL_SESSION ||--o{ TERMINAL_IO_EVENT : streams
+  SESSION ||--o{ ASSISTANCE_REQUEST : requests
+  ASSISTANCE_REQUEST ||--o{ ASSISTANCE_SESSION : opens
+  ASSISTANCE_SESSION ||--o{ ASSISTANCE_MESSAGE : contains
   APPROVAL_REQUEST ||--o{ APPROVAL_DECISION : resolves
   DEVICE ||--o{ APPROVAL_DECISION : signs
   DEVICE ||--o{ PUSH_TOKEN : registers
@@ -76,6 +86,33 @@ Represents a Hermes agent registered under one node.
 | `current_tool` | string | no | Current tool name |
 | `current_target` | string | no | Current target/resource |
 | `last_seen_at` | datetime | yes | Health timestamp |
+
+### Team
+
+Optional grouping for agents. Teams help mobile users organize agents without replacing node identity.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `team_id` | string | yes | Stable team ID |
+| `display_name` | string | yes | User-facing label |
+| `description` | string | no | Optional purpose or scope |
+| `color` | string | no | UI hint |
+| `icon` | string | no | UI hint |
+| `sort_order` | integer | no | User-defined ordering |
+| `created_at` | datetime | yes | Creation time |
+| `updated_at` | datetime | yes | Last update |
+
+### AgentTeamMembership
+
+Links an agent to a Team while preserving node/source identity.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `team_id` | string | yes | Parent Team |
+| `node_id` | string | yes | Source node |
+| `agent_id` | string | yes | Source agent |
+| `role` | string | no | Optional role such as `primary`, `support`, `observer` |
+| `added_at` | datetime | yes | Membership time |
 
 ### Device
 
@@ -183,6 +220,53 @@ Represents a trusted mobile app installation.
 | `signature` | string | yes | Device signature |
 | `created_at` | datetime | yes | Decision time |
 
+### ApprovalResponse
+
+Records advanced mobile approval intent. It can produce a terminal approval state or keep the approval pending while the user asks for more information, opens TUA, opens TUI, or sends a modified directive.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `approval_response_id` | string | yes | Stable response ID |
+| `approval_id` | string | yes | Parent approval |
+| `decision_type` | enum | yes | `approved_once`, `approved_session`, `approved_agent`, `approved_forever`, `denied`, `modified`, `needs_info`, `escalated_tua`, `escalated_tui`, `pause_agent`, `stop_task`, `stop_agent` |
+| `user_message` | string | no | User instruction or explanation, redacted where needed |
+| `replacement_action` | object | no | Alternate action proposed by user |
+| `approved_scope` | enum | no | `once`, `session`, `agent`, `permanent` |
+| `policy_created` | boolean | yes | Whether a policy was created or proposed |
+| `expires_at` | datetime | no | Expiry for conditional response |
+| `decided_by_device_id` | string | yes | Signing device |
+| `decided_at` | datetime | yes | Decision time |
+
+### ApprovalConstraint
+
+Constraint attached to an advanced approval response.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `approval_constraint_id` | string | yes | Stable constraint ID |
+| `approval_response_id` | string | yes | Parent response |
+| `constraint_type` | enum | yes | `directory_scope`, `read_only_first`, `deny_auth_changes`, `ask_before_write`, `tests_only`, `tool_allowlist`, `custom` |
+| `value_redacted` | object | yes | Constraint value with sensitive content removed |
+| `created_at` | datetime | yes | Creation time |
+
+### ApprovalPolicy
+
+Persistent or proposed policy created by Approve Forever.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `approval_policy_id` | string | yes | Stable policy ID |
+| `node_id` | string | yes | Node scope |
+| `agent_id` | string | no | Agent scope if policy is agent-specific |
+| `tool_name` | string | yes | Tool/action class |
+| `risk_category` | string | yes | Policy category |
+| `resource_scope` | string | no | Files, URLs, repo, account, or other scope |
+| `constraints` | object array | no | Policy constraints |
+| `status` | enum | yes | `proposed`, `active`, `revoked`, `expired` |
+| `created_by_device_id` | string | yes | Device that proposed or created policy |
+| `created_at` | datetime | yes | Creation time |
+| `expires_at` | datetime | no | Optional expiry |
+
 ### Notification
 
 | Field | Type | Required | Notes |
@@ -219,6 +303,87 @@ Represents a trusted mobile app installation.
 | `previous_hash` | string | no | Chain hash for tamper evidence |
 | `created_at` | datetime | yes | Event time |
 
+### TerminalSession
+
+Real terminal session for mobile TUI.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `terminal_session_id` | string | yes | Stable terminal session ID |
+| `node_id` | string | yes | Source node |
+| `agent_id` | string | yes | Related agent |
+| `session_id` | string | yes | Related Hermes session |
+| `approval_id` | string | no | Linked approval if opened from approval |
+| `assistance_session_id` | string | no | Linked TUA session if opened from assistance |
+| `created_by_device_id` | string | yes | Device that opened terminal |
+| `state` | enum | yes | `starting`, `active`, `detached`, `closed`, `failed` |
+| `target` | string | no | Shell, tmux target, or working directory hint |
+| `created_at` | datetime | yes | Creation time |
+| `last_attached_at` | datetime | no | Last attach time |
+| `closed_at` | datetime | no | Close time |
+
+### TerminalIOEvent
+
+Terminal input/output metadata for TUI stream backfill and audit.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `terminal_io_event_id` | string | yes | Stable event ID |
+| `terminal_session_id` | string | yes | Parent terminal session |
+| `direction` | enum | yes | `input`, `output` |
+| `event_type` | enum | yes | `bytes`, `key`, `paste`, `resize`, `attach`, `detach` |
+| `payload_redacted` | object | no | Redacted or summarized payload |
+| `byte_count` | integer | no | Size metadata |
+| `created_at` | datetime | yes | Event time |
+
+### AssistanceRequest
+
+Agent-originated or user-originated request for Take User Assistance.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `assistance_request_id` | string | yes | Stable request ID |
+| `node_id` | string | yes | Source node |
+| `agent_id` | string | yes | Source agent |
+| `session_id` | string | yes | Source session |
+| `approval_id` | string | no | Linked approval |
+| `reason` | string | yes | Redacted assistance reason |
+| `state` | enum | yes | `requested`, `active`, `closed`, `cancelled` |
+| `created_at` | datetime | yes | Creation time |
+| `expires_at` | datetime | no | Optional expiry |
+
+### AssistanceSession
+
+Active TUA session.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `assistance_session_id` | string | yes | Stable session ID |
+| `assistance_request_id` | string | yes | Parent request |
+| `node_id` | string | yes | Source node |
+| `agent_id` | string | yes | Source agent |
+| `session_id` | string | yes | Source Hermes session |
+| `state` | enum | yes | `requested`, `active`, `waiting_on_user`, `user_controlling`, `returned_to_agent`, `closed`, `cancelled` |
+| `opened_by_device_id` | string | yes | Device that opened session |
+| `return_summary` | string | no | User summary on handoff |
+| `created_at` | datetime | yes | Creation time |
+| `updated_at` | datetime | yes | Last update |
+| `closed_at` | datetime | no | Close time |
+
+### AssistanceMessage
+
+Message inside a TUA session.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `assistance_message_id` | string | yes | Stable message ID |
+| `assistance_session_id` | string | yes | Parent TUA session |
+| `sender_type` | enum | yes | `user`, `agent`, `gateway`, `system` |
+| `sender_id` | string | no | Device, user, agent, or gateway ID |
+| `message_type` | enum | yes | `message`, `more_info`, `directive`, `return_control`, `context_attachment` |
+| `content_redacted` | string | yes | Redacted message content |
+| `created_at` | datetime | yes | Message time |
+
 ### VoiceSession
 
 | Field | Type | Required | Notes |
@@ -243,13 +408,23 @@ Represents a trusted mobile app installation.
 | PushToken | Until revoked plus 90 days | Store encrypted token; hash retained for audit |
 | Node | Until removed plus 1 year | Preserve audit references |
 | Agent | Until node removed plus 1 year | Stale agents marked, not immediately deleted |
+| Team | Until deleted plus 1 year | Preserve grouping context for audit history |
+| AgentTeamMembership | Until removed plus 1 year | Preserve source context for Team actions |
 | Session | 90 days default, configurable | Longer if user wants history |
 | Conversation | 90 days default, configurable | Redaction policy applies |
 | Message | 90 days default, configurable | Avoid retaining sensitive raw tool output by default |
 | ApprovalRequest | 1 year minimum | Safety-critical auditability |
 | ApprovalDecision | 1 year minimum | Needed for forensic review |
+| ApprovalResponse | 1 year minimum | Needed for advanced approval auditability |
+| ApprovalConstraint | 1 year minimum | Needed to verify conditional approvals |
+| ApprovalPolicy | Until revoked plus 1 year | Keep history of policy creation and revocation |
 | Notification | 90 days | Dispatch history and abuse review |
 | AuditEvent | 1 year minimum; 7 years optional | Local self-hosted owner controls final retention |
+| TerminalSession | 30 days metadata; configurable | Terminal output may contain sensitive data |
+| TerminalIOEvent | Short retention by default | Retain metadata longer than raw stream content |
+| AssistanceRequest | 90 days default | Preserve help request context |
+| AssistanceSession | 90 days default | Preserve return-control summary |
+| AssistanceMessage | 90 days default; configurable | Redaction policy applies |
 | VoiceSession | 30 days metadata; audio/transcripts shorter | Audio may contain sensitive data |
 
 ## Storage Notes

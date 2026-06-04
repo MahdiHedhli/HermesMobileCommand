@@ -240,6 +240,7 @@ Required fields:
 
 ## Related Adoption References
 
+- [TUI, TUA, Teams, and Advanced Approval UX specification](../002-tui-tua-ux/spec.md)
 - [Hermes Wingman adoption matrix](../../docs/adoption/hermes-wingman-adoption-matrix.md)
 - [Hermes Wingman architecture delta](../../docs/adoption/hermes-wingman-architecture-delta.md)
 - [Hermes Wingman UI inventory](../../docs/adoption/hermes-wingman-ui-inventory.md)

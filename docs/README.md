@@ -13,9 +13,13 @@ This package turns the Hermes Mobile Control Plane feature specification into an
 - [Threat model](security/threat-model.md)
 - [Authentication and authorization](security/auth-authorization.md)
 - [Approval framework](architecture/approval-framework.md)
+- [Advanced approval actions](architecture/advanced-approval-actions.md)
 - [Push notification framework](architecture/push-notification-framework.md)
 - [Event streaming architecture](architecture/event-streaming.md)
 - [Multi-agent control plane](architecture/multi-agent-control-plane.md)
+- [Teams and agent grouping](architecture/teams-agent-grouping.md)
+- [TUI architecture](architecture/tui-architecture.md)
+- [TUA architecture](architecture/tua-architecture.md)
 - [Voice architecture](architecture/voice-architecture.md)
 - [API contract](api/openapi.yaml)
 - [Data model](data-model.md)
@@ -26,6 +30,11 @@ This package turns the Hermes Mobile Control Plane feature specification into an
 
 - [Slice 001: Gateway foundation](implementation/slice-001-gateway-foundation.md)
 - [Slice 003: Hermes integration and mobile readiness](implementation/slice-003-hermes-integration-mobile-readiness.md)
+
+## Feature Specifications
+
+- [Spec 001: Hermes Mobile Control Plane](../specs/001-hermes-mobile-command/spec.md)
+- [Spec 002: TUI, TUA, Teams, and Advanced Approval UX](../specs/002-tui-tua-ux/spec.md)
 
 ## Adoption Audits
 
@@ -47,6 +56,10 @@ This package turns the Hermes Mobile Control Plane feature specification into an
 - [ADR-0009: Hermes Wingman adoption policy](adr/0009-hermes-wingman-adoption-policy.md)
 - [ADR-0010: SQLite local gateway storage for first slice](adr/0010-sqlite-local-gateway-storage-for-first-slice.md)
 - [ADR-0011: Ed25519 canonical device request signing](adr/0011-ed25519-canonical-device-request-signing.md)
+- [ADR-0012: TUI as first-class mobile subsystem](adr/0012-tui-first-class-mobile-subsystem.md)
+- [ADR-0013: TUA as separate assistance subsystem](adr/0013-tua-separate-assistance-subsystem.md)
+- [ADR-0014: Agents v1 terminology with Teams grouping](adr/0014-agents-v1-terminology-teams-grouping.md)
+- [ADR-0015: Modified and conditional approval decisions](adr/0015-modified-conditional-approval-decisions.md)
 
 ## Team Boundaries
 

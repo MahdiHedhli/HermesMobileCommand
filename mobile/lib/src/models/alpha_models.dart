@@ -1,0 +1,233 @@
+enum AgentRunStatus {
+  idle,
+  online,
+  running,
+  blocked,
+  paused,
+  offline,
+  warning,
+}
+
+enum MissionState {
+  running,
+  waiting,
+  blocked,
+  complete,
+}
+
+enum InboxKind {
+  approval,
+  notification,
+  assistance,
+  security,
+}
+
+enum AssistanceState {
+  requested,
+  active,
+  waitingOnUser,
+  userControlling,
+  returnedToAgent,
+  closed,
+}
+
+enum TerminalKeyPage {
+  controls,
+  symbols,
+  brackets,
+  functions,
+}
+
+class FleetAgent {
+  const FleetAgent({
+    required this.id,
+    required this.name,
+    required this.team,
+    required this.status,
+    required this.node,
+    required this.currentMission,
+    required this.lastActivity,
+    required this.capabilities,
+    required this.notificationCount,
+    required this.approvalCount,
+  });
+
+  final String id;
+  final String name;
+  final String team;
+  final AgentRunStatus status;
+  final String node;
+  final String currentMission;
+  final String lastActivity;
+  final List<String> capabilities;
+  final int notificationCount;
+  final int approvalCount;
+}
+
+class MissionSummary {
+  const MissionSummary({
+    required this.id,
+    required this.title,
+    required this.agentName,
+    required this.team,
+    required this.state,
+    required this.progressLabel,
+    required this.lastEvent,
+  });
+
+  final String id;
+  final String title;
+  final String agentName;
+  final String team;
+  final MissionState state;
+  final String progressLabel;
+  final String lastEvent;
+}
+
+class InboxItem {
+  const InboxItem({
+    required this.id,
+    required this.kind,
+    required this.title,
+    required this.subtitle,
+    required this.agentName,
+    required this.timeLabel,
+    required this.unread,
+    required this.priority,
+  });
+
+  final String id;
+  final InboxKind kind;
+  final String title;
+  final String subtitle;
+  final String agentName;
+  final String timeLabel;
+  final bool unread;
+  final String priority;
+}
+
+class ActivityEvent {
+  const ActivityEvent({
+    required this.title,
+    required this.detail,
+    required this.timeLabel,
+    required this.severity,
+  });
+
+  final String title;
+  final String detail;
+  final String timeLabel;
+  final String severity;
+}
+
+class ApprovalAlpha {
+  const ApprovalAlpha({
+    required this.id,
+    required this.title,
+    required this.agentName,
+    required this.node,
+    required this.session,
+    required this.risk,
+    required this.requestedTool,
+    required this.summary,
+    required this.payloadPreview,
+    required this.expiresIn,
+    required this.constraints,
+  });
+
+  final String id;
+  final String title;
+  final String agentName;
+  final String node;
+  final String session;
+  final String risk;
+  final String requestedTool;
+  final String summary;
+  final String payloadPreview;
+  final String expiresIn;
+  final List<String> constraints;
+}
+
+class AssistanceMessageAlpha {
+  const AssistanceMessageAlpha({
+    required this.sender,
+    required this.body,
+    required this.timeLabel,
+    required this.fromUser,
+  });
+
+  final String sender;
+  final String body;
+  final String timeLabel;
+  final bool fromUser;
+}
+
+class AssistanceSessionAlpha {
+  const AssistanceSessionAlpha({
+    required this.id,
+    required this.agentName,
+    required this.node,
+    required this.mission,
+    required this.state,
+    required this.reason,
+    required this.messages,
+  });
+
+  final String id;
+  final String agentName;
+  final String node;
+  final String mission;
+  final AssistanceState state;
+  final String reason;
+  final List<AssistanceMessageAlpha> messages;
+}
+
+class TerminalSessionAlpha {
+  const TerminalSessionAlpha({
+    required this.id,
+    required this.agentName,
+    required this.node,
+    required this.mission,
+    required this.prompt,
+    required this.scrollback,
+  });
+
+  final String id;
+  final String agentName;
+  final String node;
+  final String mission;
+  final String prompt;
+  final List<String> scrollback;
+}
+
+class DashboardStat {
+  const DashboardStat({
+    required this.label,
+    required this.value,
+    required this.trend,
+    required this.intent,
+  });
+
+  final String label;
+  final String value;
+  final String trend;
+  final String intent;
+}
+
+class HomeAlphaSnapshot {
+  const HomeAlphaSnapshot({
+    required this.stats,
+    required this.pendingApprovals,
+    required this.activeMissions,
+    required this.agents,
+    required this.activity,
+    required this.notifications,
+  });
+
+  final List<DashboardStat> stats;
+  final List<ApprovalAlpha> pendingApprovals;
+  final List<MissionSummary> activeMissions;
+  final List<FleetAgent> agents;
+  final List<ActivityEvent> activity;
+  final List<InboxItem> notifications;
+}

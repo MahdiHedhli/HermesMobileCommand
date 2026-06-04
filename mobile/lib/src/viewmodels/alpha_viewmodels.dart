@@ -1,0 +1,179 @@
+import 'package:flutter/foundation.dart';
+
+import '../models/alpha_models.dart';
+import '../repositories/alpha_repository.dart';
+
+class HomeViewModel {
+  HomeViewModel(this.repository);
+
+  final AlphaRepository repository;
+
+  Future<HomeAlphaSnapshot> load() => repository.loadHome();
+}
+
+class AgentsViewModel {
+  AgentsViewModel(this.repository);
+
+  final AlphaRepository repository;
+  String searchQuery = '';
+  String teamFilter = 'All';
+  bool groupByTeam = true;
+
+  Future<List<FleetAgent>> loadAgents() => repository.loadAgents();
+
+  List<String> teams(List<FleetAgent> agents) {
+    final values = agents.map((agent) => agent.team).toSet().toList()..sort();
+    return ['All', ...values];
+  }
+
+  List<FleetAgent> visibleAgents(List<FleetAgent> agents) {
+    final query = searchQuery.trim().toLowerCase();
+    return agents.where((agent) {
+      final matchesTeam = teamFilter == 'All' || agent.team == teamFilter;
+      final matchesSearch = query.isEmpty ||
+          agent.name.toLowerCase().contains(query) ||
+          agent.team.toLowerCase().contains(query) ||
+          agent.node.toLowerCase().contains(query) ||
+          agent.currentMission.toLowerCase().contains(query);
+      return matchesTeam && matchesSearch;
+    }).toList();
+  }
+
+  Map<String, List<FleetAgent>> groupedAgents(List<FleetAgent> agents) {
+    final grouped = <String, List<FleetAgent>>{};
+    for (final agent in visibleAgents(agents)) {
+      grouped.putIfAbsent(agent.team, () => []).add(agent);
+    }
+    return grouped;
+  }
+}
+
+class InboxViewModel {
+  InboxViewModel(this.repository);
+
+  final AlphaRepository repository;
+  InboxKind? filter;
+
+  Future<List<InboxItem>> loadInbox() => repository.loadInbox();
+
+  List<InboxItem> visibleItems(List<InboxItem> items) {
+    if (filter == null) {
+      return items;
+    }
+    return items.where((item) => item.kind == filter).toList();
+  }
+}
+
+class MissionsViewModel {
+  MissionsViewModel(this.repository);
+
+  final AlphaRepository repository;
+
+  Future<List<MissionSummary>> loadMissions() => repository.loadMissions();
+}
+
+class ApprovalDetailViewModel {
+  ApprovalDetailViewModel(this.repository);
+
+  final AlphaRepository repository;
+
+  Future<ApprovalAlpha> load(String approvalId) => repository.loadApproval(approvalId);
+
+  List<String> get moreActions => const [
+        'Approve Once',
+        'Approve For Session',
+        'Approve For Agent',
+        'Approve Forever',
+        'Other',
+        'More Info',
+        'Open TUA Session',
+        'Open TUI Session',
+        'Pause Agent',
+        'Stop Task',
+        'Stop Agent',
+      ];
+}
+
+class TuaViewModel extends ChangeNotifier {
+  TuaViewModel(this.repository);
+
+  final AlphaRepository repository;
+  AssistanceSessionAlpha? _session;
+  final _draftReplies = <AssistanceMessageAlpha>[];
+  bool returnedToAgent = false;
+
+  AssistanceSessionAlpha? get session => _session;
+
+  List<AssistanceMessageAlpha> get messages => [
+        ...?_session?.messages,
+        ..._draftReplies,
+      ];
+
+  Future<void> load(String sessionId) async {
+    _session = await repository.loadAssistanceSession(sessionId);
+    notifyListeners();
+  }
+
+  void sendReply(String body) {
+    final trimmed = body.trim();
+    if (trimmed.isEmpty) {
+      return;
+    }
+    _draftReplies.add(
+      AssistanceMessageAlpha(
+        sender: 'You',
+        body: trimmed,
+        timeLabel: 'now',
+        fromUser: true,
+      ),
+    );
+    notifyListeners();
+  }
+
+  void returnToAgent() {
+    returnedToAgent = true;
+    _draftReplies.add(
+      const AssistanceMessageAlpha(
+        sender: 'You',
+        body: 'Return control with the current constraints and summarize before writing.',
+        timeLabel: 'now',
+        fromUser: true,
+      ),
+    );
+    notifyListeners();
+  }
+}
+
+class TuiViewModel {
+  TuiViewModel(this.repository);
+
+  final AlphaRepository repository;
+
+  Future<TerminalSessionAlpha> load(String sessionId) => repository.loadTerminalSession(sessionId);
+
+  List<String> keysForPage(TerminalKeyPage page) {
+    return switch (page) {
+      TerminalKeyPage.controls => ['ESC', 'TAB', 'CTRL', 'ALT', 'CMD', 'Left', 'Up', 'Down', 'Right'],
+      TerminalKeyPage.symbols => ['/', '~', '|', '&', r'$', ';', ':'],
+      TerminalKeyPage.brackets => ['{}', '[]', '()', '<>'],
+      TerminalKeyPage.functions => [
+          'F1',
+          'F2',
+          'F3',
+          'F4',
+          'F5',
+          'F6',
+          'F7',
+          'F8',
+          'F9',
+          'F10',
+          'F11',
+          'F12',
+          'Home',
+          'End',
+          'PgUp',
+          'PgDn',
+        ],
+    };
+  }
+}

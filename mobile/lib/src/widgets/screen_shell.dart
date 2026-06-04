@@ -17,7 +17,17 @@ class ScreenShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(title)),
+      appBar: AppBar(
+        title: Text(title),
+        actions: [
+          if (selectedRoute != HermesRoutes.settings)
+            IconButton(
+              onPressed: () => Navigator.of(context).pushNamed(HermesRoutes.settings),
+              icon: const Icon(Icons.settings_outlined),
+              tooltip: 'Settings',
+            ),
+        ],
+      ),
       body: body,
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
@@ -28,10 +38,11 @@ class ScreenShell extends StatelessWidget {
           }
         },
         destinations: const [
-          NavigationDestination(icon: Icon(Icons.dashboard_outlined), label: 'Dashboard'),
+          NavigationDestination(icon: Icon(Icons.space_dashboard_outlined), label: 'Home'),
           NavigationDestination(icon: Icon(Icons.hub_outlined), label: 'Agents'),
-          NavigationDestination(icon: Icon(Icons.verified_user_outlined), label: 'Approvals'),
-          NavigationDestination(icon: Icon(Icons.settings_outlined), label: 'Settings'),
+          NavigationDestination(icon: Icon(Icons.route_outlined), label: 'Missions'),
+          NavigationDestination(icon: Icon(Icons.mic_none_outlined), label: 'Voice'),
+          NavigationDestination(icon: Icon(Icons.inbox_outlined), label: 'Inbox'),
         ],
       ),
     );
@@ -43,34 +54,10 @@ class ScreenShell extends StatelessWidget {
   }
 
   static const _routes = [
-    HermesRoutes.dashboard,
+    HermesRoutes.home,
     HermesRoutes.agents,
-    HermesRoutes.approvals,
-    HermesRoutes.settings,
+    HermesRoutes.missions,
+    HermesRoutes.voice,
+    HermesRoutes.inbox,
   ];
-}
-
-class StatusTile extends StatelessWidget {
-  const StatusTile({
-    required this.title,
-    required this.value,
-    required this.detail,
-    super.key,
-  });
-
-  final String title;
-  final String value;
-  final String detail;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      title: Text(title),
-      subtitle: Text(detail),
-      trailing: Text(
-        value,
-        style: Theme.of(context).textTheme.titleLarge,
-      ),
-    );
-  }
 }

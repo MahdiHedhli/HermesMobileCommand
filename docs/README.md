@@ -30,6 +30,7 @@ This package turns the Hermes Mobile Control Plane feature specification into an
 
 - [Slice 001: Gateway foundation](implementation/slice-001-gateway-foundation.md)
 - [Slice 003: Hermes integration and mobile readiness](implementation/slice-003-hermes-integration-mobile-readiness.md)
+- [Mobile alpha UI](implementation/mobile-alpha-ui.md)
 
 ## Feature Specifications
 

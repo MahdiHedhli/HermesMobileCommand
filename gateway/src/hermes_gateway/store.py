@@ -80,6 +80,15 @@ class SQLiteStore:
                     FOREIGN KEY(device_id) REFERENCES devices(device_id)
                 );
 
+                CREATE TABLE IF NOT EXISTS request_nonces (
+                    device_id TEXT NOT NULL,
+                    nonce TEXT NOT NULL,
+                    timestamp INTEGER NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (device_id, nonce),
+                    FOREIGN KEY(device_id) REFERENCES devices(device_id)
+                );
+
                 CREATE TABLE IF NOT EXISTS agents (
                     agent_id TEXT NOT NULL,
                     node_id TEXT NOT NULL,
@@ -567,6 +576,20 @@ class SQLiteStore:
                 "SELECT * FROM auth_tokens WHERE token_hash = ?", (hash_token(token),)
             ).fetchone()
         return dict(row) if row else None
+
+    def record_request_nonce(self, *, device_id: str, nonce: str, timestamp: int) -> bool:
+        try:
+            with self.connect() as db:
+                db.execute(
+                    """
+                    INSERT INTO request_nonces (device_id, nonce, timestamp, created_at)
+                    VALUES (?, ?, ?, ?)
+                    """,
+                    (device_id, nonce, timestamp, utc_iso()),
+                )
+        except sqlite3.IntegrityError:
+            return False
+        return True
 
     def create_approval(self, approval: dict[str, Any]) -> dict[str, Any]:
         payload = approval.get("full_payload_redacted", {})

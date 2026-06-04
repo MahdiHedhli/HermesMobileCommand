@@ -192,6 +192,21 @@ class ApprovalRequest(BaseModel):
     options: list[str]
 
 
+class CreateApprovalRequest(StrictModel):
+    action_id: str
+    agent_id: str
+    session_id: str
+    requested_tool: str
+    risk_level: RiskLevel
+    summary: str
+    full_payload_redacted: dict[str, Any]
+    node_id: str | None = None
+    risk_category: str | None = None
+    resource_scope: str | None = None
+    options: list[str] = Field(default_factory=lambda: ["approve_once", "deny"])
+    expires_at: datetime
+
+
 class ApprovalDecisionRequest(StrictModel):
     decision_id: str
     decision: Literal["approve", "deny"]
@@ -205,6 +220,29 @@ class ApprovalDecisionResponse(BaseModel):
     approval_id: str
     state: ApprovalState
     applied_scope: ApprovalScope | None = None
+
+
+class InterventionRequest(StrictModel):
+    intervention_id: str
+    type: Literal[
+        "pause",
+        "resume",
+        "inject_instruction",
+        "cancel_task",
+        "kill_task",
+        "kill_agent",
+        "quarantine_agent",
+        "emergency_stop",
+    ]
+    reason: str
+    instruction: str | None = None
+    signed_payload: dict[str, Any]
+    signature: str
+
+
+class InterventionResponse(BaseModel):
+    intervention_id: str
+    resulting_state: str
 
 
 class MobileNotifyRequest(StrictModel):

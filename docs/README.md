@@ -45,6 +45,7 @@ This package turns the Hermes Mobile Control Plane feature specification into an
 - [ADR-0008: Staged voice architecture](adr/0008-staged-voice-architecture.md)
 - [ADR-0009: Hermes Wingman adoption policy](adr/0009-hermes-wingman-adoption-policy.md)
 - [ADR-0010: SQLite local gateway storage for first slice](adr/0010-sqlite-local-gateway-storage-for-first-slice.md)
+- [ADR-0011: Ed25519 canonical device request signing](adr/0011-ed25519-canonical-device-request-signing.md)
 
 ## Team Boundaries
 

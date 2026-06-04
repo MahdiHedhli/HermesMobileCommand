@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
+from conftest import pair_device, signed_request
+
 
 def test_mobile_notify_creates_notification_and_audit_event(client: TestClient) -> None:
+    paired = pair_device(client)
     response = client.post(
         "/v1/notifications/mobile_notify",
         json={
@@ -22,7 +25,13 @@ def test_mobile_notify_creates_notification_and_audit_event(client: TestClient) 
     assert notification["state"] == "queued"
     assert notification["category"] == "approval_required"
 
-    audit = client.get("/v1/audit/events", params={"event_type": "notification_queued"})
+    audit = signed_request(
+        client,
+        "GET",
+        "/v1/audit/events?event_type=notification_queued",
+        private_key=paired["private_key"],
+        device_id=paired["device"]["device_id"],
+    )
     assert audit.status_code == 200
     audit_events = audit.json()["audit_events"]
     assert audit_events
@@ -34,6 +43,7 @@ def test_mobile_notify_creates_notification_and_audit_event(client: TestClient) 
 
 
 def test_mobile_notify_rejects_secret_like_payload(client: TestClient) -> None:
+    paired = pair_device(client)
     response = client.post(
         "/v1/notifications/mobile_notify",
         json={
@@ -47,6 +57,12 @@ def test_mobile_notify_rejects_secret_like_payload(client: TestClient) -> None:
     )
 
     assert response.status_code == 422
-    audit = client.get("/v1/audit/events", params={"event_type": "notification_rejected"})
+    audit = signed_request(
+        client,
+        "GET",
+        "/v1/audit/events?event_type=notification_rejected",
+        private_key=paired["private_key"],
+        device_id=paired["device"]["device_id"],
+    )
     assert audit.status_code == 200
     assert audit.json()["audit_events"]

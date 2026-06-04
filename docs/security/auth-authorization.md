@@ -122,6 +122,26 @@ Consequential actions do not rely on bearer tokens alone. Approvals and emergenc
 
 The mobile app signs approval decisions with the device private key.
 
+Slice 002 uses canonical request signing for sensitive mobile control APIs. The signed string is:
+
+```text
+HMCP-SIGN-V1
+METHOD
+/v1/path?query
+unix_timestamp_seconds
+nonce
+sha256(raw_request_body)
+```
+
+Required headers:
+
+- `X-HMCP-Device-Id`
+- `X-HMCP-Timestamp`
+- `X-HMCP-Nonce`
+- `X-HMCP-Signature`
+
+The gateway verifies the registered Ed25519 public key, enforces a 300 second timestamp tolerance, records nonces per device, rejects replay, and audits failures as `auth_signature_failed`.
+
 Signed payload must include:
 
 - `approval_id`

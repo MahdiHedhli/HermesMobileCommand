@@ -131,8 +131,10 @@ paths:
       summary: Refresh a device-bound session token
       security: []
       parameters:
-        - $ref: "#/components/parameters/DeviceIdHeader"
-        - $ref: "#/components/parameters/DeviceSignatureHeader"
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
       requestBody:
         required: true
         content:
@@ -153,6 +155,11 @@ paths:
     get:
       tags: [devices]
       summary: List registered devices
+      parameters:
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
       responses:
         "200":
           description: Registered devices
@@ -173,7 +180,10 @@ paths:
       summary: Revoke a device
       parameters:
         - $ref: "#/components/parameters/DeviceId"
-        - $ref: "#/components/parameters/DeviceSignatureHeader"
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
       responses:
         "204":
           description: Device revoked
@@ -186,7 +196,10 @@ paths:
       summary: Rotate a device public key
       parameters:
         - $ref: "#/components/parameters/DeviceId"
-        - $ref: "#/components/parameters/DeviceSignatureHeader"
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
       requestBody:
         required: true
         content:
@@ -416,6 +429,10 @@ paths:
       tags: [approvals]
       summary: List approval requests
       parameters:
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
         - name: state
           in: query
           schema:
@@ -441,6 +458,23 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/ApprovalRequest"
+    post:
+      tags: [approvals]
+      summary: Create a pending approval request
+      description: Hermes-local endpoint. Unknown actions default to pending/blocked.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateApprovalRequest"
+      responses:
+        "201":
+          description: Approval request created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalRequest"
 
   /approvals/{approval_id}:
     get:
@@ -448,6 +482,10 @@ paths:
       summary: Get approval detail
       parameters:
         - $ref: "#/components/parameters/ApprovalId"
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
       responses:
         "200":
           description: Approval detail
@@ -462,8 +500,10 @@ paths:
       summary: Submit a signed approval decision
       parameters:
         - $ref: "#/components/parameters/ApprovalId"
-        - $ref: "#/components/parameters/DeviceIdHeader"
-        - $ref: "#/components/parameters/DeviceSignatureHeader"
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
       requestBody:
         required: true
         content:
@@ -480,14 +520,96 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /approvals/{approval_id}/approve_once:
+    post:
+      tags: [approvals]
+      summary: Approve an approval request once
+      parameters:
+        - $ref: "#/components/parameters/ApprovalId"
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
+      responses:
+        "200":
+          description: Approval approved once
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalDecisionResponse"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /approvals/{approval_id}/deny:
+    post:
+      tags: [approvals]
+      summary: Deny an approval request
+      parameters:
+        - $ref: "#/components/parameters/ApprovalId"
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
+      responses:
+        "200":
+          description: Approval denied
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalDecisionResponse"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /approvals/{approval_id}/expire:
+    post:
+      tags: [approvals]
+      summary: Expire an approval request
+      parameters:
+        - $ref: "#/components/parameters/ApprovalId"
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
+      responses:
+        "200":
+          description: Approval expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalDecisionResponse"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /approvals/{approval_id}/cancel:
+    post:
+      tags: [approvals]
+      summary: Cancel an approval request
+      parameters:
+        - $ref: "#/components/parameters/ApprovalId"
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
+      responses:
+        "200":
+          description: Approval cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalDecisionResponse"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
   /sessions/{session_id}/interventions:
     post:
       tags: [interventions]
       summary: Apply an emergency or live intervention
       parameters:
         - $ref: "#/components/parameters/SessionId"
-        - $ref: "#/components/parameters/DeviceIdHeader"
-        - $ref: "#/components/parameters/DeviceSignatureHeader"
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
       requestBody:
         required: true
         content:
@@ -737,16 +859,29 @@ components:
       in: path
       required: true
       schema: {type: string}
-    DeviceIdHeader:
-      name: X-Hermes-Device-Id
+    HMCPDeviceIdHeader:
+      name: X-HMCP-Device-Id
       in: header
       required: true
       schema: {type: string}
-    DeviceSignatureHeader:
-      name: X-Hermes-Device-Signature
+    HMCPTimestampHeader:
+      name: X-HMCP-Timestamp
       in: header
       required: true
       schema: {type: string}
+      description: Unix timestamp in seconds; gateway tolerance is 300 seconds.
+    HMCPNonceHeader:
+      name: X-HMCP-Nonce
+      in: header
+      required: true
+      schema: {type: string}
+      description: Unique nonce per device request.
+    HMCPSignatureHeader:
+      name: X-HMCP-Signature
+      in: header
+      required: true
+      schema: {type: string}
+      description: Ed25519 signature over the HMCP canonical request string.
     NodeId:
       name: node_id
       in: path
@@ -1208,6 +1343,47 @@ components:
           type: array
           items:
             enum: [approve_once, approve_for_session, approve_for_agent, approve_permanent, deny, always_deny, pause_agent, terminate_task]
+
+    CreateApprovalRequest:
+      type: object
+      required:
+        - action_id
+        - agent_id
+        - session_id
+        - requested_tool
+        - risk_level
+        - summary
+        - full_payload_redacted
+        - expires_at
+      properties:
+        action_id:
+          type: string
+        node_id:
+          type: string
+        agent_id:
+          type: string
+        session_id:
+          type: string
+        requested_tool:
+          type: string
+        risk_level:
+          $ref: "#/components/schemas/RiskLevel"
+        risk_category:
+          type: string
+        summary:
+          type: string
+        full_payload_redacted:
+          type: object
+          additionalProperties: true
+        resource_scope:
+          type: string
+        options:
+          type: array
+          items:
+            enum: [approve_once, approve_for_session, approve_for_agent, approve_permanent, deny, always_deny, pause_agent, terminate_task]
+        expires_at:
+          type: string
+          format: date-time
 
     ApprovalDecisionRequest:
       type: object

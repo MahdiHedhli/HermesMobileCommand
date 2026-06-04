@@ -4,7 +4,7 @@ import asyncio
 from datetime import timedelta
 from typing import Any
 
-from fastapi import FastAPI, Header, HTTPException, Request, WebSocket, WebSocketDisconnect, status
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, status
 
 from .config import Settings
 from .ids import new_id
@@ -16,9 +16,12 @@ from .schemas import (
     AuthTokenSet,
     CompletePairingRequest,
     CompletePairingResponse,
+    CreateApprovalRequest,
     CreatePairingSessionRequest,
     Device,
     GatewayHealth,
+    InterventionRequest,
+    InterventionResponse,
     Inventory,
     MobileNotifyRequest,
     Node,
@@ -28,6 +31,7 @@ from .schemas import (
     RefreshTokenRequest,
 )
 from .security import compare_token, expires_in, has_secret_text, new_token, now_utc, parse_utc
+from .signing import VerifiedDevice, verify_signed_request
 from .store import SQLiteStore
 
 DEFAULT_PERMISSIONS = ["read_state", "chat", "approve", "intervene"]
@@ -47,6 +51,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.settings = resolved_settings
     app.state.store = store
+
+    async def require_signed_device(request: Request) -> VerifiedDevice:
+        return await verify_signed_request(request, store=store, settings=resolved_settings)
+
+    signed_device_dependency = Depends(require_signed_device)
 
     @app.get("/v1/health", response_model=GatewayHealth)
     def health() -> GatewayHealth:
@@ -237,10 +246,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     @app.post("/v1/auth/token/refresh", response_model=AuthTokenSet)
-    def refresh_token(payload: RefreshTokenRequest) -> AuthTokenSet:
+    def refresh_token(
+        payload: RefreshTokenRequest,
+        signed_device: VerifiedDevice = signed_device_dependency,
+    ) -> AuthTokenSet:
         device = store.verify_refresh_token(payload.refresh_token)
         if device is None:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid refresh token")
+        if device["device_id"] != signed_device.device_id:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "refresh token device mismatch")
         access_token = new_token()
         refresh_token_value = new_token()
         store.create_auth_token(
@@ -262,24 +276,83 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     @app.get("/v1/devices")
-    def list_devices() -> dict[str, list[Device]]:
+    def list_devices(
+        _device: VerifiedDevice = signed_device_dependency,
+    ) -> dict[str, list[Device]]:
         return {"devices": [Device.model_validate(device) for device in store.list_devices()]}
 
     @app.delete("/v1/devices/{device_id}", status_code=status.HTTP_204_NO_CONTENT)
-    def revoke_device(device_id: str, request: Request) -> None:
+    def revoke_device(
+        device_id: str,
+        request: Request,
+        device: VerifiedDevice = signed_device_dependency,
+    ) -> None:
         if not store.revoke_device(device_id):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "device not found")
         store.append_audit_event(
             event_type="device_revoked",
-            actor_type="gateway",
-            actor_id="gateway",
+            actor_type="device",
+            actor_id=device.device_id,
             node_id=resolved_settings.node_id,
             request_id=_request_id(request),
             payload_redacted={"device_id": device_id},
         )
 
+    @app.post("/v1/approvals", response_model=ApprovalRequest, status_code=status.HTTP_201_CREATED)
+    def create_approval(payload: CreateApprovalRequest, request: Request) -> ApprovalRequest:
+        node_id = payload.node_id or resolved_settings.node_id
+        approval_id = new_id("appr")
+        approval = store.create_approval(
+            {
+                "approval_id": approval_id,
+                "action_id": payload.action_id,
+                "node_id": node_id,
+                "agent_id": payload.agent_id,
+                "session_id": payload.session_id,
+                "requested_tool": payload.requested_tool,
+                "risk_level": payload.risk_level,
+                "risk_category": payload.risk_category or "unknown_action",
+                "summary": payload.summary,
+                "full_payload_redacted": payload.full_payload_redacted,
+                "resource_scope": payload.resource_scope,
+                "state": "pending",
+                "options": payload.options or ["deny"],
+                "expires_at": payload.expires_at.isoformat(),
+            }
+        )
+        store.append_audit_event(
+            event_type="approval_requested",
+            actor_type="hermes",
+            actor_id=payload.agent_id,
+            node_id=node_id,
+            agent_id=payload.agent_id,
+            session_id=payload.session_id,
+            approval_id=approval_id,
+            request_id=_request_id(request),
+            payload_redacted={
+                "requested_tool": payload.requested_tool,
+                "risk_level": payload.risk_level,
+                "risk_category": payload.risk_category or "unknown_action",
+            },
+        )
+        store.create_event(
+            node_id=node_id,
+            agent_id=payload.agent_id,
+            session_id=payload.session_id,
+            event_type="approval.requested",
+            payload={
+                "approval_id": approval_id,
+                "state": "pending",
+                "risk_level": payload.risk_level,
+            },
+        )
+        return ApprovalRequest.model_validate(approval)
+
     @app.get("/v1/approvals")
-    def list_approvals(state: str | None = None) -> dict[str, list[ApprovalRequest]]:
+    def list_approvals(
+        state: str | None = None,
+        _device: VerifiedDevice = signed_device_dependency,
+    ) -> dict[str, list[ApprovalRequest]]:
         _expire_pending_approvals(store)
         return {
             "approvals": [
@@ -289,7 +362,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         }
 
     @app.get("/v1/approvals/{approval_id}", response_model=ApprovalRequest)
-    def get_approval(approval_id: str) -> ApprovalRequest:
+    def get_approval(
+        approval_id: str,
+        _device: VerifiedDevice = signed_device_dependency,
+    ) -> ApprovalRequest:
         _expire_pending_approvals(store)
         try:
             return ApprovalRequest.model_validate(store.get_approval(approval_id))
@@ -301,60 +377,81 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         approval_id: str,
         payload: ApprovalDecisionRequest,
         request: Request,
-        x_hermes_device_id: str = Header(...),
-        x_hermes_device_signature: str = Header(...),
+        device: VerifiedDevice = signed_device_dependency,
     ) -> ApprovalDecisionResponse:
-        if not x_hermes_device_signature:
-            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "missing device signature")
-        try:
-            device = store.get_device(x_hermes_device_id)
-            approval = store.get_approval(approval_id)
-        except KeyError as exc:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "approval or device not found") from exc
-        if device["status"] != "active":
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "device is not active")
-        if approval["state"] != "pending":
-            raise HTTPException(status.HTTP_409_CONFLICT, "approval is not pending")
-        if parse_utc(approval["expires_at"]) <= now_utc():
-            store.resolve_approval(approval_id, "expired")
-            store.append_audit_event(
-                event_type="approval_expired",
-                actor_type="gateway",
-                actor_id="gateway",
-                node_id=approval["node_id"],
-                agent_id=approval["agent_id"],
-                session_id=approval["session_id"],
-                approval_id=approval_id,
-                request_id=_request_id(request),
-                payload_redacted={"reason": "decision_after_expiry"},
-            )
-            raise HTTPException(status.HTTP_409_CONFLICT, "approval expired")
-
         state = "approved" if payload.decision == "approve" else "denied"
-        store.resolve_approval(approval_id, state)
-        store.append_audit_event(
-            event_type="approval_decision",
-            actor_type="device",
-            actor_id=x_hermes_device_id,
-            node_id=approval["node_id"],
-            agent_id=approval["agent_id"],
-            session_id=approval["session_id"],
+        return _transition_approval(
+            store=store,
             approval_id=approval_id,
+            target_state=state,
             request_id=_request_id(request),
-            payload_redacted={"decision": payload.decision, "scope": payload.scope},
+            actor_device_id=device.device_id,
+            decision=payload.decision,
+            scope=payload.scope,
         )
-        event = store.create_event(
-            node_id=approval["node_id"],
-            agent_id=approval["agent_id"],
-            session_id=approval["session_id"],
-            event_type="approval.resolved",
-            payload={"approval_id": approval_id, "state": state, "scope": payload.scope},
-        )
-        _ = event
-        return ApprovalDecisionResponse(
+
+    @app.post("/v1/approvals/{approval_id}/approve_once", response_model=ApprovalDecisionResponse)
+    def approve_once(
+        approval_id: str,
+        request: Request,
+        device: VerifiedDevice = signed_device_dependency,
+    ) -> ApprovalDecisionResponse:
+        return _transition_approval(
+            store=store,
             approval_id=approval_id,
-            state=state,
-            applied_scope=payload.scope,
+            target_state="approved",
+            request_id=_request_id(request),
+            actor_device_id=device.device_id,
+            decision="approve",
+            scope="once",
+        )
+
+    @app.post("/v1/approvals/{approval_id}/deny", response_model=ApprovalDecisionResponse)
+    def deny_approval(
+        approval_id: str,
+        request: Request,
+        device: VerifiedDevice = signed_device_dependency,
+    ) -> ApprovalDecisionResponse:
+        return _transition_approval(
+            store=store,
+            approval_id=approval_id,
+            target_state="denied",
+            request_id=_request_id(request),
+            actor_device_id=device.device_id,
+            decision="deny",
+            scope="once",
+        )
+
+    @app.post("/v1/approvals/{approval_id}/expire", response_model=ApprovalDecisionResponse)
+    def expire_approval(
+        approval_id: str,
+        request: Request,
+        device: VerifiedDevice = signed_device_dependency,
+    ) -> ApprovalDecisionResponse:
+        return _transition_approval(
+            store=store,
+            approval_id=approval_id,
+            target_state="expired",
+            request_id=_request_id(request),
+            actor_device_id=device.device_id,
+            decision=None,
+            scope=None,
+        )
+
+    @app.post("/v1/approvals/{approval_id}/cancel", response_model=ApprovalDecisionResponse)
+    def cancel_approval(
+        approval_id: str,
+        request: Request,
+        device: VerifiedDevice = signed_device_dependency,
+    ) -> ApprovalDecisionResponse:
+        return _transition_approval(
+            store=store,
+            approval_id=approval_id,
+            target_state="cancelled",
+            request_id=_request_id(request),
+            actor_device_id=device.device_id,
+            decision=None,
+            scope=None,
         )
 
     @app.post(
@@ -417,7 +514,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return Notification.model_validate(notification)
 
     @app.get("/v1/notifications")
-    def list_notifications(category: str | None = None) -> dict[str, list[Notification]]:
+    def list_notifications(
+        category: str | None = None,
+        _device: VerifiedDevice = signed_device_dependency,
+    ) -> dict[str, list[Notification]]:
         return {
             "notifications": [
                 Notification.model_validate(notification)
@@ -427,9 +527,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/v1/audit/events")
     def list_audit_events(
-        event_type: str | None = None, limit: int = 100
+        event_type: str | None = None,
+        limit: int = 100,
+        _device: VerifiedDevice = signed_device_dependency,
     ) -> dict[str, list[dict[str, Any]]]:
         return {"audit_events": store.list_audit_events(event_type=event_type, limit=limit)}
+
+    @app.post("/v1/sessions/{session_id}/interventions", response_model=InterventionResponse)
+    def intervention_placeholder(
+        session_id: str,
+        payload: InterventionRequest,
+        request: Request,
+        device: VerifiedDevice = signed_device_dependency,
+    ) -> InterventionResponse:
+        store.append_audit_event(
+            event_type="intervention_placeholder_requested",
+            actor_type="device",
+            actor_id=device.device_id,
+            node_id=resolved_settings.node_id,
+            session_id=session_id,
+            request_id=_request_id(request),
+            payload_redacted={"type": payload.type, "reason": payload.reason},
+        )
+        return InterventionResponse(
+            intervention_id=payload.intervention_id,
+            resulting_state="not_executed_placeholder",
+        )
 
     @app.get("/v1/events")
     def list_events(after: str | None = None, limit: int = 500) -> dict[str, Any]:
@@ -509,6 +632,101 @@ def _expire_pending_approvals(store: SQLiteStore) -> None:
     for approval in store.list_approvals(state="pending"):
         if parse_utc(approval["expires_at"]) <= now_utc():
             store.resolve_approval(approval["approval_id"], "expired")
+            request_id = new_id("req")
+            store.append_audit_event(
+                event_type="approval_expired",
+                actor_type="gateway",
+                actor_id="gateway",
+                node_id=approval["node_id"],
+                agent_id=approval["agent_id"],
+                session_id=approval["session_id"],
+                approval_id=approval["approval_id"],
+                request_id=request_id,
+                payload_redacted={"reason": "expiry_scan"},
+            )
+            store.create_event(
+                node_id=approval["node_id"],
+                agent_id=approval["agent_id"],
+                session_id=approval["session_id"],
+                event_type="approval.resolved",
+                payload={"approval_id": approval["approval_id"], "state": "expired"},
+            )
+
+
+def _transition_approval(
+    *,
+    store: SQLiteStore,
+    approval_id: str,
+    target_state: str,
+    request_id: str,
+    actor_device_id: str,
+    decision: str | None,
+    scope: str | None,
+) -> ApprovalDecisionResponse:
+    try:
+        approval = store.get_approval(approval_id)
+    except KeyError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "approval not found") from exc
+
+    if approval["state"] != "pending":
+        raise HTTPException(status.HTTP_409_CONFLICT, "approval is not pending")
+
+    if target_state in {"approved", "denied"} and parse_utc(approval["expires_at"]) <= now_utc():
+        store.resolve_approval(approval_id, "expired")
+        store.append_audit_event(
+            event_type="approval_expired",
+            actor_type="gateway",
+            actor_id="gateway",
+            node_id=approval["node_id"],
+            agent_id=approval["agent_id"],
+            session_id=approval["session_id"],
+            approval_id=approval_id,
+            request_id=request_id,
+            payload_redacted={"reason": "decision_after_expiry"},
+        )
+        store.create_event(
+            node_id=approval["node_id"],
+            agent_id=approval["agent_id"],
+            session_id=approval["session_id"],
+            event_type="approval.resolved",
+            payload={"approval_id": approval_id, "state": "expired"},
+        )
+        raise HTTPException(status.HTTP_409_CONFLICT, "approval expired")
+
+    store.resolve_approval(approval_id, target_state)
+    event_type = {
+        "approved": "approval_decision",
+        "denied": "approval_decision",
+        "expired": "approval_expired",
+        "cancelled": "approval_cancelled",
+    }[target_state]
+    store.append_audit_event(
+        event_type=event_type,
+        actor_type="device",
+        actor_id=actor_device_id,
+        node_id=approval["node_id"],
+        agent_id=approval["agent_id"],
+        session_id=approval["session_id"],
+        approval_id=approval_id,
+        request_id=request_id,
+        payload_redacted={
+            "decision": decision,
+            "scope": scope,
+            "state": target_state,
+        },
+    )
+    store.create_event(
+        node_id=approval["node_id"],
+        agent_id=approval["agent_id"],
+        session_id=approval["session_id"],
+        event_type="approval.resolved",
+        payload={"approval_id": approval_id, "state": target_state, "scope": scope},
+    )
+    return ApprovalDecisionResponse(
+        approval_id=approval_id,
+        state=target_state,  # type: ignore[arg-type]
+        applied_scope=scope,  # type: ignore[arg-type]
+    )
 
 
 def _request_id(request: Request) -> str:

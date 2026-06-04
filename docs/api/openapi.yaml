@@ -63,6 +63,28 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /pairing/start:
+    post:
+      tags: [pairing]
+      summary: Create a short-lived pairing session
+      description: Alias for `/pairing/sessions` used by the first executable slice.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePairingSessionRequest"
+      responses:
+        "201":
+          description: Pairing challenge created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PairingSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /pairing/sessions/{pairing_id}:
     get:
       tags: [pairing]
@@ -178,6 +200,25 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Device"
+
+  /nodes/register:
+    post:
+      tags: [inventory]
+      summary: Register or update the local Hermes node
+      description: Hermes-facing skeleton endpoint for local node metadata registration.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NodeRegistration"
+      responses:
+        "201":
+          description: Node registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Node"
 
   /inventory:
     get:
@@ -807,6 +848,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Permission"
+        ttl_seconds:
+          type: integer
+          minimum: -1
+          maximum: 3600
+          description: Test/development override for pairing token expiry.
 
     PairingSession:
       type: object
@@ -814,6 +860,9 @@ components:
       properties:
         pairing_id:
           type: string
+        pairing_token:
+          type: string
+          description: One-time token returned only when creating a pairing session.
         challenge:
           type: string
         status:
@@ -920,6 +969,28 @@ components:
           type: string
         new_device_public_key:
           type: string
+
+    NodeRegistration:
+      type: object
+      required: [display_name, gateway_base_url, node_fingerprint, gateway_version]
+      properties:
+        node_id:
+          type: string
+        display_name:
+          type: string
+        environment:
+          $ref: "#/components/schemas/Environment"
+        gateway_base_url:
+          type: string
+        node_fingerprint:
+          type: string
+        gateway_version:
+          type: string
+        hermes_version:
+          type: string
+        tags:
+          type: array
+          items: {type: string}
 
     Inventory:
       type: object

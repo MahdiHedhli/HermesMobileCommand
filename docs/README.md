@@ -22,6 +22,10 @@ This package turns the Hermes Mobile Control Plane feature specification into an
 - [Mobile UX architecture](mobile-ux-architecture.md)
 - [Build roadmap](roadmap.md)
 
+## Implementation Slices
+
+- [Slice 001: Gateway foundation](implementation/slice-001-gateway-foundation.md)
+
 ## Adoption Audits
 
 - [Hermes Wingman adoption matrix](adoption/hermes-wingman-adoption-matrix.md)
@@ -40,6 +44,7 @@ This package turns the Hermes Mobile Control Plane feature specification into an
 - [ADR-0007: Local append-only audit log](adr/0007-local-append-only-audit-log.md)
 - [ADR-0008: Staged voice architecture](adr/0008-staged-voice-architecture.md)
 - [ADR-0009: Hermes Wingman adoption policy](adr/0009-hermes-wingman-adoption-policy.md)
+- [ADR-0010: SQLite local gateway storage for first slice](adr/0010-sqlite-local-gateway-storage-for-first-slice.md)
 
 ## Team Boundaries
 

@@ -1,1 +1,8 @@
 .DS_Store
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+.venv/
+gateway/.venv/
+.hermes-mobile-gateway/

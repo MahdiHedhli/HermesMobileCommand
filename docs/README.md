@@ -32,6 +32,8 @@ This package turns the Hermes Mobile Control Plane feature specification into an
 - [Slice 003: Hermes integration and mobile readiness](implementation/slice-003-hermes-integration-mobile-readiness.md)
 - [Mobile alpha UI](implementation/mobile-alpha-ui.md)
 - [Mobile realness 002](implementation/mobile-realness-002.md)
+- [Native readiness](implementation/native-readiness.md)
+- [Mobile native realtime 003](implementation/mobile-native-realtime-003.md)
 
 ## Feature Specifications
 

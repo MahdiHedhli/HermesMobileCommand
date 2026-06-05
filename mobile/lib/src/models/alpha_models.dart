@@ -134,6 +134,7 @@ class ApprovalAlpha {
     required this.payloadPreview,
     required this.expiresIn,
     required this.constraints,
+    this.decisionScope,
   });
 
   final String id;
@@ -148,9 +149,11 @@ class ApprovalAlpha {
   final String payloadPreview;
   final String expiresIn;
   final List<String> constraints;
+  final String? decisionScope;
 
   ApprovalAlpha copyWith({
     String? state,
+    String? decisionScope,
   }) {
     return ApprovalAlpha(
       id: id,
@@ -165,6 +168,7 @@ class ApprovalAlpha {
       payloadPreview: payloadPreview,
       expiresIn: expiresIn,
       constraints: constraints,
+      decisionScope: decisionScope ?? this.decisionScope,
     );
   }
 }

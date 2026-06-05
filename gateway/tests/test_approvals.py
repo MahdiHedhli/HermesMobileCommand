@@ -57,6 +57,61 @@ def test_deny_approval(client: TestClient) -> None:
     assert response.json()["state"] == "denied"
 
 
+def test_scoped_approval_decision_records_session_scope(client: TestClient) -> None:
+    paired = pair_device(client)
+    approval = create_approval(client, action_id="act_session_scope")
+
+    response = signed_request(
+        client,
+        "POST",
+        f"/v1/approvals/{approval['approval_id']}/decisions",
+        private_key=paired["private_key"],
+        device_id=paired["device"]["device_id"],
+        json_body=decision_body(
+            approval_id=approval["approval_id"],
+            decision="approve",
+            scope="session",
+        ),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["state"] == "approved"
+    assert response.json()["applied_scope"] == "session"
+
+    detail = signed_request(
+        client,
+        "GET",
+        f"/v1/approvals/{approval['approval_id']}",
+        private_key=paired["private_key"],
+        device_id=paired["device"]["device_id"],
+    )
+    assert detail.status_code == 200
+    assert detail.json()["decision_scope"] == "session"
+    assert approval_event_exists(client, paired, approval["approval_id"], "approved")
+
+
+def test_scoped_approval_decision_records_agent_scope(client: TestClient) -> None:
+    paired = pair_device(client)
+    approval = create_approval(client, action_id="act_agent_scope")
+
+    response = signed_request(
+        client,
+        "POST",
+        f"/v1/approvals/{approval['approval_id']}/decisions",
+        private_key=paired["private_key"],
+        device_id=paired["device"]["device_id"],
+        json_body=decision_body(
+            approval_id=approval["approval_id"],
+            decision="approve",
+            scope="agent",
+        ),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["state"] == "approved"
+    assert response.json()["applied_scope"] == "agent"
+
+
 def test_expire_approval(client: TestClient) -> None:
     paired = pair_device(client)
     approval = create_approval(client, action_id="act_expire")
@@ -170,6 +225,22 @@ def create_approval(
     )
     assert response.status_code == 201
     return response.json()
+
+
+def decision_body(*, approval_id: str, decision: str, scope: str) -> dict:
+    decision_id = f"dec_{approval_id}_{scope}"
+    return {
+        "decision_id": decision_id,
+        "decision": decision,
+        "scope": scope,
+        "signed_payload": {
+            "approval_id": approval_id,
+            "decision": decision,
+            "scope": scope,
+            "decision_id": decision_id,
+        },
+        "signature": "hmcp-device-request-signature",
+    }
 
 
 def audit_exists(client: TestClient, paired: dict, event_type: str) -> bool:

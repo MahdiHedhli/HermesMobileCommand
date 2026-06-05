@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../app_runtime.dart';
 import '../models/alpha_models.dart';
 import '../repositories/alpha_repository.dart';
 import '../routes.dart';
@@ -10,26 +11,41 @@ import '../widgets/screen_shell.dart';
 class ApprovalDetailScreen extends StatefulWidget {
   const ApprovalDetailScreen({
     required this.repository,
+    this.runtime,
     super.key,
   });
 
   final AlphaRepository repository;
+  final HermesAppRuntime? runtime;
 
   @override
   State<ApprovalDetailScreen> createState() => _ApprovalDetailScreenState();
 }
 
 class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
-  late final ApprovalDetailViewModel _viewModel;
   late Future<ApprovalAlpha> _approval;
   String _approvalId = 'appr-shell';
+  String? _draftResponse;
   bool _busy = false;
   bool _loadedRoute = false;
+  int _seenEventRevision = -1;
+
+  AlphaRepository get _repository =>
+      widget.runtime?.alphaRepository ?? widget.repository;
+
+  ApprovalDetailViewModel get _viewModel =>
+      ApprovalDetailViewModel(_repository);
 
   @override
   void initState() {
     super.initState();
-    _viewModel = ApprovalDetailViewModel(widget.repository);
+    widget.runtime?.addListener(_runtimeChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.runtime?.removeListener(_runtimeChanged);
+    super.dispose();
   }
 
   @override
@@ -41,6 +57,28 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
       _approvalId = approvalId;
       _approval = _viewModel.load(_approvalId);
       _loadedRoute = true;
+    }
+  }
+
+  void _runtimeChanged() {
+    final runtime = widget.runtime;
+    if (!_loadedRoute || runtime == null) {
+      return;
+    }
+    if (_seenEventRevision == runtime.eventRevision) {
+      setState(() {});
+      return;
+    }
+    _seenEventRevision = runtime.eventRevision;
+    final lastEvent = runtime.lastEvent;
+    final eventApprovalId = lastEvent?.payload['approval_id'] as String?;
+    if (lastEvent == null ||
+        eventApprovalId == _approvalId ||
+        lastEvent.type == 'approval.requested' ||
+        lastEvent.type == 'approval.resolved') {
+      setState(() {
+        _approval = _viewModel.load(_approvalId);
+      });
     }
   }
 
@@ -77,6 +115,13 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
                     DetailRow(label: 'Node', value: approval.node),
                     DetailRow(label: 'Session', value: approval.session),
                     DetailRow(label: 'Expires', value: approval.expiresIn),
+                    if (approval.decisionScope != null)
+                      DetailRow(
+                        label: 'Scope',
+                        value: approval.decisionScope!,
+                      ),
+                    if (_draftResponse != null)
+                      DetailRow(label: 'Draft', value: _draftResponse!),
                   ],
                 ),
               ),
@@ -120,6 +165,7 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
                 approval: approval,
                 busy: _busy,
                 onDecision: _submitDecision,
+                onDraftResponse: _saveDraftResponse,
               ),
             ],
           );
@@ -154,6 +200,19 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
         setState(() => _busy = false);
       }
     }
+  }
+
+  void _saveDraftResponse(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      return;
+    }
+    setState(() {
+      _draftResponse = trimmed;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Draft response saved locally')),
+    );
   }
 }
 
@@ -245,6 +304,7 @@ class _ApprovalActions extends StatelessWidget {
     required this.approval,
     required this.busy,
     required this.onDecision,
+    required this.onDraftResponse,
   });
 
   final ApprovalDetailViewModel viewModel;
@@ -252,6 +312,7 @@ class _ApprovalActions extends StatelessWidget {
   final bool busy;
   final Future<void> Function(
       String action, Future<ApprovalAlpha> Function() submit) onDecision;
+  final ValueChanged<String> onDraftResponse;
 
   @override
   Widget build(BuildContext context) {
@@ -320,16 +381,31 @@ class _ApprovalActions extends StatelessWidget {
                     ?.copyWith(fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 8),
-              ...viewModel.moreActions.map(
-                (action) => ListTile(
-                  leading: Icon(_actionIcon(action)),
-                  title: Text(action),
-                  onTap: () {
-                    Navigator.of(context).pop();
-                    _handleMoreAction(context, action);
-                  },
-                ),
-              ),
+              ...viewModel.moreActionsFor(approval).map(
+                    (action) => ListTile(
+                      enabled: action.enabled,
+                      leading: Icon(_actionIcon(action.kind)),
+                      title: Text(action.label),
+                      subtitle: Text(action.description),
+                      trailing: action.planned
+                          ? StatusPill(
+                              label: 'planned',
+                              color: Theme.of(context).colorScheme.outline,
+                            )
+                          : action.enabled
+                              ? null
+                              : StatusPill(
+                                  label: 'disabled',
+                                  color: Theme.of(context).colorScheme.outline,
+                                ),
+                      onTap: action.enabled
+                          ? () {
+                              Navigator.of(context).pop();
+                              _handleMoreAction(context, action);
+                            }
+                          : null,
+                    ),
+                  ),
             ],
           ),
         );
@@ -337,34 +413,164 @@ class _ApprovalActions extends StatelessWidget {
     );
   }
 
-  void _handleMoreAction(BuildContext context, String action) {
-    if (action == 'Open TUA Session') {
-      Navigator.of(context).pushNamed(HermesRoutes.tua, arguments: approval.id);
-      return;
+  void _handleMoreAction(BuildContext context, ApprovalMoreAction action) {
+    switch (action.kind) {
+      case ApprovalMoreActionKind.approveOnce:
+        onDecision(
+          'Approve Once',
+          () => viewModel.approveOnce(approval.id),
+        );
+        return;
+      case ApprovalMoreActionKind.deny:
+        onDecision(
+          'Deny',
+          () => viewModel.deny(approval.id),
+        );
+        return;
+      case ApprovalMoreActionKind.approveForSession:
+        onDecision(
+          'Approve For Session',
+          () => viewModel.approveForSession(approval.id),
+        );
+        return;
+      case ApprovalMoreActionKind.approveForAgent:
+        onDecision(
+          'Approve For Agent',
+          () => viewModel.approveForAgent(approval.id),
+        );
+        return;
+      case ApprovalMoreActionKind.other:
+        _showDraftResponse(context);
+        return;
+      case ApprovalMoreActionKind.moreInfo:
+        _showMoreInfo(context);
+        return;
+      case ApprovalMoreActionKind.openTua:
+        Navigator.of(context)
+            .pushNamed(HermesRoutes.tua, arguments: approval.id);
+        return;
+      case ApprovalMoreActionKind.openTui:
+        Navigator.of(context)
+            .pushNamed(HermesRoutes.tui, arguments: approval.id);
+        return;
+      case ApprovalMoreActionKind.approveForever:
+      case ApprovalMoreActionKind.pauseAgent:
+      case ApprovalMoreActionKind.stopTask:
+      case ApprovalMoreActionKind.stopAgent:
+        return;
     }
-    if (action == 'Open TUI Session') {
-      Navigator.of(context).pushNamed(HermesRoutes.tui, arguments: approval.id);
-      return;
-    }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$action selected for ${approval.agentName}')),
+  }
+
+  void _showDraftResponse(BuildContext context) {
+    final controller = TextEditingController();
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Draft Modified Response',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Saved locally only. Gateway support for modified approval responses is planned.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: controller,
+                  minLines: 3,
+                  maxLines: 5,
+                  decoration: const InputDecoration(
+                    hintText: 'Describe constraints or alternate instruction',
+                    prefixIcon: Icon(Icons.edit_note_outlined),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () {
+                      onDraftResponse(controller.text);
+                      Navigator.of(context).pop();
+                    },
+                    icon: const Icon(Icons.save_outlined),
+                    label: const Text('Save Draft'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showMoreInfo(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Approval Details'),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                DetailRow(label: 'Approval', value: approval.id),
+                DetailRow(label: 'Risk', value: approval.risk),
+                DetailRow(label: 'Tool', value: approval.requestedTool),
+                DetailRow(label: 'Agent', value: approval.agentName),
+                DetailRow(label: 'Node', value: approval.node),
+                DetailRow(label: 'Session', value: approval.session),
+                DetailRow(label: 'State', value: approval.state),
+                if (approval.decisionScope != null)
+                  DetailRow(label: 'Scope', value: approval.decisionScope!),
+                const SizedBox(height: 10),
+                SelectableText(
+                  approval.payloadPreview,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        fontFamily: 'monospace',
+                      ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
     );
   }
 }
 
-IconData _actionIcon(String action) {
-  if (action.startsWith('Approve')) {
-    return Icons.verified_outlined;
-  }
+IconData _actionIcon(ApprovalMoreActionKind action) {
   return switch (action) {
-    'Other' => Icons.edit_note_outlined,
-    'More Info' => Icons.info_outline,
-    'Open TUA Session' => Icons.support_agent_outlined,
-    'Open TUI Session' => Icons.terminal_outlined,
-    'Pause Agent' => Icons.pause_circle_outline,
-    'Stop Task' => Icons.stop_circle_outlined,
-    'Stop Agent' => Icons.power_settings_new,
-    _ => Icons.block_outlined,
+    ApprovalMoreActionKind.approveOnce => Icons.verified_outlined,
+    ApprovalMoreActionKind.approveForSession => Icons.verified_user_outlined,
+    ApprovalMoreActionKind.approveForAgent => Icons.admin_panel_settings,
+    ApprovalMoreActionKind.approveForever => Icons.all_inclusive,
+    ApprovalMoreActionKind.deny => Icons.block_outlined,
+    ApprovalMoreActionKind.other => Icons.edit_note_outlined,
+    ApprovalMoreActionKind.moreInfo => Icons.info_outline,
+    ApprovalMoreActionKind.openTua => Icons.support_agent_outlined,
+    ApprovalMoreActionKind.openTui => Icons.terminal_outlined,
+    ApprovalMoreActionKind.pauseAgent => Icons.pause_circle_outline,
+    ApprovalMoreActionKind.stopTask => Icons.stop_circle_outlined,
+    ApprovalMoreActionKind.stopAgent => Icons.power_settings_new,
   };
 }
 

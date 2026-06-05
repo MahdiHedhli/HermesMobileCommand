@@ -76,7 +76,19 @@ class MockAlphaRepository implements AlphaRepository {
   @override
   Future<ApprovalAlpha> approveOnce(String approvalId) async {
     final approval = await loadApproval(approvalId);
-    return approval.copyWith(state: 'approved');
+    return approval.copyWith(state: 'approved', decisionScope: 'once');
+  }
+
+  @override
+  Future<ApprovalAlpha> approveForSession(String approvalId) async {
+    final approval = await loadApproval(approvalId);
+    return approval.copyWith(state: 'approved', decisionScope: 'session');
+  }
+
+  @override
+  Future<ApprovalAlpha> approveForAgent(String approvalId) async {
+    final approval = await loadApproval(approvalId);
+    return approval.copyWith(state: 'approved', decisionScope: 'agent');
   }
 
   @override

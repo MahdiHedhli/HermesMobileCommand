@@ -24,9 +24,51 @@ class ApprovalsRepository {
     return getApproval(approvalId);
   }
 
+  Future<ApprovalRequestModel> approveForSession(String approvalId) async {
+    await decide(
+      approvalId,
+      decision: 'approve',
+      scope: 'session',
+    );
+    return getApproval(approvalId);
+  }
+
+  Future<ApprovalRequestModel> approveForAgent(String approvalId) async {
+    await decide(
+      approvalId,
+      decision: 'approve',
+      scope: 'agent',
+    );
+    return getApproval(approvalId);
+  }
+
   Future<ApprovalRequestModel> deny(String approvalId) async {
     await apiClient.postJson('/approvals/$approvalId/deny');
     return getApproval(approvalId);
+  }
+
+  Future<Map<String, dynamic>> decide(
+    String approvalId, {
+    required String decision,
+    required String scope,
+  }) {
+    final decisionId = 'dec_${DateTime.now().microsecondsSinceEpoch}';
+    final signedPayload = {
+      'approval_id': approvalId,
+      'decision': decision,
+      'scope': scope,
+      'decision_id': decisionId,
+    };
+    return apiClient.postJson(
+      '/approvals/$approvalId/decisions',
+      body: {
+        'decision_id': decisionId,
+        'decision': decision,
+        'scope': scope,
+        'signed_payload': signedPayload,
+        'signature': 'hmcp-device-request-signature',
+      },
+    );
   }
 }
 

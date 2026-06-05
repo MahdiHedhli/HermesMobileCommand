@@ -27,14 +27,16 @@ class HermesRoutes {
   static const settings = '/settings';
 
   static Map<String, WidgetBuilder> routes(HermesAppRuntime runtime) => {
-        home: (_) => HomeScreen(repository: runtime.alphaRepository),
+        home: (_) =>
+            HomeScreen(repository: runtime.alphaRepository, runtime: runtime),
         agents: (_) => AgentsScreen(repository: runtime.alphaRepository),
         agentDetail: (_) =>
             AgentDetailScreen(repository: runtime.alphaRepository),
         missions: (_) => MissionsScreen(repository: runtime.alphaRepository),
-        inbox: (_) => InboxScreen(repository: runtime.alphaRepository),
-        approvalDetail: (_) =>
-            ApprovalDetailScreen(repository: runtime.alphaRepository),
+        inbox: (_) =>
+            InboxScreen(repository: runtime.alphaRepository, runtime: runtime),
+        approvalDetail: (_) => ApprovalDetailScreen(
+            repository: runtime.alphaRepository, runtime: runtime),
         tua: (_) => TuaScreen(repository: runtime.alphaRepository),
         tui: (_) => TuiScreen(repository: runtime.alphaRepository),
         voice: (_) => VoiceScreen(repository: runtime.alphaRepository),

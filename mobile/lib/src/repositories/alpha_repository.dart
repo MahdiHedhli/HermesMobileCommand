@@ -8,6 +8,8 @@ abstract class AlphaRepository {
   Future<List<InboxItem>> loadInbox();
   Future<ApprovalAlpha> loadApproval(String approvalId);
   Future<ApprovalAlpha> approveOnce(String approvalId);
+  Future<ApprovalAlpha> approveForSession(String approvalId);
+  Future<ApprovalAlpha> approveForAgent(String approvalId);
   Future<ApprovalAlpha> deny(String approvalId);
   Future<AssistanceSessionAlpha> loadAssistanceSession(String sessionId);
   Future<TerminalSessionAlpha> loadTerminalSession(String sessionId);

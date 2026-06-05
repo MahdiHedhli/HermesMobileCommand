@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../app_runtime.dart';
 import '../models/alpha_models.dart';
 import '../repositories/alpha_repository.dart';
 import '../routes.dart';
@@ -10,10 +11,12 @@ import '../widgets/screen_shell.dart';
 class InboxScreen extends StatefulWidget {
   const InboxScreen({
     required this.repository,
+    this.runtime,
     super.key,
   });
 
   final AlphaRepository repository;
+  final HermesAppRuntime? runtime;
 
   @override
   State<InboxScreen> createState() => _InboxScreenState();
@@ -21,13 +24,39 @@ class InboxScreen extends StatefulWidget {
 
 class _InboxScreenState extends State<InboxScreen> {
   late final InboxViewModel _viewModel;
-  late final Future<List<InboxItem>> _items;
+  late Future<List<InboxItem>> _items;
+  int _seenEventRevision = -1;
+
+  AlphaRepository get _repository =>
+      widget.runtime?.alphaRepository ?? widget.repository;
 
   @override
   void initState() {
     super.initState();
-    _viewModel = InboxViewModel(widget.repository);
+    _viewModel = InboxViewModel(_repository);
     _items = _viewModel.loadInbox();
+    widget.runtime?.addListener(_runtimeChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.runtime?.removeListener(_runtimeChanged);
+    super.dispose();
+  }
+
+  void _runtimeChanged() {
+    final runtime = widget.runtime;
+    if (runtime == null) {
+      return;
+    }
+    if (_seenEventRevision != runtime.eventRevision) {
+      _seenEventRevision = runtime.eventRevision;
+      setState(() {
+        _items = InboxViewModel(_repository).loadInbox();
+      });
+      return;
+    }
+    setState(() {});
   }
 
   @override
@@ -46,6 +75,8 @@ class _InboxScreenState extends State<InboxScreen> {
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
             children: [
+              if (widget.runtime != null)
+                _InboxLiveStatus(runtime: widget.runtime!),
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
@@ -81,6 +112,39 @@ class _InboxScreenState extends State<InboxScreen> {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _InboxLiveStatus extends StatelessWidget {
+  const _InboxLiveStatus({required this.runtime});
+
+  final HermesAppRuntime runtime;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: AlphaPanel(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            StatusPill(
+              label: runtime.eventStreamConnected ? 'live' : 'offline',
+              color: runtime.eventStreamConnected
+                  ? Theme.of(context).colorScheme.primary
+                  : Theme.of(context).colorScheme.outline,
+            ),
+            const SizedBox(width: 10),
+            Expanded(child: Text(runtime.eventStreamStatus)),
+            IconButton(
+              onPressed: runtime.refreshLiveData,
+              icon: const Icon(Icons.refresh_outlined),
+              tooltip: 'Refresh inbox',
+            ),
+          ],
+        ),
       ),
     );
   }

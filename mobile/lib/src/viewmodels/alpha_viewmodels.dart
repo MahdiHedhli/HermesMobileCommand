@@ -83,21 +83,136 @@ class ApprovalDetailViewModel {
   Future<ApprovalAlpha> approveOnce(String approvalId) =>
       repository.approveOnce(approvalId);
 
+  Future<ApprovalAlpha> approveForSession(String approvalId) =>
+      repository.approveForSession(approvalId);
+
+  Future<ApprovalAlpha> approveForAgent(String approvalId) =>
+      repository.approveForAgent(approvalId);
+
   Future<ApprovalAlpha> deny(String approvalId) => repository.deny(approvalId);
 
-  List<String> get moreActions => const [
-        'Approve Once',
-        'Approve For Session',
-        'Approve For Agent',
-        'Approve Forever',
-        'Other',
-        'More Info',
-        'Open TUA Session',
-        'Open TUI Session',
-        'Pause Agent',
-        'Stop Task',
-        'Stop Agent',
-      ];
+  List<ApprovalMoreAction> moreActionsFor(ApprovalAlpha approval) {
+    final pending = approval.state == 'pending';
+    return [
+      ApprovalMoreAction(
+        kind: ApprovalMoreActionKind.approveOnce,
+        label: 'Approve Once',
+        description: 'Signed decision for this single action.',
+        enabled: pending && _hasOption(approval, 'approve_once'),
+      ),
+      ApprovalMoreAction(
+        kind: ApprovalMoreActionKind.deny,
+        label: 'Deny',
+        description: 'Signed denial for this request.',
+        enabled: pending,
+      ),
+      ApprovalMoreAction(
+        kind: ApprovalMoreActionKind.approveForSession,
+        label: 'Approve For Session',
+        description: 'Signed approval scoped to this Hermes session.',
+        enabled: pending && _hasOption(approval, 'approve_for_session'),
+      ),
+      ApprovalMoreAction(
+        kind: ApprovalMoreActionKind.approveForAgent,
+        label: 'Approve For Agent',
+        description: 'Signed approval scoped to this agent.',
+        enabled: pending && _hasOption(approval, 'approve_for_agent'),
+      ),
+      const ApprovalMoreAction(
+        kind: ApprovalMoreActionKind.approveForever,
+        label: 'Approve Forever',
+        description: 'Permanent policy enforcement is intentionally deferred.',
+        enabled: false,
+        planned: true,
+      ),
+      ApprovalMoreAction(
+        kind: ApprovalMoreActionKind.other,
+        label: 'Other',
+        description: 'Draft a local modified response for future support.',
+        enabled: pending,
+      ),
+      const ApprovalMoreAction(
+        kind: ApprovalMoreActionKind.moreInfo,
+        label: 'More Info',
+        description: 'Inspect request metadata and redacted payload.',
+        enabled: true,
+      ),
+      const ApprovalMoreAction(
+        kind: ApprovalMoreActionKind.openTua,
+        label: 'Open TUA Session',
+        description: 'Open the assistance workflow with this context.',
+        enabled: true,
+      ),
+      const ApprovalMoreAction(
+        kind: ApprovalMoreActionKind.openTui,
+        label: 'Open TUI Session',
+        description: 'Open the terminal prototype for this context.',
+        enabled: true,
+      ),
+      const ApprovalMoreAction(
+        kind: ApprovalMoreActionKind.pauseAgent,
+        label: 'Pause Agent',
+        description: 'Intervention backend is placeholder-only.',
+        enabled: false,
+        planned: true,
+      ),
+      const ApprovalMoreAction(
+        kind: ApprovalMoreActionKind.stopTask,
+        label: 'Stop Task',
+        description: 'Intervention backend is placeholder-only.',
+        enabled: false,
+        planned: true,
+      ),
+      const ApprovalMoreAction(
+        kind: ApprovalMoreActionKind.stopAgent,
+        label: 'Stop Agent',
+        description: 'Intervention backend is placeholder-only.',
+        enabled: false,
+        planned: true,
+      ),
+    ];
+  }
+
+  bool _hasOption(ApprovalAlpha approval, String option) {
+    if (approval.constraints.contains(option)) {
+      return true;
+    }
+    // Mock approvals use human-readable operator constraints instead of the
+    // gateway option names. Keep the mock UX clickable while real gateway data
+    // still follows the offered approval options.
+    return {'work-vm-02', 'laptop', 'vps-prod'}.contains(approval.node);
+  }
+}
+
+enum ApprovalMoreActionKind {
+  approveOnce,
+  deny,
+  approveForSession,
+  approveForAgent,
+  approveForever,
+  other,
+  moreInfo,
+  openTua,
+  openTui,
+  pauseAgent,
+  stopTask,
+  stopAgent,
+}
+
+class ApprovalMoreAction {
+  const ApprovalMoreAction({
+    required this.kind,
+    required this.label,
+    required this.description,
+    required this.enabled,
+    this.planned = false,
+  });
+
+  final ApprovalMoreActionKind kind;
+  final String label;
+  final String description;
+  final bool enabled;
+  final bool planned;
 }
 
 class TuaViewModel extends ChangeNotifier {

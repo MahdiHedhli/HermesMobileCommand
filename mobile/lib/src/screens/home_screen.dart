@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../app_runtime.dart';
 import '../models/alpha_models.dart';
 import '../repositories/alpha_repository.dart';
 import '../routes.dart';
@@ -7,22 +8,62 @@ import '../viewmodels/alpha_viewmodels.dart';
 import '../widgets/alpha_components.dart';
 import '../widgets/screen_shell.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({
     required this.repository,
+    this.runtime,
     super.key,
   });
 
   final AlphaRepository repository;
+  final HermesAppRuntime? runtime;
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  late Future<HomeAlphaSnapshot> _snapshot;
+  int _seenEventRevision = -1;
+
+  AlphaRepository get _repository =>
+      widget.runtime?.alphaRepository ?? widget.repository;
+
+  @override
+  void initState() {
+    super.initState();
+    _snapshot = HomeViewModel(_repository).load();
+    widget.runtime?.addListener(_runtimeChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.runtime?.removeListener(_runtimeChanged);
+    super.dispose();
+  }
+
+  void _runtimeChanged() {
+    final runtime = widget.runtime;
+    if (runtime == null) {
+      return;
+    }
+    if (_seenEventRevision != runtime.eventRevision) {
+      _seenEventRevision = runtime.eventRevision;
+      setState(() {
+        _snapshot = HomeViewModel(_repository).load();
+      });
+      return;
+    }
+    setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
-    final viewModel = HomeViewModel(repository);
     return ScreenShell(
       title: 'Hermes Command',
       selectedRoute: HermesRoutes.home,
       body: FutureBuilder<HomeAlphaSnapshot>(
-        future: viewModel.load(),
+        future: _snapshot,
         builder: (context, snapshot) {
           final data = snapshot.data;
           if (data == null) {
@@ -31,6 +72,8 @@ class HomeScreen extends StatelessWidget {
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
             children: [
+              if (widget.runtime != null)
+                _LiveStatusPanel(runtime: widget.runtime!),
               _MetricsGrid(stats: data.stats),
               const SectionHeader(title: 'Pending Approvals'),
               ...data.pendingApprovals.take(2).map(
@@ -99,6 +142,53 @@ class HomeScreen extends StatelessWidget {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _LiveStatusPanel extends StatelessWidget {
+  const _LiveStatusPanel({required this.runtime});
+
+  final HermesAppRuntime runtime;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: AlphaPanel(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            Icon(
+              runtime.eventStreamConnected
+                  ? Icons.sensors_outlined
+                  : Icons.sensors_off_outlined,
+              color: runtime.eventStreamConnected
+                  ? Theme.of(context).colorScheme.primary
+                  : Theme.of(context).colorScheme.outline,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    runtime.dataModeLabel,
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(runtime.eventStreamStatus),
+                ],
+              ),
+            ),
+            IconButton(
+              onPressed: runtime.refreshLiveData,
+              icon: const Icon(Icons.refresh_outlined),
+              tooltip: 'Refresh gateway data',
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -131,6 +131,18 @@ class GatewayAlphaRepository implements AlphaRepository {
   }
 
   @override
+  Future<ApprovalAlpha> approveForSession(String approvalId) async {
+    final approval = await approvalsRepository.approveForSession(approvalId);
+    return _approvalFromGateway(approval);
+  }
+
+  @override
+  Future<ApprovalAlpha> approveForAgent(String approvalId) async {
+    final approval = await approvalsRepository.approveForAgent(approvalId);
+    return _approvalFromGateway(approval);
+  }
+
+  @override
   Future<ApprovalAlpha> deny(String approvalId) async {
     final approval = await approvalsRepository.deny(approvalId);
     return _approvalFromGateway(approval);
@@ -182,6 +194,7 @@ ApprovalAlpha _approvalFromGateway(ApprovalRequestModel approval) {
     payloadPreview: jsonEncode(approval.fullPayloadRedacted),
     expiresIn: _timeUntil(approval.expiresAt),
     constraints: approval.options,
+    decisionScope: approval.decisionScope,
   );
 }
 

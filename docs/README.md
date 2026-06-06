@@ -34,6 +34,7 @@ This package turns the Hermes Mobile Control Plane feature specification into an
 - [Mobile realness 002](implementation/mobile-realness-002.md)
 - [Native readiness](implementation/native-readiness.md)
 - [Mobile native realtime 003](implementation/mobile-native-realtime-003.md)
+- [TUI PTY prototype 004](implementation/tui-pty-prototype-004.md)
 
 ## Feature Specifications
 

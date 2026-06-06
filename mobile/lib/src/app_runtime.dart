@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'api/gateway_api_client.dart';
 import 'api/gateway_event_stream_client.dart';
+import 'api/tui_stream_client.dart';
 import 'config/gateway_config.dart';
 import 'models/core_models.dart';
 import 'repositories/agents_repository.dart';
@@ -15,6 +16,7 @@ import 'repositories/gateway_alpha_repository.dart';
 import 'repositories/mock_alpha_repository.dart';
 import 'repositories/notifications_repository.dart';
 import 'repositories/pairing_repository.dart';
+import 'repositories/tui_repository.dart';
 import 'security/device_request_signer.dart';
 import 'security/secure_key_store.dart';
 
@@ -57,6 +59,7 @@ class HermesAppRuntime extends ChangeNotifier {
 
   GatewayConfig get config => _config;
   String? get deviceId => _deviceId;
+  String? get accessToken => _accessToken;
   String get connectionStatus => _connectionStatus;
   String get eventStreamStatus => _eventStreamStatus;
   bool get eventStreamConnected => _eventStreamConnected;
@@ -80,6 +83,21 @@ class HermesAppRuntime extends ChangeNotifier {
       approvalsRepository: ApprovalsRepository(apiClient),
       notificationsRepository: NotificationsRepository(apiClient),
     );
+  }
+
+  TuiRepository? get tuiRepository {
+    if (!isPaired) {
+      return null;
+    }
+    return TuiRepository(_signedApiClient());
+  }
+
+  TuiStreamClient? get tuiStreamClient {
+    final token = _accessToken;
+    if (!isPaired || token == null || token.isEmpty) {
+      return null;
+    }
+    return TuiStreamClient(config: _config, accessToken: token);
   }
 
   Future<void> initialize() async {

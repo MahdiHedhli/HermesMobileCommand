@@ -12,6 +12,7 @@ This service is intentionally self-hosted and local-first:
 - `mobile_notify` endpoint with durable notification and audit records
 - Fail-closed approval decision skeleton
 - Hermes tool adapter with loopback-first binding controls
+- Development-only TUI PTY prototype, disabled by default
 
 Run locally:
 
@@ -46,3 +47,15 @@ Run the E2E smoke path:
 ```bash
 uv run --project gateway python gateway/scripts/e2e_smoke.py
 ```
+
+Enable the local TUI PTY prototype only in a disposable development context:
+
+```bash
+HERMES_TUI_ENABLE_LOCAL_PTY=1 \
+HERMES_TUI_ALLOWED_COMMANDS=/bin/cat,/bin/sh \
+HERMES_TUI_DEFAULT_COMMAND=/bin/cat \
+uv run --project gateway uvicorn hermes_gateway.app:create_app --factory
+```
+
+The PTY runner requires signed paired-device REST controls and rejects
+non-allowlisted commands or working directories outside the configured root.

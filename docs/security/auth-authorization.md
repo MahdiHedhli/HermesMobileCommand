@@ -264,9 +264,22 @@ Recovery must not be possible through unauthenticated remote access.
 | Fetch approval detail | required | | required | | | |
 | Approve/deny | required | | required | | | |
 | Pause/kill/quarantine | required | | | required | | |
+| Create TUI session | required | | | required | | |
+| Detach/close TUI session | required | | | required | | |
 | Register push token | required | | | | | |
 | Revoke device | required | | | | required | |
 | Start voice session | required | | | | | required |
+
+## Route Protection Matrix
+
+| Route Group | Protection |
+| --- | --- |
+| `/v1/pairing/start`, `/v1/pairing/complete` | Pairing bootstrap; unauthenticated but short-lived and locally initiated |
+| `/v1/events/stream` | Paired device access token |
+| `/v1/tui/sessions` REST controls | Canonical Ed25519 signed device request |
+| `/v1/tui/sessions/{session_id}/stream` | Paired device access token after signed session creation |
+| Approval decisions and interventions | Canonical Ed25519 signed device request |
+| Hermes-local tools | Loopback or explicit caller allowlist |
 
 ## Hermes-Local Binding Controls
 

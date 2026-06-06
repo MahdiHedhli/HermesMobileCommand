@@ -303,23 +303,23 @@ Persistent or proposed policy created by Approve Forever.
 | `previous_hash` | string | no | Chain hash for tamper evidence |
 | `created_at` | datetime | yes | Event time |
 
-### TerminalSession
+### TuiSession
 
 Real terminal session for mobile TUI.
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `terminal_session_id` | string | yes | Stable terminal session ID |
-| `node_id` | string | yes | Source node |
+| `session_id` | string | yes | Stable TUI session ID |
 | `agent_id` | string | yes | Related agent |
-| `session_id` | string | yes | Related Hermes session |
-| `approval_id` | string | no | Linked approval if opened from approval |
-| `assistance_session_id` | string | no | Linked TUA session if opened from assistance |
-| `created_by_device_id` | string | yes | Device that opened terminal |
-| `state` | enum | yes | `starting`, `active`, `detached`, `closed`, `failed` |
-| `target` | string | no | Shell, tmux target, or working directory hint |
+| `node_id` | string | yes | Source node |
+| `user_device_id` | string | yes | Device that opened terminal |
+| `state` | enum | yes | `requested`, `active`, `detached`, `closed`, `failed` |
+| `command` | string | yes | Allowlisted command path |
+| `working_directory` | string | yes | Directory constrained by gateway policy |
+| `risk_level` | enum | yes | Terminal session risk level |
+| `audit_refs` | array | yes | Related audit event IDs |
 | `created_at` | datetime | yes | Creation time |
-| `last_attached_at` | datetime | no | Last attach time |
+| `last_activity_at` | datetime | yes | Last input, attach, detach, or close activity |
 | `closed_at` | datetime | no | Close time |
 
 ### TerminalIOEvent
@@ -329,7 +329,7 @@ Terminal input/output metadata for TUI stream backfill and audit.
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
 | `terminal_io_event_id` | string | yes | Stable event ID |
-| `terminal_session_id` | string | yes | Parent terminal session |
+| `session_id` | string | yes | Parent TUI session |
 | `direction` | enum | yes | `input`, `output` |
 | `event_type` | enum | yes | `bytes`, `key`, `paste`, `resize`, `attach`, `detach` |
 | `payload_redacted` | object | no | Redacted or summarized payload |
@@ -420,7 +420,7 @@ Message inside a TUA session.
 | ApprovalPolicy | Until revoked plus 1 year | Keep history of policy creation and revocation |
 | Notification | 90 days | Dispatch history and abuse review |
 | AuditEvent | 1 year minimum; 7 years optional | Local self-hosted owner controls final retention |
-| TerminalSession | 30 days metadata; configurable | Terminal output may contain sensitive data |
+| TuiSession | 30 days metadata; configurable | Terminal output may contain sensitive data |
 | TerminalIOEvent | Short retention by default | Retain metadata longer than raw stream content |
 | AssistanceRequest | 90 days default | Preserve help request context |
 | AssistanceSession | 90 days default | Preserve return-control summary |

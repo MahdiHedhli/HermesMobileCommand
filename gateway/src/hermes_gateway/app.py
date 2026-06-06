@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import timedelta
 from typing import Any
 
@@ -22,6 +24,7 @@ from .schemas import (
     CompletePairingResponse,
     CreateApprovalRequest,
     CreatePairingSessionRequest,
+    CreateTuiSessionRequest,
     Device,
     GatewayHealth,
     HermesApprovalRequestedRequest,
@@ -34,10 +37,13 @@ from .schemas import (
     Notification,
     PairingSession,
     RefreshTokenRequest,
+    TuiSession,
+    TuiSessionControlResponse,
 )
 from .security import compare_token, expires_in, has_secret_text, new_token, now_utc, parse_utc
 from .signing import VerifiedDevice, verify_signed_request
 from .store import SQLiteStore
+from .tui import LocalPtyManager, validate_tui_frame, validate_tui_request
 
 DEFAULT_PERMISSIONS = ["read_state", "chat", "approve", "intervene"]
 MAX_NOTIFICATION_TITLE_CHARS = 120
@@ -50,14 +56,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     store.initialize()
     _ensure_local_node(store, resolved_settings)
     store.seed_mock_data(node_id=resolved_settings.node_id)
+    tui_manager = LocalPtyManager(store=store, settings=resolved_settings)
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            await tui_manager.close_all()
 
     app = FastAPI(
         title="Hermes Mobile Control Plane Gateway",
         version=resolved_settings.gateway_version,
         description="Self-hosted Hermes Control Gateway skeleton.",
+        lifespan=lifespan,
     )
     app.state.settings = resolved_settings
     app.state.store = store
+    app.state.tui_manager = tui_manager
     if resolved_settings.cors_allowed_origin_regex:
         app.add_middleware(
             CORSMiddleware,
@@ -92,6 +108,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "pairing": "healthy",
                 "event_stream": "healthy",
                 "push_dispatch": "unavailable",
+                "tui_pty": "healthy"
+                if resolved_settings.tui_enable_local_pty
+                else "unavailable",
             },
         )
 
@@ -619,6 +638,144 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             resulting_state="not_executed_placeholder",
         )
 
+    @app.post(
+        "/v1/tui/sessions",
+        response_model=TuiSession,
+        status_code=status.HTTP_201_CREATED,
+    )
+    async def create_tui_session(
+        payload: CreateTuiSessionRequest,
+        request: Request,
+        device: VerifiedDevice = signed_device_dependency,
+    ) -> TuiSession:
+        await tui_manager.cleanup_idle_sessions()
+        if store.count_open_tui_sessions() >= resolved_settings.tui_max_sessions:
+            raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "TUI session limit reached")
+
+        command, working_directory = validate_tui_request(
+            settings=resolved_settings,
+            command=payload.command,
+            working_directory=payload.working_directory,
+        )
+        session_id = new_id("tui")
+        node_id = payload.node_id or resolved_settings.node_id
+        session = store.create_tui_session(
+            {
+                "session_id": session_id,
+                "agent_id": payload.agent_id,
+                "node_id": node_id,
+                "user_device_id": device.device_id,
+                "state": "requested",
+                "command": command,
+                "working_directory": working_directory,
+                "risk_level": payload.risk_level,
+            }
+        )
+        try:
+            await tui_manager.create_runtime(
+                session_id=session_id,
+                command=command,
+                working_directory=working_directory,
+            )
+            session = store.update_tui_session_state(session_id, "active")
+        except HTTPException:
+            store.update_tui_session_state(session_id, "failed")
+            raise
+        except Exception as exc:
+            store.update_tui_session_state(session_id, "failed")
+            raise HTTPException(
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+                "TUI session failed to start",
+            ) from exc
+
+        audit = store.append_audit_event(
+            event_type="tui_session_created",
+            actor_type="device",
+            actor_id=device.device_id,
+            node_id=node_id,
+            agent_id=payload.agent_id,
+            session_id=session_id,
+            request_id=_request_id(request),
+            payload_redacted={
+                "command": command,
+                "working_directory": working_directory,
+                "risk_level": payload.risk_level,
+                "hermes_session_id": payload.session_context_id,
+            },
+        )
+        session = store.add_tui_audit_ref(session_id, audit["audit_event_id"])
+        store.create_event(
+            node_id=node_id,
+            agent_id=payload.agent_id,
+            session_id=session_id,
+            event_type="tui.session.state",
+            payload={"session_id": session_id, "state": session["state"]},
+        )
+        return TuiSession.model_validate(session)
+
+    @app.get("/v1/tui/sessions")
+    async def list_tui_sessions(
+        state: str | None = None,
+        device: VerifiedDevice = signed_device_dependency,
+    ) -> dict[str, list[TuiSession]]:
+        await tui_manager.cleanup_idle_sessions()
+        return {
+            "sessions": [
+                TuiSession.model_validate(session)
+                for session in store.list_tui_sessions(
+                    user_device_id=device.device_id,
+                    state=state,
+                )
+            ]
+        }
+
+    @app.get("/v1/tui/sessions/{session_id}", response_model=TuiSession)
+    async def get_tui_session(
+        session_id: str,
+        device: VerifiedDevice = signed_device_dependency,
+    ) -> TuiSession:
+        await tui_manager.cleanup_idle_sessions()
+        session = _owned_tui_session(store, session_id, device)
+        return TuiSession.model_validate(session)
+
+    @app.post("/v1/tui/sessions/{session_id}/detach", response_model=TuiSessionControlResponse)
+    async def detach_tui_session(
+        session_id: str,
+        request: Request,
+        device: VerifiedDevice = signed_device_dependency,
+    ) -> TuiSessionControlResponse:
+        session = _owned_tui_session(store, session_id, device)
+        if session["state"] in {"closed", "failed"}:
+            raise HTTPException(status.HTTP_409_CONFLICT, "TUI session is not attachable")
+        await tui_manager.detach(session_id)
+        session = _record_tui_state_change(
+            store=store,
+            session_id=session_id,
+            event_type="tui_session_detached",
+            request_id=_request_id(request),
+            actor_device_id=device.device_id,
+        )
+        return TuiSessionControlResponse(session=TuiSession.model_validate(session))
+
+    @app.post("/v1/tui/sessions/{session_id}/close", response_model=TuiSessionControlResponse)
+    async def close_tui_session(
+        session_id: str,
+        request: Request,
+        device: VerifiedDevice = signed_device_dependency,
+    ) -> TuiSessionControlResponse:
+        session = _owned_tui_session(store, session_id, device)
+        if session["state"] == "closed":
+            return TuiSessionControlResponse(session=TuiSession.model_validate(session))
+        await tui_manager.close(session_id)
+        session = _record_tui_state_change(
+            store=store,
+            session_id=session_id,
+            event_type="tui_session_closed",
+            request_id=_request_id(request),
+            actor_device_id=device.device_id,
+        )
+        return TuiSessionControlResponse(session=TuiSession.model_validate(session))
+
     @app.get("/v1/events")
     def list_events(
         after: str | None = None,
@@ -668,6 +825,69 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     )
         except WebSocketDisconnect:
             return
+
+    @app.websocket("/v1/tui/sessions/{session_id}/stream")
+    async def tui_stream(websocket: WebSocket, session_id: str) -> None:
+        token = _websocket_token(websocket)
+        device = store.verify_access_token(token) if token else None
+        if device is None:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+        try:
+            session = store.get_tui_session(session_id)
+        except KeyError:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+        if session["user_device_id"] != device["device_id"]:
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+        if session["state"] in {"closed", "failed"} or not tui_manager.is_running(session_id):
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
+        await tui_manager.attach(session_id)
+        await websocket.accept()
+        await websocket.send_json(
+            {"type": "state", "session_id": session_id, "state": "active"}
+        )
+        await websocket.send_json(
+            {
+                "type": "audit_notice",
+                "session_id": session_id,
+                "message": "TUI I/O metadata is audited; terminal contents are not logged.",
+            }
+        )
+        receive_task = asyncio.create_task(websocket.receive_json())
+        try:
+            while True:
+                output = await tui_manager.next_output(session_id, timeout=0.05)
+                if output:
+                    await websocket.send_json(
+                        {"type": "output", "session_id": session_id, "data": output}
+                    )
+
+                if not receive_task.done():
+                    await asyncio.sleep(0.01)
+                    continue
+
+                frame = validate_tui_frame(receive_task.result())
+                if await _handle_tui_frame(
+                    frame=frame,
+                    session_id=session_id,
+                    websocket=websocket,
+                    store=store,
+                    tui_manager=tui_manager,
+                    device_id=device["device_id"],
+                ):
+                    return
+                receive_task = asyncio.create_task(websocket.receive_json())
+        except WebSocketDisconnect:
+            await tui_manager.detach(session_id)
+        except ValueError as exc:
+            await websocket.send_json({"type": "error", "message": str(exc)})
+        finally:
+            if not receive_task.done():
+                receive_task.cancel()
 
     return app
 
@@ -949,6 +1169,150 @@ def _transition_approval(
         state=target_state,  # type: ignore[arg-type]
         applied_scope=scope,  # type: ignore[arg-type]
     )
+
+
+def _owned_tui_session(
+    store: SQLiteStore,
+    session_id: str,
+    device: VerifiedDevice,
+) -> dict[str, Any]:
+    try:
+        session = store.get_tui_session(session_id)
+    except KeyError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "TUI session not found") from exc
+    if session["user_device_id"] != device.device_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "TUI session belongs to another device")
+    return session
+
+
+def _record_tui_state_change(
+    *,
+    store: SQLiteStore,
+    session_id: str,
+    event_type: str,
+    request_id: str,
+    actor_device_id: str,
+) -> dict[str, Any]:
+    session = store.get_tui_session(session_id)
+    audit = store.append_audit_event(
+        event_type=event_type,
+        actor_type="device",
+        actor_id=actor_device_id,
+        node_id=session["node_id"],
+        agent_id=session["agent_id"],
+        session_id=session_id,
+        request_id=request_id,
+        payload_redacted={"state": session["state"]},
+    )
+    session = store.add_tui_audit_ref(session_id, audit["audit_event_id"])
+    store.create_event(
+        node_id=session["node_id"],
+        agent_id=session["agent_id"],
+        session_id=session_id,
+        event_type="tui.session.state",
+        payload={"session_id": session_id, "state": session["state"]},
+    )
+    return session
+
+
+async def _handle_tui_frame(
+    *,
+    frame: dict[str, Any],
+    session_id: str,
+    websocket: WebSocket,
+    store: SQLiteStore,
+    tui_manager: LocalPtyManager,
+    device_id: str,
+) -> bool:
+    frame_type = frame["type"]
+    if frame_type == "ping":
+        await websocket.send_json({"type": "pong", "session_id": session_id})
+        return False
+    if frame_type == "resize":
+        await tui_manager.resize(
+            session_id,
+            rows=int(frame.get("rows", 24)),
+            cols=int(frame.get("cols", 80)),
+        )
+        return False
+    if frame_type == "input":
+        text = str(frame.get("data", ""))
+        await tui_manager.write(session_id, text)
+        _audit_tui_io_metadata(
+            store=store,
+            session_id=session_id,
+            device_id=device_id,
+            event_type="tui_input_sent",
+            byte_count=len(text.encode("utf-8")),
+            line_count=max(text.count("\n"), 1 if text else 0),
+        )
+        return False
+    if frame_type == "paste":
+        text = str(frame.get("data", ""))
+        await tui_manager.write(session_id, text)
+        _audit_tui_io_metadata(
+            store=store,
+            session_id=session_id,
+            device_id=device_id,
+            event_type="tui_paste_sent",
+            byte_count=len(text.encode("utf-8")),
+            line_count=max(text.count("\n"), 1 if text else 0),
+        )
+        return False
+    if frame_type == "detach":
+        await tui_manager.detach(session_id)
+        _record_tui_state_change(
+            store=store,
+            session_id=session_id,
+            event_type="tui_session_detached",
+            request_id=new_id("req"),
+            actor_device_id=device_id,
+        )
+        await websocket.send_json(
+            {"type": "state", "session_id": session_id, "state": "detached"}
+        )
+        await websocket.close()
+        return True
+    if frame_type == "close":
+        await tui_manager.close(session_id)
+        _record_tui_state_change(
+            store=store,
+            session_id=session_id,
+            event_type="tui_session_closed",
+            request_id=new_id("req"),
+            actor_device_id=device_id,
+        )
+        await websocket.send_json({"type": "state", "session_id": session_id, "state": "closed"})
+        await websocket.close()
+        return True
+    return False
+
+
+def _audit_tui_io_metadata(
+    *,
+    store: SQLiteStore,
+    session_id: str,
+    device_id: str,
+    event_type: str,
+    byte_count: int,
+    line_count: int,
+) -> None:
+    session = store.get_tui_session(session_id)
+    audit = store.append_audit_event(
+        event_type=event_type,
+        actor_type="device",
+        actor_id=device_id,
+        node_id=session["node_id"],
+        agent_id=session["agent_id"],
+        session_id=session_id,
+        request_id=new_id("req"),
+        payload_redacted={
+            "byte_count": byte_count,
+            "line_count": line_count,
+            "contents_logged": False,
+        },
+    )
+    store.add_tui_audit_ref(session_id, audit["audit_event_id"])
 
 
 def _request_id(request: Request) -> str:

@@ -170,19 +170,35 @@ A user must be able to complete this Git workflow from mobile without needing a 
 
 ## Planned API Surface
 
-- `POST /v1/tui/terminal-sessions`
-- `GET /v1/tui/terminal-sessions`
-- `GET /v1/tui/terminal-sessions/{terminal_session_id}`
-- `POST /v1/tui/terminal-sessions/{terminal_session_id}/attach`
-- `POST /v1/tui/terminal-sessions/{terminal_session_id}/detach`
-- `POST /v1/tui/terminal-sessions/{terminal_session_id}/close`
-- `GET /v1/tui/terminal-sessions/{terminal_session_id}/stream`
-- `POST /v1/tui/terminal-sessions/{terminal_session_id}/key-events`
-- `POST /v1/tui/terminal-sessions/{terminal_session_id}/paste`
+- `POST /v1/tui/sessions`
+- `GET /v1/tui/sessions`
+- `GET /v1/tui/sessions/{session_id}`
+- `POST /v1/tui/sessions/{session_id}/detach`
+- `POST /v1/tui/sessions/{session_id}/close`
+- `GET /v1/tui/sessions/{session_id}/stream`
+
+Terminal input, paste, resize, detach, and close frames ride over the WebSocket
+stream in the first prototype instead of separate REST endpoints. REST controls
+remain signed paired-device requests. The WebSocket stream currently uses the
+paired device access token after the session has been created by a signed
+request; production hardening should replace that with a short-lived attach
+token minted through a signed request.
+
+## Prototype Safety Gate
+
+The first local PTY runner is development-only:
+
+- Disabled unless `HERMES_TUI_ENABLE_LOCAL_PTY=1`.
+- Requires an explicit command allowlist.
+- Enforces an allowed working directory root.
+- Limits concurrent sessions.
+- Applies idle timeout cleanup.
+- Audits session creation, detach, close, input metadata, and paste metadata.
+- Does not log full terminal contents by default.
 
 ## Open Questions For Implementation Slices
 
-- Whether the first PTY bridge is direct PTY, tmux attach, or both.
+- When to graduate from development-only direct PTY to hardened tmux/session broker.
 - How much terminal output should be retained for backfill.
 - Whether terminal stream authorization should use a short-lived attach token in addition to signed setup requests.
 - How paste-as-file chooses destination and confirms overwrite behavior.

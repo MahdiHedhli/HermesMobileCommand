@@ -38,7 +38,7 @@ class HermesRoutes {
         approvalDetail: (_) => ApprovalDetailScreen(
             repository: runtime.alphaRepository, runtime: runtime),
         tua: (_) => TuaScreen(repository: runtime.alphaRepository),
-        tui: (_) => TuiScreen(repository: runtime.alphaRepository),
+        tui: (_) => TuiScreen(repository: runtime.alphaRepository, runtime: runtime),
         voice: (_) => VoiceScreen(repository: runtime.alphaRepository),
         settings: (_) => const SettingsScreen(),
       };

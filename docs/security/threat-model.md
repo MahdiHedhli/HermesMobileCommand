@@ -66,6 +66,7 @@ It assumes self-hosted first, Tailscale first, no required public exposure, and 
 | Private network to gateway | All mobile control traffic | Tailscale credential theft, rogue local client |
 | Gateway to Hermes runtime | Agent events, tool requests, interventions | Rogue agent, malformed events, policy bypass |
 | Gateway to tools/browser | Consequential execution | Destructive actions, credential access, external side effects |
+| Gateway to local PTY prototype | Mobile TUI streams | Shell escape, privilege misuse, sensitive output exposure |
 | Gateway to push providers | Push requests | Secret leakage, notification spoofing/abuse |
 | Optional relay boundary | Future proxied traffic | Relay compromise, metadata leakage, session hijacking |
 
@@ -81,6 +82,7 @@ It assumes self-hosted first, Tailscale first, no required public exposure, and 
 - `mobile_notify` tool
 - Agent registration and health endpoints
 - Browser state and takeover endpoints
+- Development-only local PTY TUI endpoints and WebSocket stream
 - Voice session creation and media transport
 - Audit export endpoints
 - Optional relay ingress
@@ -97,6 +99,7 @@ It assumes self-hosted first, Tailscale first, no required public exposure, and 
 | Lost phone remains trusted | Unauthorized control | Device revocation, session invalidation, emergency revoke from gateway |
 | Tailscale identity stolen | Network reachability to gateway | App-level device identity, session token binding, gateway authorization |
 | Browser takeover abused | Session hijack or data exposure | Capability gating, active session confirmation, audit, read-only default |
+| Local PTY prototype abused | Direct shell access to the gateway host | Disabled by default, signed session creation, access-token stream, command allowlist, working directory root, max sessions, idle timeout, metadata-only audit |
 | Voice command misheard as approval | Unsafe action | Confirmation phrase, touch fallback, high/critical touch requirement |
 | Optional relay observes sensitive payloads | Confidentiality loss | No relay required, future app-layer encryption, minimal relay storage |
 
@@ -111,6 +114,7 @@ It assumes self-hosted first, Tailscale first, no required public exposure, and 
 | Device key lost | Device must be re-paired; old device identity revoked |
 | Audit store unavailable | Gateway refuses consequential actions if audit cannot be recorded |
 | Policy engine unavailable | Gateway fails closed for consequential actions |
+| TUI local PTY disabled or policy rejects command | Mobile falls back to mock/planned state; no shell starts |
 | Voice provider unavailable | Voice capability degraded; text controls remain available |
 
 ## Scenario Evaluations

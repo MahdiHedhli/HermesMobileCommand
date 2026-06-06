@@ -1142,11 +1142,15 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
-  /tui/terminal-sessions:
+  /tui/sessions:
     post:
       tags: [tui]
-      summary: Create a terminal session
-      description: Planned signed mobile endpoint for real TUI terminal sessions.
+      summary: Create a development-only TUI session
+      description: >
+        Signed paired-device endpoint. The local PTY runner is disabled by
+        default and only starts when `HERMES_TUI_ENABLE_LOCAL_PTY=1`, the
+        command is allowlisted, and the working directory is inside the
+        configured allowed root.
       parameters:
         - $ref: "#/components/parameters/HMCPDeviceIdHeader"
         - $ref: "#/components/parameters/HMCPTimestampHeader"
@@ -1157,148 +1161,119 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CreateTerminalSessionRequest"
+              $ref: "#/components/schemas/CreateTuiSessionRequest"
       responses:
         "201":
-          description: Terminal session created
+          description: TUI session created
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/TerminalSession"
+                $ref: "#/components/schemas/TuiSession"
+        "403":
+          $ref: "#/components/responses/Forbidden"
     get:
       tags: [tui]
-      summary: List terminal sessions
-      description: Planned signed mobile endpoint.
+      summary: List TUI sessions for the paired device
       parameters:
         - $ref: "#/components/parameters/HMCPDeviceIdHeader"
         - $ref: "#/components/parameters/HMCPTimestampHeader"
         - $ref: "#/components/parameters/HMCPNonceHeader"
         - $ref: "#/components/parameters/HMCPSignatureHeader"
+        - name: state
+          in: query
+          schema:
+            $ref: "#/components/schemas/TuiSessionState"
       responses:
         "200":
-          description: Terminal sessions
+          description: TUI sessions
           content:
             application/json:
               schema:
                 type: object
-                required: [terminal_sessions]
+                required: [sessions]
                 properties:
-                  terminal_sessions:
+                  sessions:
                     type: array
                     items:
-                      $ref: "#/components/schemas/TerminalSession"
+                      $ref: "#/components/schemas/TuiSession"
 
-  /tui/terminal-sessions/{terminal_session_id}/attach:
-    post:
+  /tui/sessions/{session_id}:
+    get:
       tags: [tui]
-      summary: Attach to terminal session
-      description: Planned signed mobile endpoint.
+      summary: Get a TUI session
       parameters:
-        - $ref: "#/components/parameters/TerminalSessionId"
+        - $ref: "#/components/parameters/SessionId"
         - $ref: "#/components/parameters/HMCPDeviceIdHeader"
         - $ref: "#/components/parameters/HMCPTimestampHeader"
         - $ref: "#/components/parameters/HMCPNonceHeader"
         - $ref: "#/components/parameters/HMCPSignatureHeader"
       responses:
         "200":
-          description: Terminal session attached
+          description: TUI session
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/TerminalSession"
+                $ref: "#/components/schemas/TuiSession"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
-  /tui/terminal-sessions/{terminal_session_id}/detach:
+  /tui/sessions/{session_id}/detach:
     post:
       tags: [tui]
-      summary: Detach from terminal session
-      description: Planned signed mobile endpoint.
+      summary: Detach from a TUI session
       parameters:
-        - $ref: "#/components/parameters/TerminalSessionId"
+        - $ref: "#/components/parameters/SessionId"
         - $ref: "#/components/parameters/HMCPDeviceIdHeader"
         - $ref: "#/components/parameters/HMCPTimestampHeader"
         - $ref: "#/components/parameters/HMCPNonceHeader"
         - $ref: "#/components/parameters/HMCPSignatureHeader"
       responses:
         "200":
-          description: Terminal session detached
+          description: TUI session detached
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/TerminalSession"
+                $ref: "#/components/schemas/TuiSessionControlResponse"
 
-  /tui/terminal-sessions/{terminal_session_id}/close:
+  /tui/sessions/{session_id}/close:
     post:
       tags: [tui]
-      summary: Close terminal session
-      description: Planned signed mobile endpoint.
+      summary: Close a TUI session
       parameters:
-        - $ref: "#/components/parameters/TerminalSessionId"
+        - $ref: "#/components/parameters/SessionId"
         - $ref: "#/components/parameters/HMCPDeviceIdHeader"
         - $ref: "#/components/parameters/HMCPTimestampHeader"
         - $ref: "#/components/parameters/HMCPNonceHeader"
         - $ref: "#/components/parameters/HMCPSignatureHeader"
       responses:
         "200":
-          description: Terminal session closed
+          description: TUI session closed
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/TerminalSession"
+                $ref: "#/components/schemas/TuiSessionControlResponse"
 
-  /tui/terminal-sessions/{terminal_session_id}/stream:
+  /tui/sessions/{session_id}/stream:
     get:
       tags: [tui]
       summary: WebSocket terminal I/O stream
-      description: Planned WebSocket endpoint for terminal output and input frames.
+      description: >
+        WebSocket terminal stream. The session must first be created through a
+        signed paired-device request. The alpha stream uses the paired device
+        access token as `access_token`; future hardening should mint a
+        short-lived attach token through a signed request.
       parameters:
-        - $ref: "#/components/parameters/TerminalSessionId"
+        - $ref: "#/components/parameters/SessionId"
+        - name: access_token
+          in: query
+          required: true
+          schema:
+            type: string
       responses:
         "101":
           description: Switching Protocols to terminal stream
         "401":
           $ref: "#/components/responses/Unauthorized"
-
-  /tui/terminal-sessions/{terminal_session_id}/key-events:
-    post:
-      tags: [tui]
-      summary: Send terminal key event
-      description: Planned signed mobile endpoint.
-      parameters:
-        - $ref: "#/components/parameters/TerminalSessionId"
-        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
-        - $ref: "#/components/parameters/HMCPTimestampHeader"
-        - $ref: "#/components/parameters/HMCPNonceHeader"
-        - $ref: "#/components/parameters/HMCPSignatureHeader"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/TerminalKeyEventRequest"
-      responses:
-        "202":
-          description: Key event accepted
-
-  /tui/terminal-sessions/{terminal_session_id}/paste:
-    post:
-      tags: [tui]
-      summary: Send terminal paste payload
-      description: Planned signed mobile endpoint.
-      parameters:
-        - $ref: "#/components/parameters/TerminalSessionId"
-        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
-        - $ref: "#/components/parameters/HMCPTimestampHeader"
-        - $ref: "#/components/parameters/HMCPNonceHeader"
-        - $ref: "#/components/parameters/HMCPSignatureHeader"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/TerminalPasteRequest"
-      responses:
-        "202":
-          description: Paste payload accepted
 
   /tua/assistance-requests:
     post:
@@ -1614,11 +1589,6 @@ components:
       schema: {type: string}
     TeamId:
       name: team_id
-      in: path
-      required: true
-      schema: {type: string}
-    TerminalSessionId:
-      name: terminal_session_id
       in: path
       required: true
       schema: {type: string}
@@ -2591,73 +2561,104 @@ components:
           type: object
           additionalProperties: true
 
-    CreateTerminalSessionRequest:
-      type: object
-      required: [node_id, agent_id, session_id]
-      properties:
-        node_id:
-          type: string
-        agent_id:
-          type: string
-        session_id:
-          type: string
-        approval_id:
-          type: string
-        assistance_session_id:
-          type: string
-        target:
-          type: string
+    TuiSessionState:
+      enum: [requested, active, detached, closed, failed]
 
-    TerminalSession:
+    CreateTuiSessionRequest:
       type: object
-      required: [terminal_session_id, node_id, agent_id, session_id, state, created_at]
       properties:
-        terminal_session_id:
+        agent_id:
           type: string
+          default: agent_mock
         node_id:
+          type: string
+        session_context_id:
+          type: string
+          description: Optional Hermes session, approval, or assistance context.
+        command:
+          type: string
+        working_directory:
+          type: string
+        risk_level:
+          $ref: "#/components/schemas/RiskLevel"
+
+    TuiSession:
+      type: object
+      required:
+        - session_id
+        - agent_id
+        - node_id
+        - user_device_id
+        - state
+        - command
+        - working_directory
+        - created_at
+        - last_activity_at
+        - risk_level
+      properties:
+        session_id:
           type: string
         agent_id:
           type: string
-        session_id:
+        node_id:
           type: string
-        approval_id:
-          type: string
-        assistance_session_id:
+        user_device_id:
           type: string
         state:
-          enum: [starting, active, detached, closed, failed]
-        target:
+          $ref: "#/components/schemas/TuiSessionState"
+        command:
+          type: string
+        working_directory:
           type: string
         created_at:
           type: string
           format: date-time
-        last_attached_at:
+        last_activity_at:
           type: string
           format: date-time
         closed_at:
           type: string
           format: date-time
-
-    TerminalKeyEventRequest:
-      type: object
-      required: [key]
-      properties:
-        key:
-          type: string
-        modifiers:
+        risk_level:
+          $ref: "#/components/schemas/RiskLevel"
+        audit_refs:
           type: array
           items:
-            enum: [ctrl, alt, cmd, shift]
+            type: string
 
-    TerminalPasteRequest:
+    TuiSessionControlResponse:
       type: object
-      required: [payload, mode]
+      required: [session]
       properties:
-        payload:
+        session:
+          $ref: "#/components/schemas/TuiSession"
+
+    TuiClientFrame:
+      type: object
+      required: [type]
+      properties:
+        type:
+          enum: [input, resize, ping, paste, detach, close]
+        data:
           type: string
-        mode:
-          enum: [paste, paste_and_execute, paste_as_file]
-        destination_path:
+        rows:
+          type: integer
+        cols:
+          type: integer
+
+    TuiServerFrame:
+      type: object
+      required: [type, session_id]
+      properties:
+        type:
+          enum: [output, state, error, pong, audit_notice]
+        session_id:
+          type: string
+        data:
+          type: string
+        state:
+          $ref: "#/components/schemas/TuiSessionState"
+        message:
           type: string
 
     CreateAssistanceRequest:

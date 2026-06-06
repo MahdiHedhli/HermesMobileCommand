@@ -238,6 +238,55 @@ class GatewayEvent {
   }
 }
 
+class TuiSessionModel {
+  const TuiSessionModel({
+    required this.sessionId,
+    required this.agentId,
+    required this.nodeId,
+    required this.userDeviceId,
+    required this.state,
+    required this.command,
+    required this.workingDirectory,
+    required this.createdAt,
+    required this.lastActivityAt,
+    required this.riskLevel,
+    this.closedAt,
+    this.auditRefs = const [],
+  });
+
+  final String sessionId;
+  final String agentId;
+  final String nodeId;
+  final String userDeviceId;
+  final String state;
+  final String command;
+  final String workingDirectory;
+  final DateTime createdAt;
+  final DateTime lastActivityAt;
+  final DateTime? closedAt;
+  final String riskLevel;
+  final List<String> auditRefs;
+
+  factory TuiSessionModel.fromJson(Map<String, dynamic> json) {
+    return TuiSessionModel(
+      sessionId: json['session_id'] as String,
+      agentId: json['agent_id'] as String,
+      nodeId: json['node_id'] as String,
+      userDeviceId: json['user_device_id'] as String,
+      state: json['state'] as String,
+      command: json['command'] as String,
+      workingDirectory: json['working_directory'] as String,
+      createdAt: DateTime.parse(json['created_at'] as String),
+      lastActivityAt: DateTime.parse(json['last_activity_at'] as String),
+      closedAt: json['closed_at'] == null
+          ? null
+          : DateTime.parse(json['closed_at'] as String),
+      riskLevel: json['risk_level'] as String,
+      auditRefs: _stringList(json['audit_refs']),
+    );
+  }
+}
+
 class DashboardSnapshot {
   const DashboardSnapshot({
     required this.nodes,

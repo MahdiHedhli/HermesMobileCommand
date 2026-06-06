@@ -160,6 +160,21 @@ class SQLiteStore:
                     last_attempt_at TEXT
                 );
 
+                CREATE TABLE IF NOT EXISTS tui_sessions (
+                    session_id TEXT PRIMARY KEY,
+                    agent_id TEXT NOT NULL,
+                    node_id TEXT NOT NULL,
+                    user_device_id TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    command TEXT NOT NULL,
+                    working_directory TEXT NOT NULL,
+                    risk_level TEXT NOT NULL,
+                    audit_refs_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    last_activity_at TEXT NOT NULL,
+                    closed_at TEXT
+                );
+
                 CREATE TABLE IF NOT EXISTS audit_events (
                     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
                     audit_event_id TEXT NOT NULL UNIQUE,
@@ -761,6 +776,125 @@ class SQLiteStore:
         with self.connect() as db:
             rows = db.execute(sql, args).fetchall()
         return [dict(row) for row in rows]
+
+    def create_tui_session(self, session: dict[str, Any]) -> dict[str, Any]:
+        now = utc_iso()
+        with self.connect() as db:
+            db.execute(
+                """
+                INSERT INTO tui_sessions (
+                    session_id, agent_id, node_id, user_device_id, state, command,
+                    working_directory, risk_level, audit_refs_json, created_at,
+                    last_activity_at, closed_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session["session_id"],
+                    session["agent_id"],
+                    session["node_id"],
+                    session["user_device_id"],
+                    session.get("state", "requested"),
+                    session["command"],
+                    session["working_directory"],
+                    session["risk_level"],
+                    json.dumps(session.get("audit_refs", [])),
+                    session.get("created_at") or now,
+                    session.get("last_activity_at") or now,
+                    session.get("closed_at"),
+                ),
+            )
+        return self.get_tui_session(session["session_id"])
+
+    def get_tui_session(self, session_id: str) -> dict[str, Any]:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM tui_sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(session_id)
+        return self._tui_session_from_row(row)
+
+    def list_tui_sessions(
+        self,
+        *,
+        user_device_id: str | None = None,
+        state: str | None = None,
+    ) -> list[dict[str, Any]]:
+        where = []
+        args: list[Any] = []
+        if user_device_id:
+            where.append("user_device_id = ?")
+            args.append(user_device_id)
+        if state:
+            where.append("state = ?")
+            args.append(state)
+        sql = "SELECT * FROM tui_sessions"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY last_activity_at DESC"
+        with self.connect() as db:
+            rows = db.execute(sql, tuple(args)).fetchall()
+        return [self._tui_session_from_row(row) for row in rows]
+
+    def update_tui_session_state(
+        self,
+        session_id: str,
+        state: str,
+        *,
+        closed_at: str | None = None,
+    ) -> dict[str, Any]:
+        now = utc_iso()
+        closed_value = closed_at
+        if closed_value is None and state in {"closed", "failed"}:
+            closed_value = now
+        with self.connect() as db:
+            db.execute(
+                """
+                UPDATE tui_sessions
+                SET state = ?,
+                    last_activity_at = ?,
+                    closed_at = COALESCE(?, closed_at)
+                WHERE session_id = ?
+                """,
+                (state, now, closed_value, session_id),
+            )
+        return self.get_tui_session(session_id)
+
+    def touch_tui_session(self, session_id: str) -> dict[str, Any]:
+        with self.connect() as db:
+            db.execute(
+                "UPDATE tui_sessions SET last_activity_at = ? WHERE session_id = ?",
+                (utc_iso(), session_id),
+            )
+        return self.get_tui_session(session_id)
+
+    def add_tui_audit_ref(self, session_id: str, audit_event_id: str) -> dict[str, Any]:
+        session = self.get_tui_session(session_id)
+        refs = [*session["audit_refs"], audit_event_id]
+        with self.connect() as db:
+            db.execute(
+                "UPDATE tui_sessions SET audit_refs_json = ? WHERE session_id = ?",
+                (json.dumps(refs), session_id),
+            )
+        return self.get_tui_session(session_id)
+
+    def count_open_tui_sessions(self) -> int:
+        with self.connect() as db:
+            row = db.execute(
+                """
+                SELECT COUNT(*) AS count
+                FROM tui_sessions
+                WHERE state IN ('requested', 'active', 'detached')
+                """
+            ).fetchone()
+        return int(row["count"])
+
+    def _tui_session_from_row(self, row: sqlite3.Row) -> dict[str, Any]:
+        session = dict(row)
+        session["audit_refs"] = json.loads(session.pop("audit_refs_json"))
+        return session
 
     def append_audit_event(
         self,

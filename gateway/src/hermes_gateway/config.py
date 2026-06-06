@@ -18,6 +18,12 @@ class Settings:
     pairing_ttl_seconds: int = 300
     allowed_hermes_callers: tuple[str, ...] = ()
     cors_allowed_origin_regex: str | None = r"^http://(localhost|127\.0\.0\.1):[0-9]+$"
+    tui_enable_local_pty: bool = False
+    tui_allowed_commands: tuple[str, ...] = ("/bin/sh",)
+    tui_default_command: str = "/bin/sh"
+    tui_allowed_working_directory: str = "."
+    tui_max_sessions: int = 2
+    tui_idle_timeout_seconds: int = 900
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -40,6 +46,25 @@ class Settings:
                 cls.cors_allowed_origin_regex or "",
             )
             or None,
+            tui_enable_local_pty=_bool_env(
+                "HERMES_TUI_ENABLE_LOCAL_PTY", cls.tui_enable_local_pty
+            ),
+            tui_allowed_commands=_csv_env("HERMES_TUI_ALLOWED_COMMANDS")
+            or cls.tui_allowed_commands,
+            tui_default_command=os.getenv(
+                "HERMES_TUI_DEFAULT_COMMAND", cls.tui_default_command
+            ),
+            tui_allowed_working_directory=os.getenv(
+                "HERMES_TUI_ALLOWED_WORKING_DIRECTORY",
+                cls.tui_allowed_working_directory,
+            ),
+            tui_max_sessions=int(os.getenv("HERMES_TUI_MAX_SESSIONS", str(cls.tui_max_sessions))),
+            tui_idle_timeout_seconds=int(
+                os.getenv(
+                    "HERMES_TUI_IDLE_TIMEOUT_SECONDS",
+                    str(cls.tui_idle_timeout_seconds),
+                )
+            ),
         )
 
     @property
@@ -50,3 +75,10 @@ class Settings:
 def _csv_env(name: str) -> tuple[str, ...]:
     value = os.getenv(name, "")
     return tuple(part.strip() for part in value.split(",") if part.strip())
+
+
+def _bool_env(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}

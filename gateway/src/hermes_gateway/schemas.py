@@ -25,6 +25,7 @@ NotificationCategory = Literal[
     "voice_callback",
 ]
 NotificationUrgency = Literal["low", "normal", "high", "critical"]
+TuiSessionState = Literal["requested", "active", "detached", "closed", "failed"]
 
 
 class StrictModel(BaseModel):
@@ -273,6 +274,34 @@ class InterventionRequest(StrictModel):
 class InterventionResponse(BaseModel):
     intervention_id: str
     resulting_state: str
+
+
+class CreateTuiSessionRequest(StrictModel):
+    agent_id: str = "agent_mock"
+    node_id: str | None = None
+    session_context_id: str | None = None
+    command: str | None = None
+    working_directory: str | None = None
+    risk_level: RiskLevel = "high"
+
+
+class TuiSession(BaseModel):
+    session_id: str
+    agent_id: str
+    node_id: str
+    user_device_id: str
+    state: TuiSessionState
+    command: str
+    working_directory: str
+    created_at: datetime
+    last_activity_at: datetime
+    closed_at: datetime | None = None
+    risk_level: RiskLevel
+    audit_refs: list[str] = Field(default_factory=list)
+
+
+class TuiSessionControlResponse(BaseModel):
+    session: TuiSession
 
 
 class MobileNotifyRequest(StrictModel):

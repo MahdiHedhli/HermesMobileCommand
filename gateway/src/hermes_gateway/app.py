@@ -16,15 +16,29 @@ from .schemas import (
     Agent,
     ApprovalDecisionRequest,
     ApprovalDecisionResponse,
+    ApprovalPolicyProposal,
     ApprovalRequest,
+    ApprovalResponse,
     ApprovalStatusRequest,
     ApprovalStatusResponse,
+    AssistanceMessage,
+    AssistanceRequest,
+    AssistanceSession,
     AuthTokenSet,
+    BrowserAssistanceEventRequest,
+    BrowserAssistanceSession,
     CompletePairingRequest,
     CompletePairingResponse,
     CreateApprovalRequest,
+    CreateApprovalResponseRequest,
+    CreateAssistanceMessageRequest,
+    CreateAssistanceRequest,
+    CreateAssistanceSessionRequest,
+    CreateBrowserAssistanceSessionRequest,
     CreatePairingSessionRequest,
     CreateTuiSessionRequest,
+    CreateVoiceMessageRequest,
+    CreateVoiceSessionRequest,
     Device,
     GatewayHealth,
     HermesApprovalRequestedRequest,
@@ -37,8 +51,12 @@ from .schemas import (
     Notification,
     PairingSession,
     RefreshTokenRequest,
+    ReturnControlRequest,
+    TuiAttachTokenResponse,
     TuiSession,
     TuiSessionControlResponse,
+    VoiceMessage,
+    VoiceSession,
 )
 from .security import compare_token, expires_in, has_secret_text, new_token, now_utc, parse_utc
 from .signing import VerifiedDevice, verify_signed_request
@@ -648,6 +666,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         device: VerifiedDevice = signed_device_dependency,
     ) -> TuiSession:
+        _require_permission(device, "tui")
         await tui_manager.cleanup_idle_sessions()
         if store.count_open_tui_sessions() >= resolved_settings.tui_max_sessions:
             raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "TUI session limit reached")
@@ -659,6 +678,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         session_id = new_id("tui")
         node_id = payload.node_id or resolved_settings.node_id
+        _require_tui_capability(store, node_id=node_id, agent_id=payload.agent_id)
         session = store.create_tui_session(
             {
                 "session_id": session_id,
@@ -669,6 +689,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "command": command,
                 "working_directory": working_directory,
                 "risk_level": payload.risk_level,
+                "risk_label": _tui_risk_label(payload.risk_level),
+                "output_retention_enabled": resolved_settings.tui_output_retention_enabled,
             }
         )
         try:
@@ -712,6 +734,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             payload={"session_id": session_id, "state": session["state"]},
         )
         return TuiSession.model_validate(session)
+
+    @app.post(
+        "/v1/tui/sessions/{session_id}/attach-token",
+        response_model=TuiAttachTokenResponse,
+    )
+    def create_tui_attach_token(
+        session_id: str,
+        request: Request,
+        device: VerifiedDevice = signed_device_dependency,
+    ) -> TuiAttachTokenResponse:
+        _require_permission(device, "tui")
+        session = _owned_tui_session(store, session_id, device)
+        if session["state"] in {"closed", "failed"}:
+            raise HTTPException(status.HTTP_409_CONFLICT, "TUI session is not attachable")
+        token = new_token()
+        attach = store.create_tui_attach_token(
+            token=token,
+            session_id=session_id,
+            device_id=device.device_id,
+            ttl_seconds=resolved_settings.tui_attach_token_ttl_seconds,
+        )
+        store.append_audit_event(
+            event_type="tui_attach_token_created",
+            actor_type="device",
+            actor_id=device.device_id,
+            node_id=session["node_id"],
+            agent_id=session["agent_id"],
+            session_id=session_id,
+            request_id=_request_id(request),
+            payload_redacted={"expires_at": attach["expires_at"]},
+        )
+        return TuiAttachTokenResponse.model_validate(attach)
 
     @app.get("/v1/tui/sessions")
     async def list_tui_sessions(
@@ -776,6 +830,641 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         return TuiSessionControlResponse(session=TuiSession.model_validate(session))
 
+    @app.post(
+        "/v1/tua/requests",
+        response_model=AssistanceRequest,
+        status_code=status.HTTP_201_CREATED,
+    )
+    def create_tua_request(
+        payload: CreateAssistanceRequest,
+        request: Request,
+        _caller: HermesLocalCaller = hermes_local_dependency,
+    ) -> AssistanceRequest:
+        node_id = payload.node_id or resolved_settings.node_id
+        assistance_request = store.create_assistance_request(
+            {
+                "node_id": node_id,
+                "agent_id": payload.agent_id,
+                "session_id": payload.session_id,
+                "approval_id": payload.approval_id,
+                "reason": payload.reason,
+                "state": "requested",
+                "context_redacted": payload.context_redacted,
+            }
+        )
+        store.append_audit_event(
+            event_type="tua_request_created",
+            actor_type="hermes",
+            actor_id=payload.agent_id,
+            node_id=node_id,
+            agent_id=payload.agent_id,
+            session_id=payload.session_id,
+            request_id=_request_id(request),
+            payload_redacted={"request_id": assistance_request["request_id"]},
+        )
+        store.create_event(
+            node_id=node_id,
+            agent_id=payload.agent_id,
+            session_id=payload.session_id,
+            event_type="tua.requested",
+            payload={"request_id": assistance_request["request_id"]},
+        )
+        return AssistanceRequest.model_validate(assistance_request)
+
+    @app.get("/v1/tua/requests")
+    def list_tua_requests(
+        state: str | None = None,
+        _device: VerifiedDevice = signed_device_dependency,
+    ) -> dict[str, list[AssistanceRequest]]:
+        return {
+            "requests": [
+                AssistanceRequest.model_validate(item)
+                for item in store.list_assistance_requests(state=state)
+            ]
+        }
+
+    @app.get("/v1/tua/requests/{request_id}", response_model=AssistanceRequest)
+    def get_tua_request(
+        request_id: str,
+        _device: VerifiedDevice = signed_device_dependency,
+    ) -> AssistanceRequest:
+        try:
+            return AssistanceRequest.model_validate(store.get_assistance_request(request_id))
+        except KeyError as exc:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "TUA request not found") from exc
+
+    @app.post(
+        "/v1/tua/requests/{request_id}/sessions",
+        response_model=AssistanceSession,
+        status_code=status.HTTP_201_CREATED,
+    )
+    def create_tua_session(
+        request_id: str,
+        payload: CreateAssistanceSessionRequest,
+        request: Request,
+        device: VerifiedDevice = signed_device_dependency,
+    ) -> AssistanceSession:
+        _require_permission(device, "intervene")
+        try:
+            assistance_request = store.get_assistance_request(request_id)
+        except KeyError as exc:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "TUA request not found") from exc
+        session = store.create_assistance_session(
+            {
+                "request_id": request_id,
+                "node_id": assistance_request["node_id"],
+                "agent_id": assistance_request["agent_id"],
+                "session_id": assistance_request["session_id"],
+                "state": "active",
+                "created_by_device_id": device.device_id,
+            }
+        )
+        if payload.initial_message:
+            store.create_assistance_message(
+                {
+                    "assistance_session_id": session["assistance_session_id"],
+                    "sender_type": "user",
+                    "sender_id": device.device_id,
+                    "body": payload.initial_message,
+                }
+            )
+            session = store.get_assistance_session(session["assistance_session_id"])
+        store.append_audit_event(
+            event_type="tua_session_created",
+            actor_type="device",
+            actor_id=device.device_id,
+            node_id=session["node_id"],
+            agent_id=session["agent_id"],
+            session_id=session["session_id"],
+            request_id=_request_id(request),
+            payload_redacted={"assistance_session_id": session["assistance_session_id"]},
+        )
+        store.create_event(
+            node_id=session["node_id"],
+            agent_id=session["agent_id"],
+            session_id=session["session_id"],
+            event_type="tua.session.created",
+            payload={"assistance_session_id": session["assistance_session_id"]},
+        )
+        return AssistanceSession.model_validate(session)
+
+    @app.get("/v1/tua/sessions/{session_id}", response_model=AssistanceSession)
+    def get_tua_session(
+        session_id: str,
+        _device: VerifiedDevice = signed_device_dependency,
+    ) -> AssistanceSession:
+        try:
+            return AssistanceSession.model_validate(store.get_assistance_session(session_id))
+        except KeyError as exc:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "TUA session not found") from exc
+
+    @app.post(
+        "/v1/tua/sessions/{session_id}/messages",
+        response_model=AssistanceMessage,
+        status_code=status.HTTP_201_CREATED,
+    )
+    def create_tua_message(
+        session_id: str,
+        payload: CreateAssistanceMessageRequest,
+        request: Request,
+        device: VerifiedDevice = signed_device_dependency,
+    ) -> AssistanceMessage:
+        _require_permission(device, "intervene")
+        session = _get_assistance_session_or_404(store, session_id)
+        message = store.create_assistance_message(
+            {
+                "assistance_session_id": session_id,
+                "sender_type": "user",
+                "sender_id": device.device_id,
+                "body": payload.body,
+            }
+        )
+        store.append_audit_event(
+            event_type="tua_message_created",
+            actor_type="device",
+            actor_id=device.device_id,
+            node_id=session["node_id"],
+            agent_id=session["agent_id"],
+            session_id=session["session_id"],
+            request_id=_request_id(request),
+            payload_redacted={
+                "message_id": message["message_id"],
+                "body_length": len(payload.body),
+            },
+        )
+        store.create_event(
+            node_id=session["node_id"],
+            agent_id=session["agent_id"],
+            session_id=session["session_id"],
+            event_type="tua.message.created",
+            payload={"assistance_session_id": session_id, "message_id": message["message_id"]},
+        )
+        return AssistanceMessage.model_validate(message)
+
+    @app.post("/v1/tua/sessions/{session_id}/return-control", response_model=AssistanceSession)
+    def return_tua_control(
+        session_id: str,
+        payload: ReturnControlRequest,
+        request: Request,
+        device: VerifiedDevice = signed_device_dependency,
+    ) -> AssistanceSession:
+        _require_permission(device, "intervene")
+        session = _get_assistance_session_or_404(store, session_id)
+        updated = store.update_assistance_session_state(
+            session_id,
+            "returned_to_agent",
+            return_summary=payload.summary,
+        )
+        store.append_audit_event(
+            event_type="tua_returned_to_agent",
+            actor_type="device",
+            actor_id=device.device_id,
+            node_id=session["node_id"],
+            agent_id=session["agent_id"],
+            session_id=session["session_id"],
+            request_id=_request_id(request),
+            payload_redacted={"summary_length": len(payload.summary)},
+        )
+        store.create_event(
+            node_id=session["node_id"],
+            agent_id=session["agent_id"],
+            session_id=session["session_id"],
+            event_type="tua.returned_to_agent",
+            payload={"assistance_session_id": session_id},
+        )
+        return AssistanceSession.model_validate(updated)
+
+    @app.post("/v1/tua/sessions/{session_id}/close", response_model=AssistanceSession)
+    def close_tua_session(
+        session_id: str,
+        request: Request,
+        device: VerifiedDevice = signed_device_dependency,
+    ) -> AssistanceSession:
+        _require_permission(device, "intervene")
+        session = _get_assistance_session_or_404(store, session_id)
+        updated = store.update_assistance_session_state(session_id, "closed")
+        store.append_audit_event(
+            event_type="tua_session_closed",
+            actor_type="device",
+            actor_id=device.device_id,
+            node_id=session["node_id"],
+            agent_id=session["agent_id"],
+            session_id=session["session_id"],
+            request_id=_request_id(request),
+            payload_redacted={},
+        )
+        store.create_event(
+            node_id=session["node_id"],
+            agent_id=session["agent_id"],
+            session_id=session["session_id"],
+            event_type="tua.closed",
+            payload={"assistance_session_id": session_id},
+        )
+        return AssistanceSession.model_validate(updated)
+
+    @app.post(
+        "/v1/browser-assistance/sessions",
+        response_model=BrowserAssistanceSession,
+        status_code=status.HTTP_201_CREATED,
+    )
+    def create_browser_assistance_session(
+        payload: CreateBrowserAssistanceSessionRequest,
+        request: Request,
+        _caller: HermesLocalCaller = hermes_local_dependency,
+    ) -> BrowserAssistanceSession:
+        node_id = payload.node_id or resolved_settings.node_id
+        session = store.create_browser_assistance_session(
+            {
+                "node_id": node_id,
+                "agent_id": payload.agent_id,
+                "session_id": payload.session_id,
+                "approval_id": payload.approval_id,
+                "reason": payload.reason,
+                "state": "requested",
+                "context_redacted": payload.context_redacted,
+            }
+        )
+        store.append_audit_event(
+            event_type="browser_assistance_requested",
+            actor_type="hermes",
+            actor_id=payload.agent_id,
+            node_id=node_id,
+            agent_id=payload.agent_id,
+            session_id=payload.session_id,
+            request_id=_request_id(request),
+            payload_redacted={"browser_session_id": session["browser_session_id"]},
+        )
+        store.create_event(
+            node_id=node_id,
+            agent_id=payload.agent_id,
+            session_id=payload.session_id,
+            event_type="browser_assistance.requested",
+            payload={"browser_session_id": session["browser_session_id"]},
+        )
+        return BrowserAssistanceSession.model_validate(session)
+
+    @app.get("/v1/browser-assistance/sessions")
+    def list_browser_assistance_sessions(
+        state: str | None = None,
+        _device: VerifiedDevice = signed_device_dependency,
+    ) -> dict[str, list[BrowserAssistanceSession]]:
+        return {
+            "sessions": [
+                BrowserAssistanceSession.model_validate(item)
+                for item in store.list_browser_assistance_sessions(state=state)
+            ]
+        }
+
+    @app.get(
+        "/v1/browser-assistance/sessions/{session_id}",
+        response_model=BrowserAssistanceSession,
+    )
+    def get_browser_assistance_session(
+        session_id: str,
+        _device: VerifiedDevice = signed_device_dependency,
+    ) -> BrowserAssistanceSession:
+        try:
+            return BrowserAssistanceSession.model_validate(
+                store.get_browser_assistance_session(session_id)
+            )
+        except KeyError as exc:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND, "browser assistance session not found"
+            ) from exc
+
+    @app.post(
+        "/v1/browser-assistance/sessions/{session_id}/event",
+        response_model=BrowserAssistanceSession,
+    )
+    def add_browser_assistance_event(
+        session_id: str,
+        payload: BrowserAssistanceEventRequest,
+        request: Request,
+        device: VerifiedDevice = signed_device_dependency,
+    ) -> BrowserAssistanceSession:
+        _require_permission(device, "browser_assist")
+        session = _get_browser_session_or_404(store, session_id)
+        updated = store.add_browser_assistance_note(session_id, payload.note)
+        store.append_audit_event(
+            event_type="browser_assistance_event_recorded",
+            actor_type="device",
+            actor_id=device.device_id,
+            node_id=session["node_id"],
+            agent_id=session["agent_id"],
+            session_id=session["session_id"],
+            request_id=_request_id(request),
+            payload_redacted={"note_length": len(payload.note)},
+        )
+        store.create_event(
+            node_id=session["node_id"],
+            agent_id=session["agent_id"],
+            session_id=session["session_id"],
+            event_type="browser_assistance.event",
+            payload={"browser_session_id": session_id},
+        )
+        return BrowserAssistanceSession.model_validate(updated)
+
+    @app.post(
+        "/v1/browser-assistance/sessions/{session_id}/return-control",
+        response_model=BrowserAssistanceSession,
+    )
+    def return_browser_assistance_control(
+        session_id: str,
+        payload: ReturnControlRequest,
+        request: Request,
+        device: VerifiedDevice = signed_device_dependency,
+    ) -> BrowserAssistanceSession:
+        _require_permission(device, "browser_assist")
+        session = _get_browser_session_or_404(store, session_id)
+        updated = store.update_browser_assistance_state(
+            session_id,
+            "returned_to_agent",
+            return_summary=payload.summary,
+        )
+        store.append_audit_event(
+            event_type="browser_assistance_returned_to_agent",
+            actor_type="device",
+            actor_id=device.device_id,
+            node_id=session["node_id"],
+            agent_id=session["agent_id"],
+            session_id=session["session_id"],
+            request_id=_request_id(request),
+            payload_redacted={"summary_length": len(payload.summary)},
+        )
+        store.create_event(
+            node_id=session["node_id"],
+            agent_id=session["agent_id"],
+            session_id=session["session_id"],
+            event_type="browser_assistance.returned_to_agent",
+            payload={"browser_session_id": session_id},
+        )
+        return BrowserAssistanceSession.model_validate(updated)
+
+    @app.post(
+        "/v1/browser-assistance/sessions/{session_id}/close",
+        response_model=BrowserAssistanceSession,
+    )
+    def close_browser_assistance_session(
+        session_id: str,
+        request: Request,
+        device: VerifiedDevice = signed_device_dependency,
+    ) -> BrowserAssistanceSession:
+        _require_permission(device, "browser_assist")
+        session = _get_browser_session_or_404(store, session_id)
+        updated = store.update_browser_assistance_state(session_id, "closed")
+        store.append_audit_event(
+            event_type="browser_assistance_closed",
+            actor_type="device",
+            actor_id=device.device_id,
+            node_id=session["node_id"],
+            agent_id=session["agent_id"],
+            session_id=session["session_id"],
+            request_id=_request_id(request),
+            payload_redacted={},
+        )
+        store.create_event(
+            node_id=session["node_id"],
+            agent_id=session["agent_id"],
+            session_id=session["session_id"],
+            event_type="browser_assistance.closed",
+            payload={"browser_session_id": session_id},
+        )
+        return BrowserAssistanceSession.model_validate(updated)
+
+    @app.post(
+        "/v1/approvals/{approval_id}/responses",
+        response_model=ApprovalResponse,
+        status_code=status.HTTP_201_CREATED,
+    )
+    def create_approval_response(
+        approval_id: str,
+        payload: CreateApprovalResponseRequest,
+        request: Request,
+        device: VerifiedDevice = signed_device_dependency,
+    ) -> ApprovalResponse:
+        _require_permission(device, "approve")
+        approval = _get_approval_or_404(store, approval_id)
+        policy_proposal_id = None
+        if payload.decision_type == "propose_policy":
+            if payload.confirmation_phrase != "PROPOSE POLICY":
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    "policy proposal requires explicit confirmation phrase",
+                )
+            proposal = store.create_approval_policy_proposal(
+                {
+                    "approval_id": approval_id,
+                    "created_by_device_id": device.device_id,
+                    "status": "proposed",
+                    "warning": "Proposal only; no permanent allow policy was activated.",
+                    "constraints": [item.model_dump() for item in payload.constraints],
+                }
+            )
+            policy_proposal_id = proposal["policy_proposal_id"]
+        response = store.create_approval_response(
+            {
+                "approval_id": approval_id,
+                "decision_type": payload.decision_type,
+                "created_by_device_id": device.device_id,
+                "user_message": payload.user_message,
+                "alternate_directive": payload.alternate_directive,
+                "constraints": [item.model_dump() for item in payload.constraints],
+                "policy_proposal_id": policy_proposal_id,
+            }
+        )
+        if payload.decision_type in {"approve_once", "approve_session", "approve_agent", "deny"}:
+            transition = {
+                "approve_once": ("approved", "approve", "once"),
+                "approve_session": ("approved", "approve", "session"),
+                "approve_agent": ("approved", "approve", "agent"),
+                "deny": ("denied", "deny", "once"),
+            }[payload.decision_type]
+            _transition_approval(
+                store=store,
+                approval_id=approval_id,
+                target_state=transition[0],
+                request_id=_request_id(request),
+                actor_device_id=device.device_id,
+                decision=transition[1],
+                scope=transition[2],
+            )
+        store.append_audit_event(
+            event_type="approval_response_created",
+            actor_type="device",
+            actor_id=device.device_id,
+            node_id=approval["node_id"],
+            agent_id=approval["agent_id"],
+            session_id=approval["session_id"],
+            approval_id=approval_id,
+            request_id=_request_id(request),
+            payload_redacted={
+                "decision_type": payload.decision_type,
+                "constraint_count": len(payload.constraints),
+                "policy_proposal_id": policy_proposal_id,
+            },
+        )
+        event_type = (
+            "approval.needs_info"
+            if payload.decision_type == "needs_info"
+            else "approval.response.created"
+        )
+        store.create_event(
+            node_id=approval["node_id"],
+            agent_id=approval["agent_id"],
+            session_id=approval["session_id"],
+            event_type=event_type,
+            payload={
+                "approval_id": approval_id,
+                "approval_response_id": response["approval_response_id"],
+                "decision_type": payload.decision_type,
+            },
+        )
+        return ApprovalResponse.model_validate(response)
+
+    @app.get(
+        "/v1/approvals/{approval_id}/policy-proposals",
+    )
+    def list_approval_policy_proposals(
+        approval_id: str,
+        _device: VerifiedDevice = signed_device_dependency,
+    ) -> dict[str, list[ApprovalPolicyProposal]]:
+        _get_approval_or_404(store, approval_id)
+        responses = store.list_approval_responses(approval_id)
+        proposals = []
+        for response in responses:
+            proposal_id = response.get("policy_proposal_id")
+            if proposal_id:
+                proposals.append(
+                    ApprovalPolicyProposal.model_validate(
+                        store.get_approval_policy_proposal(proposal_id)
+                    )
+                )
+        return {"policy_proposals": proposals}
+
+    @app.post(
+        "/v1/voice/sessions",
+        response_model=VoiceSession,
+        status_code=status.HTTP_201_CREATED,
+    )
+    def create_voice_session(
+        payload: CreateVoiceSessionRequest,
+        request: Request,
+        device: VerifiedDevice = signed_device_dependency,
+    ) -> VoiceSession:
+        _require_permission(device, "voice")
+        session = store.create_voice_session(
+            {
+                "node_id": resolved_settings.node_id,
+                "agent_id": payload.agent_id,
+                "session_id": payload.session_id,
+                "created_by_device_id": device.device_id,
+                "mode": payload.mode,
+                "state": "active",
+            }
+        )
+        store.append_audit_event(
+            event_type="voice_session_created",
+            actor_type="device",
+            actor_id=device.device_id,
+            node_id=session["node_id"],
+            agent_id=session["agent_id"],
+            session_id=session.get("session_id"),
+            voice_session_id=session["voice_session_id"],
+            request_id=_request_id(request),
+            payload_redacted={"mode": payload.mode},
+        )
+        store.create_event(
+            node_id=session["node_id"],
+            agent_id=session["agent_id"],
+            session_id=session.get("session_id"),
+            event_type="voice.session.created",
+            payload={"voice_session_id": session["voice_session_id"], "mode": payload.mode},
+        )
+        return VoiceSession.model_validate(session)
+
+    @app.get("/v1/voice/sessions/{session_id}", response_model=VoiceSession)
+    def get_voice_session(
+        session_id: str,
+        _device: VerifiedDevice = signed_device_dependency,
+    ) -> VoiceSession:
+        try:
+            return VoiceSession.model_validate(store.get_voice_session(session_id))
+        except KeyError as exc:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "voice session not found") from exc
+
+    @app.post(
+        "/v1/voice/sessions/{session_id}/messages",
+        response_model=VoiceMessage,
+        status_code=status.HTTP_201_CREATED,
+    )
+    def create_voice_message(
+        session_id: str,
+        payload: CreateVoiceMessageRequest,
+        request: Request,
+        device: VerifiedDevice = signed_device_dependency,
+    ) -> VoiceMessage:
+        _require_permission(device, "voice")
+        session = _get_voice_session_or_404(store, session_id)
+        message = store.create_voice_message(
+            {
+                "voice_session_id": session_id,
+                "sender_type": "user",
+                "body": payload.body,
+                "input_mode": payload.input_mode,
+            }
+        )
+        store.append_audit_event(
+            event_type="voice_message_created",
+            actor_type="device",
+            actor_id=device.device_id,
+            node_id=session["node_id"],
+            agent_id=session["agent_id"],
+            session_id=session.get("session_id"),
+            voice_session_id=session_id,
+            request_id=_request_id(request),
+            payload_redacted={"input_mode": payload.input_mode, "body_length": len(payload.body)},
+        )
+        store.create_event(
+            node_id=session["node_id"],
+            agent_id=session["agent_id"],
+            session_id=session.get("session_id"),
+            event_type="voice.message.created",
+            payload={
+                "voice_session_id": session_id,
+                "voice_message_id": message["voice_message_id"],
+            },
+        )
+        return VoiceMessage.model_validate(message)
+
+    @app.post("/v1/voice/sessions/{session_id}/close", response_model=VoiceSession)
+    def close_voice_session(
+        session_id: str,
+        request: Request,
+        device: VerifiedDevice = signed_device_dependency,
+    ) -> VoiceSession:
+        _require_permission(device, "voice")
+        session = _get_voice_session_or_404(store, session_id)
+        updated = store.update_voice_session_state(session_id, "closed")
+        store.append_audit_event(
+            event_type="voice_session_closed",
+            actor_type="device",
+            actor_id=device.device_id,
+            node_id=session["node_id"],
+            agent_id=session["agent_id"],
+            session_id=session.get("session_id"),
+            voice_session_id=session_id,
+            request_id=_request_id(request),
+            payload_redacted={},
+        )
+        store.create_event(
+            node_id=session["node_id"],
+            agent_id=session["agent_id"],
+            session_id=session.get("session_id"),
+            event_type="voice.session.closed",
+            payload={"voice_session_id": session_id},
+        )
+        return VoiceSession.model_validate(updated)
+
     @app.get("/v1/events")
     def list_events(
         after: str | None = None,
@@ -828,9 +1517,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.websocket("/v1/tui/sessions/{session_id}/stream")
     async def tui_stream(websocket: WebSocket, session_id: str) -> None:
-        token = _websocket_token(websocket)
-        device = store.verify_access_token(token) if token else None
-        if device is None:
+        attach_token = websocket.query_params.get("attach_token")
+        attach = store.verify_tui_attach_token(attach_token) if attach_token else None
+        if attach is None:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
         try:
@@ -838,7 +1527,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
-        if session["user_device_id"] != device["device_id"]:
+        if (
+            attach["session_id"] != session_id
+            or session["user_device_id"] != attach["device_id"]
+        ):
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
         if session["state"] in {"closed", "failed"} or not tui_manager.is_running(session_id):
@@ -877,7 +1569,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     websocket=websocket,
                     store=store,
                     tui_manager=tui_manager,
-                    device_id=device["device_id"],
+                    device_id=attach["device_id"],
                 ):
                     return
                 receive_task = asyncio.create_task(websocket.receive_json())
@@ -1171,6 +1863,38 @@ def _transition_approval(
     )
 
 
+def _require_permission(device: VerifiedDevice, permission: str) -> None:
+    if permission not in device.permissions:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, f"device lacks {permission} permission")
+
+
+def _require_tui_capability(store: SQLiteStore, *, node_id: str, agent_id: str) -> None:
+    try:
+        node = store.get_node(node_id)
+        agent = store.get_agent(node_id, agent_id)
+    except KeyError as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "TUI capability unavailable") from exc
+    if _has_available_capability(node, "tui") or _has_available_capability(agent, "tui"):
+        return
+    raise HTTPException(status.HTTP_403_FORBIDDEN, "TUI capability unavailable")
+
+
+def _has_available_capability(record: dict[str, Any], capability: str) -> bool:
+    for item in record.get("capabilities", []):
+        if item.get("name") == capability and item.get("status") == "available":
+            return True
+    return False
+
+
+def _tui_risk_label(risk_level: str) -> str:
+    return {
+        "low": "operator terminal - low risk",
+        "medium": "operator terminal - medium risk",
+        "high": "operator terminal - high risk",
+        "critical": "operator terminal - critical risk",
+    }.get(risk_level, "operator terminal - high risk")
+
+
 def _owned_tui_session(
     store: SQLiteStore,
     session_id: str,
@@ -1183,6 +1907,36 @@ def _owned_tui_session(
     if session["user_device_id"] != device.device_id:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "TUI session belongs to another device")
     return session
+
+
+def _get_approval_or_404(store: SQLiteStore, approval_id: str) -> dict[str, Any]:
+    try:
+        return store.get_approval(approval_id)
+    except KeyError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "approval not found") from exc
+
+
+def _get_assistance_session_or_404(store: SQLiteStore, session_id: str) -> dict[str, Any]:
+    try:
+        return store.get_assistance_session(session_id)
+    except KeyError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "TUA session not found") from exc
+
+
+def _get_browser_session_or_404(store: SQLiteStore, session_id: str) -> dict[str, Any]:
+    try:
+        return store.get_browser_assistance_session(session_id)
+    except KeyError as exc:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, "browser assistance session not found"
+        ) from exc
+
+
+def _get_voice_session_or_404(store: SQLiteStore, session_id: str) -> dict[str, Any]:
+    try:
+        return store.get_voice_session(session_id)
+    except KeyError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "voice session not found") from exc
 
 
 def _record_tui_state_change(
@@ -1248,7 +2002,7 @@ async def _handle_tui_frame(
         )
         return False
     if frame_type == "paste":
-        text = str(frame.get("data", ""))
+        text = str(frame.get("data", frame.get("text", "")))
         await tui_manager.write(session_id, text)
         _audit_tui_io_metadata(
             store=store,
@@ -1257,6 +2011,7 @@ async def _handle_tui_frame(
             event_type="tui_paste_sent",
             byte_count=len(text.encode("utf-8")),
             line_count=max(text.count("\n"), 1 if text else 0),
+            risk_warnings=_paste_risk_warnings(text),
         )
         return False
     if frame_type == "detach":
@@ -1296,6 +2051,7 @@ def _audit_tui_io_metadata(
     event_type: str,
     byte_count: int,
     line_count: int,
+    risk_warnings: list[str] | None = None,
 ) -> None:
     session = store.get_tui_session(session_id)
     audit = store.append_audit_event(
@@ -1309,10 +2065,22 @@ def _audit_tui_io_metadata(
         payload_redacted={
             "byte_count": byte_count,
             "line_count": line_count,
+            "risk_warnings": risk_warnings or [],
             "contents_logged": False,
         },
     )
     store.add_tui_audit_ref(session_id, audit["audit_event_id"])
+
+
+def _paste_risk_warnings(text: str) -> list[str]:
+    warnings = []
+    if text.count("\n") > 1:
+        warnings.append("multiline_paste")
+    if any(ord(char) < 32 and char not in "\n\r\t" for char in text):
+        warnings.append("control_characters")
+    if has_secret_text(text):
+        warnings.append("secret_like_text")
+    return warnings
 
 
 def _request_id(request: Request) -> str:

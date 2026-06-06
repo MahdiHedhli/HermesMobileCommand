@@ -83,7 +83,11 @@ class TuiViewModel extends ChangeNotifier {
       _statusLabel = 'Connecting to ${session.sessionId}';
       notifyListeners();
 
-      _connection = streamClient.connect(session.sessionId);
+      final attach = await repository.createAttachToken(session.sessionId);
+      _connection = streamClient.connect(
+        session.sessionId,
+        attachToken: attach.attachToken,
+      );
       _subscription = _connection!.frames.listen(
         _handleFrame,
         onError: (Object error) {

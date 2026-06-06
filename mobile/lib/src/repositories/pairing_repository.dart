@@ -14,7 +14,14 @@ class PairingRepository {
       signed: false,
       body: {
         'display_name': displayName,
-        'requested_permissions': ['read_state', 'approve', 'intervene'],
+        'requested_permissions': [
+          'read_state',
+          'approve',
+          'intervene',
+          'tui',
+          'browser_assist',
+          'voice',
+        ],
       },
     );
     return PairingSessionModel.fromJson(response);

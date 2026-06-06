@@ -173,6 +173,7 @@ A user must be able to complete this Git workflow from mobile without needing a 
 - `POST /v1/tui/sessions`
 - `GET /v1/tui/sessions`
 - `GET /v1/tui/sessions/{session_id}`
+- `POST /v1/tui/sessions/{session_id}/attach-token`
 - `POST /v1/tui/sessions/{session_id}/detach`
 - `POST /v1/tui/sessions/{session_id}/close`
 - `GET /v1/tui/sessions/{session_id}/stream`
@@ -180,9 +181,8 @@ A user must be able to complete this Git workflow from mobile without needing a 
 Terminal input, paste, resize, detach, and close frames ride over the WebSocket
 stream in the first prototype instead of separate REST endpoints. REST controls
 remain signed paired-device requests. The WebSocket stream currently uses the
-paired device access token after the session has been created by a signed
-request; production hardening should replace that with a short-lived attach
-token minted through a signed request.
+short-lived `attach_token` minted through a signed paired-device request after
+the session has been created. The token is scoped to the session and device.
 
 ## Prototype Safety Gate
 
@@ -194,11 +194,14 @@ The first local PTY runner is development-only:
 - Limits concurrent sessions.
 - Applies idle timeout cleanup.
 - Audits session creation, detach, close, input metadata, and paste metadata.
+- Requires a per-device `tui` permission grant.
+- Requires per-agent or per-node `tui` capability availability.
+- Mints short-lived TUI attach tokens for WebSocket streams.
+- Emits paste risk metadata without storing raw paste contents.
 - Does not log full terminal contents by default.
 
 ## Open Questions For Implementation Slices
 
 - When to graduate from development-only direct PTY to hardened tmux/session broker.
 - How much terminal output should be retained for backfill.
-- Whether terminal stream authorization should use a short-lived attach token in addition to signed setup requests.
 - How paste-as-file chooses destination and confirms overwrite behavior.

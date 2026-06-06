@@ -11,6 +11,7 @@ dependencies:
   cryptography: ^2.9.0
   flutter:
     sdk: flutter
+  flutter_secure_storage: ^9.2.4
   http: ^1.6.0
   shared_preferences: ^2.5.5
   web_socket_channel: ^3.0.3

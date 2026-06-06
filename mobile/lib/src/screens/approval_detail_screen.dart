@@ -165,7 +165,9 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
                 approval: approval,
                 busy: _busy,
                 onDecision: _submitDecision,
-                onDraftResponse: _saveDraftResponse,
+                onModifiedResponse: _submitModifiedResponse,
+                onPolicyProposal: _submitPolicyProposal,
+                onNeedsInfo: _requestMoreInfo,
               ),
             ],
           );
@@ -213,6 +215,112 @@ class _ApprovalDetailScreenState extends State<ApprovalDetailScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Draft response saved locally')),
     );
+  }
+
+  Future<void> _submitModifiedResponse(String value) async {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      return;
+    }
+    final repository = widget.runtime?.approvalResponsesRepository;
+    if (repository == null) {
+      _saveDraftResponse(trimmed);
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await repository.modified(
+        _approvalId,
+        alternateDirective: trimmed,
+        constraints: [
+          {
+            'constraint_type': 'operator_directive',
+            'value_redacted': {'source': 'mobile'},
+          }
+        ],
+      );
+      setState(() => _draftResponse = trimmed);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Modified response submitted')),
+        );
+      }
+    } on Object catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.toString())),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+      }
+    }
+  }
+
+  Future<void> _submitPolicyProposal() async {
+    final repository = widget.runtime?.approvalResponsesRepository;
+    if (repository == null) {
+      _saveDraftResponse('Policy proposal drafted locally');
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await repository.proposePolicy(
+        _approvalId,
+        confirmationPhrase: 'PROPOSE POLICY',
+        constraints: [
+          {
+            'constraint_type': 'requires_future_review',
+            'value_redacted': {'source': 'mobile_approve_forever'},
+          }
+        ],
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Policy proposal created')),
+        );
+      }
+    } on Object catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.toString())),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+      }
+    }
+  }
+
+  Future<void> _requestMoreInfo() async {
+    final repository = widget.runtime?.approvalResponsesRepository;
+    if (repository == null) {
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      await repository.needsInfo(
+        _approvalId,
+        userMessage: 'Please provide more detail before the mobile decision.',
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('More info requested')),
+        );
+      }
+    } on Object catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.toString())),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+      }
+    }
   }
 }
 
@@ -304,7 +412,9 @@ class _ApprovalActions extends StatelessWidget {
     required this.approval,
     required this.busy,
     required this.onDecision,
-    required this.onDraftResponse,
+    required this.onModifiedResponse,
+    required this.onPolicyProposal,
+    required this.onNeedsInfo,
   });
 
   final ApprovalDetailViewModel viewModel;
@@ -312,7 +422,9 @@ class _ApprovalActions extends StatelessWidget {
   final bool busy;
   final Future<void> Function(
       String action, Future<ApprovalAlpha> Function() submit) onDecision;
-  final ValueChanged<String> onDraftResponse;
+  final Future<void> Function(String value) onModifiedResponse;
+  final Future<void> Function() onPolicyProposal;
+  final Future<void> Function() onNeedsInfo;
 
   @override
   Widget build(BuildContext context) {
@@ -453,7 +565,13 @@ class _ApprovalActions extends StatelessWidget {
         Navigator.of(context)
             .pushNamed(HermesRoutes.tui, arguments: approval.id);
         return;
+      case ApprovalMoreActionKind.browserAssistance:
+        Navigator.of(context)
+            .pushNamed(HermesRoutes.browserAssistance, arguments: approval.id);
+        return;
       case ApprovalMoreActionKind.approveForever:
+        _showPolicyProposal(context);
+        return;
       case ApprovalMoreActionKind.pauseAgent:
       case ApprovalMoreActionKind.stopTask:
       case ApprovalMoreActionKind.stopAgent:
@@ -483,7 +601,7 @@ class _ApprovalActions extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Saved locally only. Gateway support for modified approval responses is planned.',
+                  'When paired, this sends a signed modified response to the gateway. Otherwise it is saved locally.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 12),
@@ -500,12 +618,14 @@ class _ApprovalActions extends StatelessWidget {
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.icon(
-                    onPressed: () {
-                      onDraftResponse(controller.text);
-                      Navigator.of(context).pop();
+                    onPressed: () async {
+                      await onModifiedResponse(controller.text);
+                      if (context.mounted) {
+                        Navigator.of(context).pop();
+                      }
                     },
                     icon: const Icon(Icons.save_outlined),
-                    label: const Text('Save Draft'),
+                    label: const Text('Submit Modified Response'),
                   ),
                 ),
               ],
@@ -547,8 +667,44 @@ class _ApprovalActions extends StatelessWidget {
           ),
           actions: [
             TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                onNeedsInfo();
+              },
+              child: const Text('Request More Info'),
+            ),
+            TextButton(
               onPressed: () => Navigator.of(context).pop(),
               child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _showPolicyProposal(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Create Policy Proposal'),
+          content: const Text(
+            'Approve Forever creates a proposal only. It does not activate a permanent allow policy.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                await onPolicyProposal();
+                if (context.mounted) {
+                  Navigator.of(context).pop();
+                }
+              },
+              child: const Text('Create Proposal'),
             ),
           ],
         );
@@ -568,6 +724,7 @@ IconData _actionIcon(ApprovalMoreActionKind action) {
     ApprovalMoreActionKind.moreInfo => Icons.info_outline,
     ApprovalMoreActionKind.openTua => Icons.support_agent_outlined,
     ApprovalMoreActionKind.openTui => Icons.terminal_outlined,
+    ApprovalMoreActionKind.browserAssistance => Icons.travel_explore_outlined,
     ApprovalMoreActionKind.pauseAgent => Icons.pause_circle_outline,
     ApprovalMoreActionKind.stopTask => Icons.stop_circle_outlined,
     ApprovalMoreActionKind.stopAgent => Icons.power_settings_new,

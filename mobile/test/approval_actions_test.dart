@@ -14,8 +14,8 @@ void main() {
     expect(byKind[ApprovalMoreActionKind.deny]?.enabled, isTrue);
     expect(byKind[ApprovalMoreActionKind.approveForSession]?.enabled, isTrue);
     expect(byKind[ApprovalMoreActionKind.approveForAgent]?.enabled, isTrue);
-    expect(byKind[ApprovalMoreActionKind.approveForever]?.enabled, isFalse);
-    expect(byKind[ApprovalMoreActionKind.approveForever]?.planned, isTrue);
+    expect(byKind[ApprovalMoreActionKind.approveForever]?.enabled, isTrue);
+    expect(byKind[ApprovalMoreActionKind.browserAssistance]?.enabled, isTrue);
     expect(byKind[ApprovalMoreActionKind.pauseAgent]?.planned, isTrue);
   });
 

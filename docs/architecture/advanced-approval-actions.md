@@ -24,6 +24,7 @@ The More menu includes:
 - More Info
 - Open TUA Session
 - Open TUI Session
+- Browser Assistance
 - Pause Agent
 - Stop Task
 - Stop Agent
@@ -32,15 +33,13 @@ The More menu includes:
 
 | Decision Type | Meaning | Terminal State |
 | --- | --- | --- |
-| `approve` | Approves under selected scope | yes |
+| `approve_once` | Approves this single action | yes |
+| `approve_session` | Approves under session scope | yes |
+| `approve_agent` | Approves under agent scope | yes |
 | `deny` | Denies requested action | yes |
 | `modified` | Returns alternate instructions, replacement action, partial approval, or constraints | no, until Hermes evaluates result |
 | `needs_info` | User asks for more information | no |
-| `escalated_tua` | User opens assistance session | no |
-| `escalated_tui` | User opens terminal session | no |
-| `pause_agent` | User pauses related agent | yes for approval, agent remains paused |
-| `stop_task` | User stops related task | yes |
-| `stop_agent` | User stops related agent | yes |
+| `propose_policy` | Creates an Approve Forever proposal only | no |
 
 ## Approval State Model
 
@@ -54,27 +53,24 @@ Existing durable states remain useful for terminal records:
 
 For richer UX, approval responses carry more specific decision metadata:
 
-- `approved_once`
-- `approved_session`
-- `approved_agent`
-- `approved_forever`
+- `approve_once`
+- `approve_session`
+- `approve_agent`
+- `deny`
 - `modified`
 - `needs_info`
-- `escalated_tua`
-- `escalated_tui`
+- `propose_policy`
 
 The gateway may store these as either expanded approval states or as `ApprovalResponse.decision_type` values. The preferred design is to keep `ApprovalRequest.state` compact and put the richer user intent in `ApprovalResponse`.
 
 ```mermaid
 stateDiagram-v2
   [*] --> pending
-  pending --> approved: approved_once/session/agent/forever
+  pending --> approved: approve_once/session/agent
   pending --> denied: deny
   pending --> pending: needs_info
   pending --> pending: modified pending Hermes evaluation
-  pending --> pending: escalated_tua
-  pending --> pending: escalated_tui
-  pending --> cancelled: stop_task or stop_agent
+  pending --> pending: propose_policy
   pending --> cancelled: requester cancels
   pending --> expired: expires_at elapsed
   approved --> [*]
@@ -90,8 +86,8 @@ Required fields:
 - `approval_response_id`
 - `approval_id`
 - `decision_type`
-- `decided_by_device_id`
-- `decided_at`
+- `created_by_device_id`
+- `created_at`
 
 Optional fields:
 
@@ -180,9 +176,10 @@ Raw replacement actions and user messages must be redacted where policy requires
 ## Planned API Surface
 
 - `POST /v1/approvals/{approval_id}/responses`
-- `GET /v1/approvals/{approval_id}/responses`
-- `POST /v1/approvals/{approval_id}/more-info`
-- `POST /v1/approvals/{approval_id}/policy-proposals`
+- `GET /v1/approvals/{approval_id}/policy-proposals`
+
+Future policy activation APIs remain planned:
+
 - `GET /v1/approval-policies`
 - `POST /v1/approval-policies`
 - `DELETE /v1/approval-policies/{approval_policy_id}`

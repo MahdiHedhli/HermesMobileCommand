@@ -28,6 +28,13 @@ class TuiRepository {
     return TuiSessionModel.fromJson(json);
   }
 
+  Future<TuiAttachTokenModel> createAttachToken(String sessionId) async {
+    final json = await _apiClient.postJson(
+      '/tui/sessions/$sessionId/attach-token',
+    );
+    return TuiAttachTokenModel.fromJson(json);
+  }
+
   Future<List<TuiSessionModel>> listSessions({String? state}) async {
     final json = await _apiClient.getJson(
       '/tui/sessions',

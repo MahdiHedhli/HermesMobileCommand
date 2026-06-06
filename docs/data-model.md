@@ -127,7 +127,7 @@ Represents a trusted mobile app installation.
 | `platform` | enum | yes | `ios`, `android` |
 | `device_public_key` | string | yes | Verifies approvals/interventions |
 | `status` | enum | yes | `active`, `revoked`, `lost`, `rotating`, `disabled` |
-| `permissions` | enum array | yes | `read_state`, `chat`, `approve`, `intervene`, `manage_devices`, `voice` |
+| `permissions` | enum array | yes | `read_state`, `chat`, `approve`, `intervene`, `manage_devices`, `voice`, `tui`, `browser_assist` |
 | `registered_at` | datetime | yes | Pairing time |
 | `last_seen_at` | datetime | no | Last API use |
 
@@ -228,14 +228,12 @@ Records advanced mobile approval intent. It can produce a terminal approval stat
 | --- | --- | --- | --- |
 | `approval_response_id` | string | yes | Stable response ID |
 | `approval_id` | string | yes | Parent approval |
-| `decision_type` | enum | yes | `approved_once`, `approved_session`, `approved_agent`, `approved_forever`, `denied`, `modified`, `needs_info`, `escalated_tua`, `escalated_tui`, `pause_agent`, `stop_task`, `stop_agent` |
+| `decision_type` | enum | yes | `approve_once`, `approve_session`, `approve_agent`, `deny`, `modified`, `needs_info`, `propose_policy` |
 | `user_message` | string | no | User instruction or explanation, redacted where needed |
-| `replacement_action` | object | no | Alternate action proposed by user |
-| `approved_scope` | enum | no | `once`, `session`, `agent`, `permanent` |
-| `policy_created` | boolean | yes | Whether a policy was created or proposed |
-| `expires_at` | datetime | no | Expiry for conditional response |
-| `decided_by_device_id` | string | yes | Signing device |
-| `decided_at` | datetime | yes | Decision time |
+| `alternate_directive` | string | no | Alternate action proposed by user |
+| `policy_proposal_id` | string | no | Proposal created by Approve Forever |
+| `created_by_device_id` | string | yes | Signing device |
+| `created_at` | datetime | yes | Response time |
 
 ### ApprovalConstraint
 
@@ -317,6 +315,8 @@ Real terminal session for mobile TUI.
 | `command` | string | yes | Allowlisted command path |
 | `working_directory` | string | yes | Directory constrained by gateway policy |
 | `risk_level` | enum | yes | Terminal session risk level |
+| `risk_label` | string | yes | User-facing terminal risk label |
+| `output_retention_enabled` | boolean | yes | Whether output retention is enabled; false by default |
 | `audit_refs` | array | yes | Related audit event IDs |
 | `created_at` | datetime | yes | Creation time |
 | `last_activity_at` | datetime | yes | Last input, attach, detach, or close activity |

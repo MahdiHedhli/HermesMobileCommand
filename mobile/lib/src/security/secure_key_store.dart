@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 abstract class SecureKeyStore {
@@ -6,6 +8,7 @@ abstract class SecureKeyStore {
   Future<String?> readRefreshToken();
   Future<String?> readDevicePrivateKey();
   Future<String?> readDevicePublicKey();
+  Future<String> storageWarning();
   Future<void> saveDeviceKeyPair({
     required String privateKey,
     required String publicKey,
@@ -16,6 +19,99 @@ abstract class SecureKeyStore {
     required String refreshToken,
   });
   Future<void> clear();
+}
+
+class PlatformAwareSecureKeyStore implements SecureKeyStore {
+  PlatformAwareSecureKeyStore(this.preferences)
+      : _fallback = SharedPreferencesSecureKeyStore(preferences);
+
+  final SharedPreferences preferences;
+  final SharedPreferencesSecureKeyStore _fallback;
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
+
+  bool get _useFallback => kIsWeb;
+
+  @override
+  Future<String?> readAccessToken() => _read(_accessTokenKey);
+
+  @override
+  Future<String?> readDeviceId() => _fallback.readDeviceId();
+
+  @override
+  Future<String?> readDevicePrivateKey() => _read(_devicePrivateKeyKey);
+
+  @override
+  Future<String?> readDevicePublicKey() => _read(_devicePublicKeyKey);
+
+  @override
+  Future<String?> readRefreshToken() => _read(_refreshTokenKey);
+
+  @override
+  Future<String> storageWarning() async {
+    if (_useFallback) {
+      return 'Web/dev fallback storage active; private key is not in native secure storage.';
+    }
+    return 'Native secure storage enabled for device secrets.';
+  }
+
+  @override
+  Future<void> saveDeviceKeyPair({
+    required String privateKey,
+    required String publicKey,
+  }) async {
+    await _write(_devicePrivateKeyKey, privateKey);
+    await _write(_devicePublicKeyKey, publicKey);
+  }
+
+  @override
+  Future<void> saveDeviceSession({
+    required String deviceId,
+    required String accessToken,
+    required String refreshToken,
+  }) async {
+    await _fallback.saveDeviceSession(
+      deviceId: deviceId,
+      accessToken: accessToken,
+      refreshToken: refreshToken,
+    );
+    await _write(_accessTokenKey, accessToken);
+    await _write(_refreshTokenKey, refreshToken);
+  }
+
+  @override
+  Future<void> clear() async {
+    await _fallback.clear();
+    if (_useFallback) {
+      return;
+    }
+    await _secureStorage.delete(key: _accessTokenKey);
+    await _secureStorage.delete(key: _refreshTokenKey);
+    await _secureStorage.delete(key: _devicePrivateKeyKey);
+    await _secureStorage.delete(key: _devicePublicKeyKey);
+  }
+
+  Future<String?> _read(String key) async {
+    if (_useFallback) {
+      return _fallback.preferences.getString(key);
+    }
+    try {
+      return await _secureStorage.read(key: key);
+    } on Object {
+      return _fallback.preferences.getString(key);
+    }
+  }
+
+  Future<void> _write(String key, String value) async {
+    await _fallback.preferences.setString(key, value);
+    if (_useFallback) {
+      return;
+    }
+    try {
+      await _secureStorage.write(key: key, value: value);
+    } on Object {
+      // SharedPreferences remains the explicit development fallback.
+    }
+  }
 }
 
 class SharedPreferencesSecureKeyStore implements SecureKeyStore {
@@ -37,6 +133,10 @@ class SharedPreferencesSecureKeyStore implements SecureKeyStore {
   @override
   Future<String?> readDevicePublicKey() async =>
       preferences.getString(_devicePublicKeyKey);
+
+  @override
+  Future<String> storageWarning() async =>
+      'Development fallback storage active; private key is not in native secure storage.';
 
   @override
   Future<String?> readRefreshToken() async =>
@@ -90,6 +190,9 @@ class InMemorySecureKeyStore implements SecureKeyStore {
 
   @override
   Future<String?> readDevicePublicKey() async => _devicePublicKey;
+
+  @override
+  Future<String> storageWarning() async => 'In-memory test storage active.';
 
   @override
   Future<String?> readRefreshToken() async => _refreshToken;

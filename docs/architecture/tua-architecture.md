@@ -145,16 +145,23 @@ The agent should resume only from the explicit return-control payload, not from 
 
 ## Planned API Surface
 
-- `POST /v1/tua/assistance-requests`
-- `GET /v1/tua/assistance-requests`
-- `GET /v1/tua/assistance-requests/{assistance_request_id}`
-- `POST /v1/tua/assistance-sessions`
-- `GET /v1/tua/assistance-sessions/{assistance_session_id}`
-- `POST /v1/tua/assistance-sessions/{assistance_session_id}/messages`
-- `POST /v1/tua/assistance-sessions/{assistance_session_id}/terminal-context`
-- `POST /v1/tua/assistance-sessions/{assistance_session_id}/browser-context`
-- `POST /v1/tua/assistance-sessions/{assistance_session_id}/return-control`
-- `POST /v1/tua/assistance-sessions/{assistance_session_id}/close`
+- `POST /v1/tua/requests`
+- `GET /v1/tua/requests`
+- `GET /v1/tua/requests/{request_id}`
+- `POST /v1/tua/requests/{request_id}/sessions`
+- `GET /v1/tua/sessions/{session_id}`
+- `POST /v1/tua/sessions/{session_id}/messages`
+- `POST /v1/tua/sessions/{session_id}/return-control`
+- `POST /v1/tua/sessions/{session_id}/close`
+
+Browser help is modeled as its own thin subsystem:
+
+- `POST /v1/browser-assistance/sessions`
+- `GET /v1/browser-assistance/sessions`
+- `GET /v1/browser-assistance/sessions/{session_id}`
+- `POST /v1/browser-assistance/sessions/{session_id}/event`
+- `POST /v1/browser-assistance/sessions/{session_id}/return-control`
+- `POST /v1/browser-assistance/sessions/{session_id}/close`
 
 ## Mobile UX Notes
 

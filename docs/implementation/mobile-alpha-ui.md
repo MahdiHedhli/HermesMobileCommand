@@ -38,7 +38,7 @@ The alpha is organized around explicit model, repository, and viewmodel layers:
 - `mobile/lib/src/viewmodels/alpha_viewmodels.dart`
 - `mobile/lib/src/widgets/alpha_components.dart`
 
-Widgets consume viewmodels and repository abstractions instead of reaching directly into gateway APIs. The launch route uses `MockAlphaRepository` so a developer can open the app without a running gateway. `GatewayAlphaRepository` adapts existing gateway-backed repositories for agents, approvals, notifications, and dashboard data, while falling back to mock data for missions, TUA, and TUI where gateway APIs do not exist yet.
+Widgets consume viewmodels and repository abstractions instead of reaching directly into gateway APIs. The launch route uses `MockAlphaRepository` so a developer can open the app without a running gateway. `GatewayAlphaRepository` adapts gateway-backed repositories for agents, approvals, notifications, and dashboard data. Later slices added dedicated gateway repositories for TUI, TUA, browser assistance, advanced approval responses, and text-backed voice, while mock fallbacks remain for unpaired alpha use.
 
 ## Interaction Notes
 

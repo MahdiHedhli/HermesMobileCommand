@@ -23,16 +23,17 @@ Signed paired-device REST endpoints:
 - `POST /v1/tui/sessions`
 - `GET /v1/tui/sessions`
 - `GET /v1/tui/sessions/{session_id}`
+- `POST /v1/tui/sessions/{session_id}/attach-token`
 - `POST /v1/tui/sessions/{session_id}/detach`
 - `POST /v1/tui/sessions/{session_id}/close`
 
 Terminal stream endpoint:
 
-- `GET /v1/tui/sessions/{session_id}/stream?access_token=<paired-access-token>`
+- `GET /v1/tui/sessions/{session_id}/stream?attach_token=<short-lived-token>`
 
 The WebSocket stream is only useful after a session has already been created by
-a signed request. The alpha stream uses the paired device access token; future
-hardening should mint a short-lived attach token from a signed request.
+a signed request and an attach token has been minted through a second signed
+request.
 
 ## WebSocket Protocol
 
@@ -76,12 +77,16 @@ Gateway behavior:
 
 - Missing or invalid device signatures reject REST controls.
 - Revoked devices cannot create or control TUI sessions.
+- Devices without the `tui` grant cannot create TUI sessions.
+- Agents or nodes without an available `tui` capability cannot start TUI sessions.
 - Unknown sessions and sessions owned by another device are rejected.
+- Expired or wrong-device attach tokens cannot open the WebSocket stream.
 - Non-allowlisted commands are rejected.
 - Working directories outside the allowed root are rejected.
 - Full terminal contents are not written to audit by default.
-- Session creation, detach, close, input metadata, and paste metadata are
-  audited.
+- Output retention is disabled by default.
+- Session creation, attach-token minting, detach, close, input metadata, and
+  paste metadata are audited.
 
 ## Mobile Behavior
 

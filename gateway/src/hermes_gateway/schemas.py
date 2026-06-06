@@ -5,7 +5,16 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-Permission = Literal["read_state", "chat", "approve", "intervene", "manage_devices", "voice"]
+Permission = Literal[
+    "read_state",
+    "chat",
+    "approve",
+    "intervene",
+    "manage_devices",
+    "voice",
+    "tui",
+    "browser_assist",
+]
 Platform = Literal["ios", "android"]
 DeviceStatus = Literal["active", "revoked", "lost", "rotating", "disabled"]
 Environment = Literal["homelab", "laptop", "cloud", "workstation", "vps", "work_vm", "custom"]
@@ -26,6 +35,33 @@ NotificationCategory = Literal[
 ]
 NotificationUrgency = Literal["low", "normal", "high", "critical"]
 TuiSessionState = Literal["requested", "active", "detached", "closed", "failed"]
+AssistanceState = Literal[
+    "requested",
+    "active",
+    "waiting_on_user",
+    "user_controlling",
+    "returned_to_agent",
+    "closed",
+    "cancelled",
+]
+BrowserAssistanceState = Literal[
+    "requested",
+    "active",
+    "user_controlling",
+    "returned_to_agent",
+    "closed",
+    "failed",
+]
+ApprovalResponseDecisionType = Literal[
+    "approve_once",
+    "approve_session",
+    "approve_agent",
+    "deny",
+    "modified",
+    "needs_info",
+    "propose_policy",
+]
+VoiceSessionState = Literal["active", "closed"]
 
 
 class StrictModel(BaseModel):
@@ -297,11 +333,174 @@ class TuiSession(BaseModel):
     last_activity_at: datetime
     closed_at: datetime | None = None
     risk_level: RiskLevel
+    risk_label: str
+    output_retention_enabled: bool = False
     audit_refs: list[str] = Field(default_factory=list)
 
 
 class TuiSessionControlResponse(BaseModel):
     session: TuiSession
+
+
+class TuiAttachTokenResponse(BaseModel):
+    attach_token: str
+    expires_at: datetime
+
+
+class CreateAssistanceRequest(StrictModel):
+    agent_id: str
+    session_id: str
+    reason: str
+    node_id: str | None = None
+    approval_id: str | None = None
+    context_redacted: dict[str, Any] = Field(default_factory=dict)
+
+
+class AssistanceRequest(BaseModel):
+    request_id: str
+    node_id: str
+    agent_id: str
+    session_id: str
+    reason: str
+    state: AssistanceState
+    approval_id: str | None = None
+    context_redacted: dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+    updated_at: datetime
+
+
+class CreateAssistanceSessionRequest(StrictModel):
+    initial_message: str | None = None
+
+
+class AssistanceSession(BaseModel):
+    assistance_session_id: str
+    request_id: str
+    node_id: str
+    agent_id: str
+    session_id: str
+    state: AssistanceState
+    created_by_device_id: str
+    return_summary: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    returned_at: datetime | None = None
+    closed_at: datetime | None = None
+    messages: list[AssistanceMessage] = Field(default_factory=list)
+
+
+class CreateAssistanceMessageRequest(StrictModel):
+    body: str
+
+
+class AssistanceMessage(BaseModel):
+    message_id: str
+    assistance_session_id: str
+    sender_type: Literal["user", "agent", "system"]
+    sender_id: str
+    body: str
+    created_at: datetime
+
+
+class ReturnControlRequest(StrictModel):
+    summary: str
+
+
+class CreateBrowserAssistanceSessionRequest(StrictModel):
+    agent_id: str
+    session_id: str
+    reason: str
+    node_id: str | None = None
+    approval_id: str | None = None
+    context_redacted: dict[str, Any] = Field(default_factory=dict)
+
+
+class BrowserAssistanceSession(BaseModel):
+    browser_session_id: str
+    node_id: str
+    agent_id: str
+    session_id: str
+    reason: str
+    state: BrowserAssistanceState
+    context_redacted: dict[str, Any] = Field(default_factory=dict)
+    user_action_notes: list[str] = Field(default_factory=list)
+    return_summary: str | None = None
+    created_at: datetime
+    updated_at: datetime
+    returned_at: datetime | None = None
+    closed_at: datetime | None = None
+
+
+class BrowserAssistanceEventRequest(StrictModel):
+    note: str
+
+
+class ApprovalConstraint(BaseModel):
+    constraint_type: str
+    value_redacted: dict[str, Any]
+
+
+class CreateApprovalResponseRequest(StrictModel):
+    decision_type: ApprovalResponseDecisionType
+    user_message: str | None = None
+    alternate_directive: str | None = None
+    constraints: list[ApprovalConstraint] = Field(default_factory=list)
+    confirmation_phrase: str | None = None
+
+
+class ApprovalResponse(BaseModel):
+    approval_response_id: str
+    approval_id: str
+    decision_type: ApprovalResponseDecisionType
+    created_by_device_id: str
+    user_message: str | None = None
+    alternate_directive: str | None = None
+    constraints: list[ApprovalConstraint] = Field(default_factory=list)
+    policy_proposal_id: str | None = None
+    created_at: datetime
+
+
+class ApprovalPolicyProposal(BaseModel):
+    policy_proposal_id: str
+    approval_id: str
+    created_by_device_id: str
+    status: Literal["proposed", "rejected", "activated"]
+    warning: str
+    constraints: list[ApprovalConstraint] = Field(default_factory=list)
+    created_at: datetime
+
+
+class CreateVoiceSessionRequest(StrictModel):
+    agent_id: str = "agent_mock"
+    session_id: str | None = None
+    mode: Literal["push_to_talk", "text_fallback"] = "text_fallback"
+
+
+class VoiceSession(BaseModel):
+    voice_session_id: str
+    node_id: str
+    agent_id: str
+    session_id: str | None = None
+    created_by_device_id: str
+    mode: str
+    state: VoiceSessionState
+    created_at: datetime
+    closed_at: datetime | None = None
+    messages: list[VoiceMessage] = Field(default_factory=list)
+
+
+class CreateVoiceMessageRequest(StrictModel):
+    body: str
+    input_mode: Literal["simulated_voice", "text_fallback"] = "text_fallback"
+
+
+class VoiceMessage(BaseModel):
+    voice_message_id: str
+    voice_session_id: str
+    sender_type: Literal["user", "agent", "system"]
+    body: str
+    input_mode: str
+    created_at: datetime
 
 
 class MobileNotifyRequest(StrictModel):

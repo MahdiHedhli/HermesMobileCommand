@@ -24,6 +24,8 @@ class Settings:
     tui_allowed_working_directory: str = "."
     tui_max_sessions: int = 2
     tui_idle_timeout_seconds: int = 900
+    tui_attach_token_ttl_seconds: int = 60
+    tui_output_retention_enabled: bool = False
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -64,6 +66,16 @@ class Settings:
                     "HERMES_TUI_IDLE_TIMEOUT_SECONDS",
                     str(cls.tui_idle_timeout_seconds),
                 )
+            ),
+            tui_attach_token_ttl_seconds=int(
+                os.getenv(
+                    "HERMES_TUI_ATTACH_TOKEN_TTL_SECONDS",
+                    str(cls.tui_attach_token_ttl_seconds),
+                )
+            ),
+            tui_output_retention_enabled=_bool_env(
+                "HERMES_TUI_OUTPUT_RETENTION_ENABLED",
+                cls.tui_output_retention_enabled,
             ),
         )
 

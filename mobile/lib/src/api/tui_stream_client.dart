@@ -10,17 +10,15 @@ typedef TuiSocketConnector = WebSocketChannel Function(Uri uri);
 class TuiStreamClient {
   const TuiStreamClient({
     required this.config,
-    required this.accessToken,
     TuiSocketConnector? socketConnector,
   }) : _socketConnector = socketConnector;
 
   final GatewayConfig config;
-  final String accessToken;
   final TuiSocketConnector? _socketConnector;
 
-  Uri streamUri(String sessionId) {
+  Uri streamUri(String sessionId, {required String attachToken}) {
     final httpUri = config.resolve('/tui/sessions/$sessionId/stream', {
-      'access_token': accessToken,
+      'attach_token': attachToken,
     });
     final scheme = switch (httpUri.scheme) {
       'https' => 'wss',
@@ -30,11 +28,12 @@ class TuiStreamClient {
     return httpUri.replace(scheme: scheme);
   }
 
-  TuiStreamConnection connect(String sessionId) {
+  TuiStreamConnection connect(String sessionId, {required String attachToken}) {
     final connector = _socketConnector;
     final channel = connector == null
-        ? WebSocketChannel.connect(streamUri(sessionId))
-        : connector(streamUri(sessionId));
+        ? WebSocketChannel.connect(
+            streamUri(sessionId, attachToken: attachToken))
+        : connector(streamUri(sessionId, attachToken: attachToken));
     return TuiStreamConnection(channel);
   }
 }

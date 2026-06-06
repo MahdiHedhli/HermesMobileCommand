@@ -31,6 +31,7 @@ tags:
   - name: hermes-tools
   - name: tui
   - name: tua
+  - name: browser-assistance
   - name: voice
 paths:
   /health:
@@ -777,7 +778,11 @@ paths:
     post:
       tags: [approvals]
       summary: Submit advanced approval response
-      description: Planned signed mobile endpoint for modified, conditional, escalation, stop, and scoped approval responses.
+      description: >
+        Signed mobile endpoint for advanced responses. `modified` and
+        `needs_info` keep the approval pending; `approve_once`,
+        `approve_session`, `approve_agent`, and `deny` resolve it. `propose_policy`
+        creates a proposal only and never activates a permanent allow policy.
       parameters:
         - $ref: "#/components/parameters/ApprovalId"
         - $ref: "#/components/parameters/HMCPDeviceIdHeader"
@@ -797,10 +802,11 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApprovalResponse"
+
+  /approvals/{approval_id}/policy-proposals:
     get:
-      tags: [approvals]
-      summary: List approval responses
-      description: Planned signed mobile endpoint.
+      tags: [approval-policies]
+      summary: List policy proposals created from advanced approval responses
       parameters:
         - $ref: "#/components/parameters/ApprovalId"
         - $ref: "#/components/parameters/HMCPDeviceIdHeader"
@@ -809,67 +815,17 @@ paths:
         - $ref: "#/components/parameters/HMCPSignatureHeader"
       responses:
         "200":
-          description: Approval responses
+          description: Policy proposals
           content:
             application/json:
               schema:
                 type: object
-                required: [approval_responses]
+                required: [policy_proposals]
                 properties:
-                  approval_responses:
+                  policy_proposals:
                     type: array
                     items:
-                      $ref: "#/components/schemas/ApprovalResponse"
-
-  /approvals/{approval_id}/more-info:
-    post:
-      tags: [approvals]
-      summary: Request more information about an approval
-      description: Planned signed mobile endpoint that keeps the approval pending.
-      parameters:
-        - $ref: "#/components/parameters/ApprovalId"
-        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
-        - $ref: "#/components/parameters/HMCPTimestampHeader"
-        - $ref: "#/components/parameters/HMCPNonceHeader"
-        - $ref: "#/components/parameters/HMCPSignatureHeader"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/MoreInfoRequest"
-      responses:
-        "201":
-          description: More-info approval response recorded
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApprovalResponse"
-
-  /approvals/{approval_id}/policy-proposals:
-    post:
-      tags: [approval-policies]
-      summary: Propose policy from Approve Forever
-      description: Planned signed mobile endpoint requiring second confirmation in the mobile UX.
-      parameters:
-        - $ref: "#/components/parameters/ApprovalId"
-        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
-        - $ref: "#/components/parameters/HMCPTimestampHeader"
-        - $ref: "#/components/parameters/HMCPNonceHeader"
-        - $ref: "#/components/parameters/HMCPSignatureHeader"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ApprovalPolicyProposalRequest"
-      responses:
-        "201":
-          description: Policy proposal created
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApprovalPolicy"
+                      $ref: "#/components/schemas/ApprovalPolicyProposal"
 
   /approval-policies:
     get:
@@ -1253,18 +1209,36 @@ paths:
               schema:
                 $ref: "#/components/schemas/TuiSessionControlResponse"
 
+  /tui/sessions/{session_id}/attach-token:
+    post:
+      tags: [tui]
+      summary: Mint a short-lived TUI WebSocket attach token
+      description: Signed paired-device endpoint. The token is scoped to the TUI session and device.
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
+      responses:
+        "200":
+          description: Attach token created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TuiAttachTokenResponse"
+
   /tui/sessions/{session_id}/stream:
     get:
       tags: [tui]
       summary: WebSocket terminal I/O stream
       description: >
         WebSocket terminal stream. The session must first be created through a
-        signed paired-device request. The alpha stream uses the paired device
-        access token as `access_token`; future hardening should mint a
-        short-lived attach token through a signed request.
+        signed paired-device request, then attached with a short-lived
+        session/device-scoped token.
       parameters:
         - $ref: "#/components/parameters/SessionId"
-        - name: access_token
+        - name: attach_token
           in: query
           required: true
           schema:
@@ -1275,11 +1249,11 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
-  /tua/assistance-requests:
+  /tua/requests:
     post:
       tags: [tua]
       summary: Create assistance request
-      description: Planned Hermes-local or signed mobile endpoint, depending on requester.
+      description: Hermes-local endpoint restricted to loopback callers unless explicitly allowlisted.
       requestBody:
         required: true
         content:
@@ -1296,7 +1270,7 @@ paths:
     get:
       tags: [tua]
       summary: List assistance requests
-      description: Planned signed mobile endpoint.
+      description: Signed mobile endpoint.
       parameters:
         - $ref: "#/components/parameters/HMCPDeviceIdHeader"
         - $ref: "#/components/parameters/HMCPTimestampHeader"
@@ -1309,19 +1283,46 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [assistance_requests]
+                required: [requests]
                 properties:
-                  assistance_requests:
+                  requests:
                     type: array
                     items:
                       $ref: "#/components/schemas/AssistanceRequest"
 
-  /tua/assistance-sessions:
+  /tua/requests/{request_id}:
+    get:
+      tags: [tua]
+      summary: Get assistance request
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
+      responses:
+        "200":
+          description: Assistance request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistanceRequest"
+
+  /tua/requests/{request_id}/sessions:
     post:
       tags: [tua]
       summary: Open assistance session
-      description: Planned signed mobile endpoint.
+      description: Signed mobile endpoint requiring intervention permission.
       parameters:
+        - name: request_id
+          in: path
+          required: true
+          schema:
+            type: string
         - $ref: "#/components/parameters/HMCPDeviceIdHeader"
         - $ref: "#/components/parameters/HMCPTimestampHeader"
         - $ref: "#/components/parameters/HMCPNonceHeader"
@@ -1331,7 +1332,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/OpenAssistanceSessionRequest"
+              $ref: "#/components/schemas/CreateAssistanceSessionRequest"
       responses:
         "201":
           description: Assistance session opened
@@ -1340,13 +1341,31 @@ paths:
               schema:
                 $ref: "#/components/schemas/AssistanceSession"
 
-  /tua/assistance-sessions/{assistance_session_id}/messages:
+  /tua/sessions/{session_id}:
+    get:
+      tags: [tua]
+      summary: Get assistance session
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
+      responses:
+        "200":
+          description: Assistance session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistanceSession"
+
+  /tua/sessions/{session_id}/messages:
     post:
       tags: [tua]
       summary: Send assistance message
-      description: Planned signed mobile endpoint.
+      description: Signed mobile endpoint requiring intervention permission.
       parameters:
-        - $ref: "#/components/parameters/AssistanceSessionId"
+        - $ref: "#/components/parameters/SessionId"
         - $ref: "#/components/parameters/HMCPDeviceIdHeader"
         - $ref: "#/components/parameters/HMCPTimestampHeader"
         - $ref: "#/components/parameters/HMCPNonceHeader"
@@ -1365,55 +1384,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/AssistanceMessage"
 
-  /tua/assistance-sessions/{assistance_session_id}/terminal-context:
-    post:
-      tags: [tua]
-      summary: Attach terminal context to assistance session
-      description: Planned signed mobile endpoint.
-      parameters:
-        - $ref: "#/components/parameters/AssistanceSessionId"
-        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
-        - $ref: "#/components/parameters/HMCPTimestampHeader"
-        - $ref: "#/components/parameters/HMCPNonceHeader"
-        - $ref: "#/components/parameters/HMCPSignatureHeader"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AttachTerminalContextRequest"
-      responses:
-        "202":
-          description: Terminal context attached
-
-  /tua/assistance-sessions/{assistance_session_id}/browser-context:
-    post:
-      tags: [tua]
-      summary: Attach browser context to assistance session
-      description: Planned signed mobile endpoint.
-      parameters:
-        - $ref: "#/components/parameters/AssistanceSessionId"
-        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
-        - $ref: "#/components/parameters/HMCPTimestampHeader"
-        - $ref: "#/components/parameters/HMCPNonceHeader"
-        - $ref: "#/components/parameters/HMCPSignatureHeader"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AttachBrowserContextRequest"
-      responses:
-        "202":
-          description: Browser context attached
-
-  /tua/assistance-sessions/{assistance_session_id}/return-control:
+  /tua/sessions/{session_id}/return-control:
     post:
       tags: [tua]
       summary: Return control to agent
-      description: Planned signed mobile endpoint.
+      description: Signed mobile endpoint requiring intervention permission.
       parameters:
-        - $ref: "#/components/parameters/AssistanceSessionId"
+        - $ref: "#/components/parameters/SessionId"
         - $ref: "#/components/parameters/HMCPDeviceIdHeader"
         - $ref: "#/components/parameters/HMCPTimestampHeader"
         - $ref: "#/components/parameters/HMCPNonceHeader"
@@ -1432,13 +1409,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/AssistanceSession"
 
-  /tua/assistance-sessions/{assistance_session_id}/close:
+  /tua/sessions/{session_id}/close:
     post:
       tags: [tua]
       summary: Close assistance session
-      description: Planned signed mobile endpoint.
+      description: Signed mobile endpoint requiring intervention permission.
       parameters:
-        - $ref: "#/components/parameters/AssistanceSessionId"
+        - $ref: "#/components/parameters/SessionId"
         - $ref: "#/components/parameters/HMCPDeviceIdHeader"
         - $ref: "#/components/parameters/HMCPTimestampHeader"
         - $ref: "#/components/parameters/HMCPNonceHeader"
@@ -1451,10 +1428,141 @@ paths:
               schema:
                 $ref: "#/components/schemas/AssistanceSession"
 
+  /browser-assistance/sessions:
+    post:
+      tags: [browser-assistance]
+      summary: Create browser assistance session
+      description: Hermes-local endpoint restricted to loopback callers unless explicitly allowlisted.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBrowserAssistanceSessionRequest"
+      responses:
+        "201":
+          description: Browser assistance session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrowserAssistanceSession"
+    get:
+      tags: [browser-assistance]
+      summary: List browser assistance sessions
+      parameters:
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
+      responses:
+        "200":
+          description: Browser assistance sessions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sessions]
+                properties:
+                  sessions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/BrowserAssistanceSession"
+
+  /browser-assistance/sessions/{session_id}:
+    get:
+      tags: [browser-assistance]
+      summary: Get browser assistance session
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
+      responses:
+        "200":
+          description: Browser assistance session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrowserAssistanceSession"
+
+  /browser-assistance/sessions/{session_id}/event:
+    post:
+      tags: [browser-assistance]
+      summary: Record browser assistance operator note
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BrowserAssistanceEventRequest"
+      responses:
+        "200":
+          description: Browser assistance session updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrowserAssistanceSession"
+
+  /browser-assistance/sessions/{session_id}/return-control:
+    post:
+      tags: [browser-assistance]
+      summary: Return browser assistance control to agent
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReturnControlRequest"
+      responses:
+        "200":
+          description: Browser assistance returned to agent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrowserAssistanceSession"
+
+  /browser-assistance/sessions/{session_id}/close:
+    post:
+      tags: [browser-assistance]
+      summary: Close browser assistance session
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
+      responses:
+        "200":
+          description: Browser assistance session closed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrowserAssistanceSession"
+
   /voice/sessions:
     post:
       tags: [voice]
       summary: Create a voice session
+      description: Signed mobile endpoint for text-backed voice MVP sessions.
+      parameters:
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
       requestBody:
         required: true
         content:
@@ -1469,12 +1577,16 @@ paths:
               schema:
                 $ref: "#/components/schemas/VoiceSession"
 
-  /voice/sessions/{voice_session_id}:
+  /voice/sessions/{session_id}:
     get:
       tags: [voice]
       summary: Get voice session detail
       parameters:
-        - $ref: "#/components/parameters/VoiceSessionId"
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
       responses:
         "200":
           description: Voice session
@@ -1482,34 +1594,48 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/VoiceSession"
-    delete:
-      tags: [voice]
-      summary: End a voice session
-      parameters:
-        - $ref: "#/components/parameters/VoiceSessionId"
-      responses:
-        "204":
-          description: Voice session ended
 
-  /voice/sessions/{voice_session_id}/turns:
+  /voice/sessions/{session_id}/messages:
     post:
       tags: [voice]
-      summary: Submit a push-to-talk audio or transcript turn
+      summary: Submit text-backed voice message
       parameters:
-        - $ref: "#/components/parameters/VoiceSessionId"
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/CreateVoiceTurnRequest"
+              $ref: "#/components/schemas/CreateVoiceMessageRequest"
       responses:
-        "202":
-          description: Voice turn accepted
+        "201":
+          description: Voice message recorded
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/VoiceTurn"
+                $ref: "#/components/schemas/VoiceMessage"
+
+  /voice/sessions/{session_id}/close:
+    post:
+      tags: [voice]
+      summary: Close voice session
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
+      responses:
+        "200":
+          description: Voice session closed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceSession"
 
 components:
   securitySchemes:
@@ -1751,7 +1877,7 @@ components:
           format: date-time
 
     Permission:
-      enum: [read_state, chat, approve, intervene, manage_devices, voice]
+      enum: [read_state, chat, approve, intervene, manage_devices, voice, tui, browser_assist]
 
     DeviceRegistration:
       type: object
@@ -2247,18 +2373,13 @@ components:
 
     ApprovalResponseDecisionType:
       enum:
-        - approved_once
-        - approved_session
-        - approved_agent
-        - approved_forever
-        - denied
+        - approve_once
+        - approve_session
+        - approve_agent
+        - deny
         - modified
         - needs_info
-        - escalated_tua
-        - escalated_tui
-        - pause_agent
-        - stop_task
-        - stop_agent
+        - propose_policy
 
     ApprovalConstraint:
       type: object
@@ -2285,22 +2406,18 @@ components:
           $ref: "#/components/schemas/ApprovalResponseDecisionType"
         user_message:
           type: string
-        replacement_action:
-          type: object
-          additionalProperties: true
+        alternate_directive:
+          type: string
         constraints:
           type: array
           items:
             $ref: "#/components/schemas/ApprovalConstraint"
-        approved_scope:
-          $ref: "#/components/schemas/ApprovalScope"
-        expires_at:
+        confirmation_phrase:
           type: string
-          format: date-time
 
     ApprovalResponse:
       type: object
-      required: [approval_response_id, approval_id, decision_type, decided_by_device_id, decided_at]
+      required: [approval_response_id, approval_id, decision_type, created_by_device_id, created_at]
       properties:
         approval_response_id:
           type: string
@@ -2310,29 +2427,41 @@ components:
           $ref: "#/components/schemas/ApprovalResponseDecisionType"
         user_message:
           type: string
-        replacement_action:
-          type: object
-          additionalProperties: true
+        alternate_directive:
+          type: string
         constraints:
           type: array
           items:
             $ref: "#/components/schemas/ApprovalConstraint"
-        approved_scope:
-          $ref: "#/components/schemas/ApprovalScope"
-        policy_created:
-          type: boolean
-        expires_at:
+        policy_proposal_id:
+          type: string
+        created_by_device_id:
+          type: string
+        created_at:
           type: string
           format: date-time
-        decided_by_device_id:
+
+    ApprovalPolicyProposal:
+      type: object
+      required: [policy_proposal_id, approval_id, created_by_device_id, status, warning, created_at]
+      properties:
+        policy_proposal_id:
           type: string
-        decided_at:
+        approval_id:
+          type: string
+        created_by_device_id:
+          type: string
+        status:
+          enum: [proposed, rejected, activated]
+        warning:
+          type: string
+        constraints:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApprovalConstraint"
+        created_at:
           type: string
           format: date-time
-        assistance_session_id:
-          type: string
-        terminal_session_id:
-          type: string
 
     MoreInfoRequest:
       type: object
@@ -2595,6 +2724,8 @@ components:
         - created_at
         - last_activity_at
         - risk_level
+        - risk_label
+        - output_retention_enabled
       properties:
         session_id:
           type: string
@@ -2621,10 +2752,24 @@ components:
           format: date-time
         risk_level:
           $ref: "#/components/schemas/RiskLevel"
+        risk_label:
+          type: string
+        output_retention_enabled:
+          type: boolean
         audit_refs:
           type: array
           items:
             type: string
+
+    TuiAttachTokenResponse:
+      type: object
+      required: [attach_token, expires_at]
+      properties:
+        attach_token:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
 
     TuiSessionControlResponse:
       type: object
@@ -2663,7 +2808,7 @@ components:
 
     CreateAssistanceRequest:
       type: object
-      required: [node_id, agent_id, session_id, reason]
+      required: [agent_id, session_id, reason]
       properties:
         node_id:
           type: string
@@ -2675,15 +2820,15 @@ components:
           type: string
         reason:
           type: string
-        expires_at:
-          type: string
-          format: date-time
+        context_redacted:
+          type: object
+          additionalProperties: true
 
     AssistanceRequest:
       type: object
-      required: [assistance_request_id, node_id, agent_id, session_id, reason, state, created_at]
+      required: [request_id, node_id, agent_id, session_id, reason, state, created_at, updated_at]
       properties:
-        assistance_request_id:
+        request_id:
           type: string
         node_id:
           type: string
@@ -2696,28 +2841,30 @@ components:
         reason:
           type: string
         state:
-          enum: [requested, active, closed, cancelled]
+          enum: [requested, active, waiting_on_user, user_controlling, returned_to_agent, closed, cancelled]
+        context_redacted:
+          type: object
+          additionalProperties: true
         created_at:
           type: string
           format: date-time
-        expires_at:
+        updated_at:
           type: string
           format: date-time
 
-    OpenAssistanceSessionRequest:
+    CreateAssistanceSessionRequest:
       type: object
-      required: [assistance_request_id]
       properties:
-        assistance_request_id:
+        initial_message:
           type: string
 
     AssistanceSession:
       type: object
-      required: [assistance_session_id, assistance_request_id, node_id, agent_id, session_id, state, created_at, updated_at]
+      required: [assistance_session_id, request_id, node_id, agent_id, session_id, state, created_by_device_id, created_at, updated_at]
       properties:
         assistance_session_id:
           type: string
-        assistance_request_id:
+        request_id:
           type: string
         node_id:
           type: string
@@ -2727,6 +2874,8 @@ components:
           type: string
         state:
           enum: [requested, active, waiting_on_user, user_controlling, returned_to_agent, closed, cancelled]
+        created_by_device_id:
+          type: string
         return_summary:
           type: string
         created_at:
@@ -2738,31 +2887,31 @@ components:
         closed_at:
           type: string
           format: date-time
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistanceMessage"
 
     CreateAssistanceMessage:
       type: object
-      required: [message_type, content_redacted]
+      required: [body]
       properties:
-        message_type:
-          enum: [message, more_info, directive, return_control, context_attachment]
-        content_redacted:
+        body:
           type: string
 
     AssistanceMessage:
       type: object
-      required: [assistance_message_id, assistance_session_id, sender_type, message_type, content_redacted, created_at]
+      required: [message_id, assistance_session_id, sender_type, sender_id, body, created_at]
       properties:
-        assistance_message_id:
+        message_id:
           type: string
         assistance_session_id:
           type: string
         sender_type:
-          enum: [user, agent, gateway, system]
+          enum: [user, agent, system]
         sender_id:
           type: string
-        message_type:
-          enum: [message, more_info, directive, return_control, context_attachment]
-        content_redacted:
+        body:
           type: string
         created_at:
           type: string
@@ -2797,9 +2946,9 @@ components:
           items:
             $ref: "#/components/schemas/ApprovalConstraint"
 
-    CreateVoiceSessionRequest:
+    CreateBrowserAssistanceSessionRequest:
       type: object
-      required: [node_id, agent_id, session_id, mode]
+      required: [agent_id, session_id, reason]
       properties:
         node_id:
           type: string
@@ -2807,12 +2956,73 @@ components:
           type: string
         session_id:
           type: string
+        approval_id:
+          type: string
+        reason:
+          type: string
+        context_redacted:
+          type: object
+          additionalProperties: true
+
+    BrowserAssistanceSession:
+      type: object
+      required: [browser_session_id, node_id, agent_id, session_id, reason, state, created_at, updated_at]
+      properties:
+        browser_session_id:
+          type: string
+        node_id:
+          type: string
+        agent_id:
+          type: string
+        session_id:
+          type: string
+        reason:
+          type: string
+        state:
+          enum: [requested, active, user_controlling, returned_to_agent, closed, failed]
+        context_redacted:
+          type: object
+          additionalProperties: true
+        user_action_notes:
+          type: array
+          items:
+            type: string
+        return_summary:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        returned_at:
+          type: string
+          format: date-time
+        closed_at:
+          type: string
+          format: date-time
+
+    BrowserAssistanceEventRequest:
+      type: object
+      required: [note]
+      properties:
+        note:
+          type: string
+
+    CreateVoiceSessionRequest:
+      type: object
+      properties:
+        agent_id:
+          type: string
+          default: agent_mock
+        session_id:
+          type: string
         mode:
-          enum: [push_to_talk, half_duplex, full_duplex]
+          enum: [push_to_talk, text_fallback]
 
     VoiceSession:
       type: object
-      required: [voice_session_id, node_id, agent_id, session_id, mode, state, started_at]
+      required: [voice_session_id, node_id, agent_id, created_by_device_id, mode, state, created_at]
       properties:
         voice_session_id:
           type: string
@@ -2822,45 +3032,45 @@ components:
           type: string
         session_id:
           type: string
+        created_by_device_id:
+          type: string
         mode:
-          enum: [push_to_talk, half_duplex, full_duplex]
+          type: string
         state:
-          enum: [starting, active, paused, ended, failed]
-        started_at:
+          enum: [active, closed]
+        created_at:
           type: string
           format: date-time
-        ended_at:
+        closed_at:
           type: string
           format: date-time
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/VoiceMessage"
 
-    CreateVoiceTurnRequest:
+    CreateVoiceMessageRequest:
       type: object
-      required: [turn_id, input_type]
+      required: [body]
       properties:
-        turn_id:
+        body:
           type: string
-        input_type:
-          enum: [audio_reference, transcript]
-        audio_reference:
-          type: string
-        transcript:
-          type: string
+        input_mode:
+          enum: [simulated_voice, text_fallback]
 
-    VoiceTurn:
+    VoiceMessage:
       type: object
-      required: [turn_id, voice_session_id, state, created_at]
+      required: [voice_message_id, voice_session_id, sender_type, body, input_mode, created_at]
       properties:
-        turn_id:
+        voice_message_id:
           type: string
         voice_session_id:
           type: string
-        state:
-          enum: [accepted, processing, completed, failed]
-        transcript:
+        sender_type:
+          enum: [user, agent, system]
+        body:
           type: string
-        response_text:
-          type: string
-        response_audio_reference:
+        input_mode:
           type: string
         created_at:
           type: string

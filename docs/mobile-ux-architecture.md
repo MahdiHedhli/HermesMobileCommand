@@ -338,8 +338,8 @@ Primary content:
 
 - Node/agent/session context
 - Voice mode status
-- Push-to-talk control
-- Transcript
+- Text-backed push-to-talk fallback
+- Transcript/message list
 - Agent response
 - Voice session health
 - Approval confirmation prompt when applicable
@@ -351,6 +351,12 @@ Primary actions:
 - End voice session
 - Interrupt
 - Confirm voice approval phrase when supported
+
+MVP note:
+
+- The first functional voice screen records signed voice sessions and
+  text-backed messages. Live audio capture, STT/TTS, and WebRTC are future
+  phases.
 
 ### Settings
 
@@ -420,6 +426,32 @@ Primary actions:
 - Pause/resume agent
 - Return control to agent
 - Close assistance
+
+### Browser Assistance
+
+Purpose:
+
+- Let the mobile operator review browser-help requests without implementing
+  full remote browser control yet.
+
+Primary content:
+
+- Browser assistance reason
+- Node, agent, session, and approval context where available
+- Redacted browser context
+- User action notes
+- Return-control summary
+
+Primary actions:
+
+- Record operator note
+- Return control to agent
+- Close browser assistance session
+
+MVP note:
+
+- Browser streaming and takeover are intentionally not part of the first browser
+  assistance slice.
 
 ### TUI Terminal
 

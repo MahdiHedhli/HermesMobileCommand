@@ -66,19 +66,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 runAction: _runAction,
               ),
               const SectionHeader(title: 'Safety Defaults'),
-              const AlphaPanel(
+              AlphaPanel(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    DetailRow(
+                    const DetailRow(
                         label: 'Approvals',
                         value: 'Signed device requests only'),
-                    DetailRow(
+                    const DetailRow(
                         label: 'Push',
                         value: 'Notification records only in alpha'),
                     DetailRow(
                         label: 'Storage',
-                        value: 'SharedPreferences for local dev'),
+                        value: runtime.secureStorageStatus),
                   ],
                 ),
               ),

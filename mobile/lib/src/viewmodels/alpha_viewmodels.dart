@@ -118,17 +118,16 @@ class ApprovalDetailViewModel {
         description: 'Signed approval scoped to this agent.',
         enabled: pending && _hasOption(approval, 'approve_for_agent'),
       ),
-      const ApprovalMoreAction(
+      ApprovalMoreAction(
         kind: ApprovalMoreActionKind.approveForever,
         label: 'Approve Forever',
-        description: 'Permanent policy enforcement is intentionally deferred.',
-        enabled: false,
-        planned: true,
+        description: 'Create a policy proposal only; no permanent allow is activated.',
+        enabled: pending,
       ),
       ApprovalMoreAction(
         kind: ApprovalMoreActionKind.other,
         label: 'Other',
-        description: 'Draft a local modified response for future support.',
+        description: 'Send an alternate directive or constraint.',
         enabled: pending,
       ),
       const ApprovalMoreAction(
@@ -147,6 +146,12 @@ class ApprovalDetailViewModel {
         kind: ApprovalMoreActionKind.openTui,
         label: 'Open TUI Session',
         description: 'Open the terminal prototype for this context.',
+        enabled: true,
+      ),
+      const ApprovalMoreAction(
+        kind: ApprovalMoreActionKind.browserAssistance,
+        label: 'Browser Assistance',
+        description: 'Open the browser assistance operator surface.',
         enabled: true,
       ),
       const ApprovalMoreAction(
@@ -194,6 +199,7 @@ enum ApprovalMoreActionKind {
   moreInfo,
   openTua,
   openTui,
+  browserAssistance,
   pauseAgent,
   stopTask,
   stopAgent,

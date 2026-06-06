@@ -78,22 +78,17 @@ The compact approval states remain the durable terminal state model. Advanced mo
 
 Supported response decision types:
 
-- `approved_once`
-- `approved_session`
-- `approved_agent`
-- `approved_forever`
-- `denied`
+- `approve_once`
+- `approve_session`
+- `approve_agent`
+- `deny`
 - `modified`
 - `needs_info`
-- `escalated_tua`
-- `escalated_tui`
-- `pause_agent`
-- `stop_task`
-- `stop_agent`
+- `propose_policy`
 
-`modified`, `needs_info`, `escalated_tua`, and `escalated_tui` do not automatically resolve the approval. They keep the approval pending unless Hermes, gateway policy, or the user later produces a terminal decision.
+`modified`, `needs_info`, and `propose_policy` do not automatically resolve the approval. They keep the approval pending unless Hermes, gateway policy, or the user later produces a terminal decision.
 
-`approved_forever` is a policy action. It must require a second confirmation, create or propose an `ApprovalPolicy`, and must not be the default action for high or critical risk requests.
+`propose_policy` is the Approve Forever path. It requires a second confirmation, creates an `ApprovalPolicyProposal`, and must not activate a permanent allow policy.
 
 ### ApprovalResponse Contract
 
@@ -102,7 +97,8 @@ Required fields:
 - `approval_response_id`
 - `approval_id`
 - `decision_type`
-- `decided_by_device_id`
+- `created_by_device_id`
+- `created_at`
 - `decided_at`
 
 Optional fields:

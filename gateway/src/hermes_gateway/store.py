@@ -169,10 +169,119 @@ class SQLiteStore:
                     command TEXT NOT NULL,
                     working_directory TEXT NOT NULL,
                     risk_level TEXT NOT NULL,
+                    risk_label TEXT NOT NULL DEFAULT 'high-risk terminal',
+                    output_retention_enabled INTEGER NOT NULL DEFAULT 0,
                     audit_refs_json TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     last_activity_at TEXT NOT NULL,
                     closed_at TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS tui_attach_tokens (
+                    token_hash TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    device_id TEXT NOT NULL,
+                    expires_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    used_at TEXT,
+                    revoked_at TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS assistance_requests (
+                    request_id TEXT PRIMARY KEY,
+                    node_id TEXT NOT NULL,
+                    agent_id TEXT NOT NULL,
+                    session_id TEXT NOT NULL,
+                    approval_id TEXT,
+                    reason TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    context_redacted_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS assistance_sessions (
+                    assistance_session_id TEXT PRIMARY KEY,
+                    request_id TEXT NOT NULL,
+                    node_id TEXT NOT NULL,
+                    agent_id TEXT NOT NULL,
+                    session_id TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    created_by_device_id TEXT NOT NULL,
+                    return_summary TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    returned_at TEXT,
+                    closed_at TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS assistance_messages (
+                    message_id TEXT PRIMARY KEY,
+                    assistance_session_id TEXT NOT NULL,
+                    sender_type TEXT NOT NULL,
+                    sender_id TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS browser_assistance_sessions (
+                    browser_session_id TEXT PRIMARY KEY,
+                    node_id TEXT NOT NULL,
+                    agent_id TEXT NOT NULL,
+                    session_id TEXT NOT NULL,
+                    approval_id TEXT,
+                    reason TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    context_redacted_json TEXT NOT NULL,
+                    user_action_notes_json TEXT NOT NULL,
+                    return_summary TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    returned_at TEXT,
+                    closed_at TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS approval_responses (
+                    approval_response_id TEXT PRIMARY KEY,
+                    approval_id TEXT NOT NULL,
+                    decision_type TEXT NOT NULL,
+                    created_by_device_id TEXT NOT NULL,
+                    user_message TEXT,
+                    alternate_directive TEXT,
+                    constraints_json TEXT NOT NULL,
+                    policy_proposal_id TEXT,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS approval_policy_proposals (
+                    policy_proposal_id TEXT PRIMARY KEY,
+                    approval_id TEXT NOT NULL,
+                    created_by_device_id TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    warning TEXT NOT NULL,
+                    constraints_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS voice_sessions (
+                    voice_session_id TEXT PRIMARY KEY,
+                    node_id TEXT NOT NULL,
+                    agent_id TEXT NOT NULL,
+                    session_id TEXT,
+                    created_by_device_id TEXT NOT NULL,
+                    mode TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    closed_at TEXT
+                );
+
+                CREATE TABLE IF NOT EXISTS voice_messages (
+                    voice_message_id TEXT PRIMARY KEY,
+                    voice_session_id TEXT NOT NULL,
+                    sender_type TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    input_mode TEXT NOT NULL,
+                    created_at TEXT NOT NULL
                 );
 
                 CREATE TABLE IF NOT EXISTS audit_events (
@@ -218,6 +327,18 @@ class SQLiteStore:
                 "TEXT NOT NULL DEFAULT '{}'",
             )
             self._ensure_column(db, "approval_requests", "decided_at", "TEXT")
+            self._ensure_column(
+                db,
+                "tui_sessions",
+                "risk_label",
+                "TEXT NOT NULL DEFAULT 'high-risk terminal'",
+            )
+            self._ensure_column(
+                db,
+                "tui_sessions",
+                "output_retention_enabled",
+                "INTEGER NOT NULL DEFAULT 0",
+            )
 
     def _ensure_column(
         self, db: sqlite3.Connection, table_name: str, column_name: str, definition: str
@@ -784,10 +905,10 @@ class SQLiteStore:
                 """
                 INSERT INTO tui_sessions (
                     session_id, agent_id, node_id, user_device_id, state, command,
-                    working_directory, risk_level, audit_refs_json, created_at,
-                    last_activity_at, closed_at
+                    working_directory, risk_level, risk_label, output_retention_enabled,
+                    audit_refs_json, created_at, last_activity_at, closed_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session["session_id"],
@@ -798,6 +919,8 @@ class SQLiteStore:
                     session["command"],
                     session["working_directory"],
                     session["risk_level"],
+                    session.get("risk_label", "high-risk terminal"),
+                    1 if session.get("output_retention_enabled", False) else 0,
                     json.dumps(session.get("audit_refs", [])),
                     session.get("created_at") or now,
                     session.get("last_activity_at") or now,
@@ -894,6 +1017,497 @@ class SQLiteStore:
     def _tui_session_from_row(self, row: sqlite3.Row) -> dict[str, Any]:
         session = dict(row)
         session["audit_refs"] = json.loads(session.pop("audit_refs_json"))
+        session["output_retention_enabled"] = bool(session["output_retention_enabled"])
+        return session
+
+    def create_tui_attach_token(
+        self,
+        *,
+        token: str,
+        session_id: str,
+        device_id: str,
+        ttl_seconds: int,
+    ) -> dict[str, Any]:
+        expires_at = utc_iso(expires_in(ttl_seconds))
+        with self.connect() as db:
+            db.execute(
+                """
+                INSERT INTO tui_attach_tokens (
+                    token_hash, session_id, device_id, expires_at, created_at
+                )
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (hash_token(token), session_id, device_id, expires_at, utc_iso()),
+            )
+        return {"attach_token": token, "expires_at": expires_at}
+
+    def verify_tui_attach_token(self, token: str) -> dict[str, Any] | None:
+        with self.connect() as db:
+            row = db.execute(
+                """
+                SELECT * FROM tui_attach_tokens
+                WHERE token_hash = ? AND revoked_at IS NULL
+                """,
+                (hash_token(token),),
+            ).fetchone()
+            if row is None:
+                return None
+            token_row = dict(row)
+            if parse_utc(token_row["expires_at"]) <= now_utc():
+                return None
+            db.execute(
+                "UPDATE tui_attach_tokens SET used_at = ? WHERE token_hash = ?",
+                (utc_iso(), token_row["token_hash"]),
+            )
+        return token_row
+
+    def create_assistance_request(self, request: dict[str, Any]) -> dict[str, Any]:
+        request_id = request.get("request_id") or new_id("tua_req")
+        now = utc_iso()
+        with self.connect() as db:
+            db.execute(
+                """
+                INSERT INTO assistance_requests (
+                    request_id, node_id, agent_id, session_id, approval_id, reason,
+                    state, context_redacted_json, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    request_id,
+                    request["node_id"],
+                    request["agent_id"],
+                    request["session_id"],
+                    request.get("approval_id"),
+                    request["reason"],
+                    request.get("state", "requested"),
+                    json.dumps(request.get("context_redacted", {})),
+                    request.get("created_at") or now,
+                    request.get("updated_at") or now,
+                ),
+            )
+        return self.get_assistance_request(request_id)
+
+    def get_assistance_request(self, request_id: str) -> dict[str, Any]:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM assistance_requests WHERE request_id = ?",
+                (request_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(request_id)
+        request = dict(row)
+        request["context_redacted"] = json.loads(request.pop("context_redacted_json"))
+        return request
+
+    def list_assistance_requests(self, state: str | None = None) -> list[dict[str, Any]]:
+        sql = "SELECT * FROM assistance_requests"
+        args: tuple[Any, ...] = ()
+        if state:
+            sql += " WHERE state = ?"
+            args = (state,)
+        sql += " ORDER BY updated_at DESC"
+        with self.connect() as db:
+            rows = db.execute(sql, args).fetchall()
+        return [self._assistance_request_from_row(row) for row in rows]
+
+    def create_assistance_session(self, session: dict[str, Any]) -> dict[str, Any]:
+        session_id = session.get("assistance_session_id") or new_id("tua")
+        now = utc_iso()
+        with self.connect() as db:
+            db.execute(
+                """
+                INSERT INTO assistance_sessions (
+                    assistance_session_id, request_id, node_id, agent_id, session_id,
+                    state, created_by_device_id, return_summary, created_at, updated_at,
+                    returned_at, closed_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session_id,
+                    session["request_id"],
+                    session["node_id"],
+                    session["agent_id"],
+                    session["session_id"],
+                    session.get("state", "active"),
+                    session["created_by_device_id"],
+                    session.get("return_summary"),
+                    session.get("created_at") or now,
+                    session.get("updated_at") or now,
+                    session.get("returned_at"),
+                    session.get("closed_at"),
+                ),
+            )
+            db.execute(
+                "UPDATE assistance_requests SET state = ?, updated_at = ? WHERE request_id = ?",
+                ("active", now, session["request_id"]),
+            )
+        return self.get_assistance_session(session_id)
+
+    def get_assistance_session(self, session_id: str) -> dict[str, Any]:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM assistance_sessions WHERE assistance_session_id = ?",
+                (session_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(session_id)
+        session = dict(row)
+        session["messages"] = self.list_assistance_messages(session_id)
+        return session
+
+    def update_assistance_session_state(
+        self,
+        session_id: str,
+        state: str,
+        *,
+        return_summary: str | None = None,
+    ) -> dict[str, Any]:
+        now = utc_iso()
+        returned_at = now if state == "returned_to_agent" else None
+        closed_at = now if state in {"closed", "cancelled"} else None
+        with self.connect() as db:
+            db.execute(
+                """
+                UPDATE assistance_sessions
+                SET state = ?,
+                    return_summary = COALESCE(?, return_summary),
+                    updated_at = ?,
+                    returned_at = COALESCE(?, returned_at),
+                    closed_at = COALESCE(?, closed_at)
+                WHERE assistance_session_id = ?
+                """,
+                (state, return_summary, now, returned_at, closed_at, session_id),
+            )
+        return self.get_assistance_session(session_id)
+
+    def create_assistance_message(self, message: dict[str, Any]) -> dict[str, Any]:
+        message_id = message.get("message_id") or new_id("tua_msg")
+        with self.connect() as db:
+            db.execute(
+                """
+                INSERT INTO assistance_messages (
+                    message_id, assistance_session_id, sender_type, sender_id, body, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    message_id,
+                    message["assistance_session_id"],
+                    message["sender_type"],
+                    message["sender_id"],
+                    message["body"],
+                    message.get("created_at") or utc_iso(),
+                ),
+            )
+        return self.get_assistance_message(message_id)
+
+    def get_assistance_message(self, message_id: str) -> dict[str, Any]:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM assistance_messages WHERE message_id = ?",
+                (message_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(message_id)
+        return dict(row)
+
+    def list_assistance_messages(self, session_id: str) -> list[dict[str, Any]]:
+        with self.connect() as db:
+            rows = db.execute(
+                """
+                SELECT * FROM assistance_messages
+                WHERE assistance_session_id = ?
+                ORDER BY created_at ASC
+                """,
+                (session_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def create_browser_assistance_session(self, session: dict[str, Any]) -> dict[str, Any]:
+        session_id = session.get("browser_session_id") or new_id("bas")
+        now = utc_iso()
+        with self.connect() as db:
+            db.execute(
+                """
+                INSERT INTO browser_assistance_sessions (
+                    browser_session_id, node_id, agent_id, session_id, approval_id,
+                    reason, state, context_redacted_json, user_action_notes_json,
+                    return_summary, created_at, updated_at, returned_at, closed_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session_id,
+                    session["node_id"],
+                    session["agent_id"],
+                    session["session_id"],
+                    session.get("approval_id"),
+                    session["reason"],
+                    session.get("state", "requested"),
+                    json.dumps(session.get("context_redacted", {})),
+                    json.dumps(session.get("user_action_notes", [])),
+                    session.get("return_summary"),
+                    session.get("created_at") or now,
+                    session.get("updated_at") or now,
+                    session.get("returned_at"),
+                    session.get("closed_at"),
+                ),
+            )
+        return self.get_browser_assistance_session(session_id)
+
+    def get_browser_assistance_session(self, session_id: str) -> dict[str, Any]:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM browser_assistance_sessions WHERE browser_session_id = ?",
+                (session_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(session_id)
+        return self._browser_assistance_session_from_row(row)
+
+    def list_browser_assistance_sessions(
+        self, state: str | None = None
+    ) -> list[dict[str, Any]]:
+        sql = "SELECT * FROM browser_assistance_sessions"
+        args: tuple[Any, ...] = ()
+        if state:
+            sql += " WHERE state = ?"
+            args = (state,)
+        sql += " ORDER BY updated_at DESC"
+        with self.connect() as db:
+            rows = db.execute(sql, args).fetchall()
+        return [self._browser_assistance_session_from_row(row) for row in rows]
+
+    def add_browser_assistance_note(self, session_id: str, note: str) -> dict[str, Any]:
+        session = self.get_browser_assistance_session(session_id)
+        notes = [*session["user_action_notes"], note]
+        with self.connect() as db:
+            db.execute(
+                """
+                UPDATE browser_assistance_sessions
+                SET user_action_notes_json = ?, updated_at = ?, state = ?
+                WHERE browser_session_id = ?
+                """,
+                (json.dumps(notes), utc_iso(), "user_controlling", session_id),
+            )
+        return self.get_browser_assistance_session(session_id)
+
+    def update_browser_assistance_state(
+        self,
+        session_id: str,
+        state: str,
+        *,
+        return_summary: str | None = None,
+    ) -> dict[str, Any]:
+        now = utc_iso()
+        returned_at = now if state == "returned_to_agent" else None
+        closed_at = now if state in {"closed", "failed"} else None
+        with self.connect() as db:
+            db.execute(
+                """
+                UPDATE browser_assistance_sessions
+                SET state = ?,
+                    return_summary = COALESCE(?, return_summary),
+                    updated_at = ?,
+                    returned_at = COALESCE(?, returned_at),
+                    closed_at = COALESCE(?, closed_at)
+                WHERE browser_session_id = ?
+                """,
+                (state, return_summary, now, returned_at, closed_at, session_id),
+            )
+        return self.get_browser_assistance_session(session_id)
+
+    def create_approval_policy_proposal(self, proposal: dict[str, Any]) -> dict[str, Any]:
+        proposal_id = proposal.get("policy_proposal_id") or new_id("polp")
+        with self.connect() as db:
+            db.execute(
+                """
+                INSERT INTO approval_policy_proposals (
+                    policy_proposal_id, approval_id, created_by_device_id, status,
+                    warning, constraints_json, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    proposal_id,
+                    proposal["approval_id"],
+                    proposal["created_by_device_id"],
+                    proposal.get("status", "proposed"),
+                    proposal["warning"],
+                    json.dumps(proposal.get("constraints", [])),
+                    proposal.get("created_at") or utc_iso(),
+                ),
+            )
+        return self.get_approval_policy_proposal(proposal_id)
+
+    def get_approval_policy_proposal(self, proposal_id: str) -> dict[str, Any]:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM approval_policy_proposals WHERE policy_proposal_id = ?",
+                (proposal_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(proposal_id)
+        proposal = dict(row)
+        proposal["constraints"] = json.loads(proposal.pop("constraints_json"))
+        return proposal
+
+    def create_approval_response(self, response: dict[str, Any]) -> dict[str, Any]:
+        response_id = response.get("approval_response_id") or new_id("appr_resp")
+        with self.connect() as db:
+            db.execute(
+                """
+                INSERT INTO approval_responses (
+                    approval_response_id, approval_id, decision_type,
+                    created_by_device_id, user_message, alternate_directive,
+                    constraints_json, policy_proposal_id, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    response_id,
+                    response["approval_id"],
+                    response["decision_type"],
+                    response["created_by_device_id"],
+                    response.get("user_message"),
+                    response.get("alternate_directive"),
+                    json.dumps(response.get("constraints", [])),
+                    response.get("policy_proposal_id"),
+                    response.get("created_at") or utc_iso(),
+                ),
+            )
+        return self.get_approval_response(response_id)
+
+    def get_approval_response(self, response_id: str) -> dict[str, Any]:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM approval_responses WHERE approval_response_id = ?",
+                (response_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(response_id)
+        response = dict(row)
+        response["constraints"] = json.loads(response.pop("constraints_json"))
+        return response
+
+    def list_approval_responses(self, approval_id: str) -> list[dict[str, Any]]:
+        with self.connect() as db:
+            rows = db.execute(
+                "SELECT * FROM approval_responses WHERE approval_id = ? ORDER BY created_at DESC",
+                (approval_id,),
+            ).fetchall()
+        responses = []
+        for row in rows:
+            response = dict(row)
+            response["constraints"] = json.loads(response.pop("constraints_json"))
+            responses.append(response)
+        return responses
+
+    def create_voice_session(self, session: dict[str, Any]) -> dict[str, Any]:
+        session_id = session.get("voice_session_id") or new_id("voice")
+        with self.connect() as db:
+            db.execute(
+                """
+                INSERT INTO voice_sessions (
+                    voice_session_id, node_id, agent_id, session_id, created_by_device_id,
+                    mode, state, created_at, closed_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session_id,
+                    session["node_id"],
+                    session["agent_id"],
+                    session.get("session_id"),
+                    session["created_by_device_id"],
+                    session["mode"],
+                    session.get("state", "active"),
+                    session.get("created_at") or utc_iso(),
+                    session.get("closed_at"),
+                ),
+            )
+        return self.get_voice_session(session_id)
+
+    def get_voice_session(self, session_id: str) -> dict[str, Any]:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM voice_sessions WHERE voice_session_id = ?",
+                (session_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(session_id)
+        session = dict(row)
+        session["messages"] = self.list_voice_messages(session_id)
+        return session
+
+    def update_voice_session_state(self, session_id: str, state: str) -> dict[str, Any]:
+        closed_at = utc_iso() if state == "closed" else None
+        with self.connect() as db:
+            db.execute(
+                """
+                UPDATE voice_sessions
+                SET state = ?, closed_at = COALESCE(?, closed_at)
+                WHERE voice_session_id = ?
+                """,
+                (state, closed_at, session_id),
+            )
+        return self.get_voice_session(session_id)
+
+    def create_voice_message(self, message: dict[str, Any]) -> dict[str, Any]:
+        message_id = message.get("voice_message_id") or new_id("voice_msg")
+        with self.connect() as db:
+            db.execute(
+                """
+                INSERT INTO voice_messages (
+                    voice_message_id, voice_session_id, sender_type, body,
+                    input_mode, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    message_id,
+                    message["voice_session_id"],
+                    message.get("sender_type", "user"),
+                    message["body"],
+                    message["input_mode"],
+                    message.get("created_at") or utc_iso(),
+                ),
+            )
+        return self.get_voice_message(message_id)
+
+    def get_voice_message(self, message_id: str) -> dict[str, Any]:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM voice_messages WHERE voice_message_id = ?",
+                (message_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(message_id)
+        return dict(row)
+
+    def list_voice_messages(self, session_id: str) -> list[dict[str, Any]]:
+        with self.connect() as db:
+            rows = db.execute(
+                """
+                SELECT * FROM voice_messages
+                WHERE voice_session_id = ?
+                ORDER BY created_at ASC
+                """,
+                (session_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def _assistance_request_from_row(self, row: sqlite3.Row) -> dict[str, Any]:
+        request = dict(row)
+        request["context_redacted"] = json.loads(request.pop("context_redacted_json"))
+        return request
+
+    def _browser_assistance_session_from_row(self, row: sqlite3.Row) -> dict[str, Any]:
+        session = dict(row)
+        session["context_redacted"] = json.loads(session.pop("context_redacted_json"))
+        session["user_action_notes"] = json.loads(session.pop("user_action_notes_json"))
         return session
 
     def append_audit_event(

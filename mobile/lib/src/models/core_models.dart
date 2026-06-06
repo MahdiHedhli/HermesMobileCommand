@@ -250,6 +250,8 @@ class TuiSessionModel {
     required this.createdAt,
     required this.lastActivityAt,
     required this.riskLevel,
+    required this.riskLabel,
+    required this.outputRetentionEnabled,
     this.closedAt,
     this.auditRefs = const [],
   });
@@ -265,6 +267,8 @@ class TuiSessionModel {
   final DateTime lastActivityAt;
   final DateTime? closedAt;
   final String riskLevel;
+  final String riskLabel;
+  final bool outputRetentionEnabled;
   final List<String> auditRefs;
 
   factory TuiSessionModel.fromJson(Map<String, dynamic> json) {
@@ -282,7 +286,278 @@ class TuiSessionModel {
           ? null
           : DateTime.parse(json['closed_at'] as String),
       riskLevel: json['risk_level'] as String,
+      riskLabel: json['risk_label'] as String? ?? 'operator terminal',
+      outputRetentionEnabled:
+          json['output_retention_enabled'] as bool? ?? false,
       auditRefs: _stringList(json['audit_refs']),
+    );
+  }
+}
+
+class TuiAttachTokenModel {
+  const TuiAttachTokenModel({
+    required this.attachToken,
+    required this.expiresAt,
+  });
+
+  final String attachToken;
+  final DateTime expiresAt;
+
+  factory TuiAttachTokenModel.fromJson(Map<String, dynamic> json) {
+    return TuiAttachTokenModel(
+      attachToken: json['attach_token'] as String,
+      expiresAt: DateTime.parse(json['expires_at'] as String),
+    );
+  }
+}
+
+class AssistanceRequestModel {
+  const AssistanceRequestModel({
+    required this.requestId,
+    required this.nodeId,
+    required this.agentId,
+    required this.sessionId,
+    required this.reason,
+    required this.state,
+    required this.createdAt,
+    required this.updatedAt,
+    this.approvalId,
+  });
+
+  final String requestId;
+  final String nodeId;
+  final String agentId;
+  final String sessionId;
+  final String reason;
+  final String state;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final String? approvalId;
+
+  factory AssistanceRequestModel.fromJson(Map<String, dynamic> json) {
+    return AssistanceRequestModel(
+      requestId: json['request_id'] as String,
+      nodeId: json['node_id'] as String,
+      agentId: json['agent_id'] as String,
+      sessionId: json['session_id'] as String,
+      reason: json['reason'] as String,
+      state: json['state'] as String,
+      createdAt: DateTime.parse(json['created_at'] as String),
+      updatedAt: DateTime.parse(json['updated_at'] as String),
+      approvalId: json['approval_id'] as String?,
+    );
+  }
+}
+
+class AssistanceSessionModel {
+  const AssistanceSessionModel({
+    required this.assistanceSessionId,
+    required this.requestId,
+    required this.nodeId,
+    required this.agentId,
+    required this.sessionId,
+    required this.state,
+    required this.createdAt,
+    required this.updatedAt,
+    this.returnSummary,
+    this.messages = const [],
+  });
+
+  final String assistanceSessionId;
+  final String requestId;
+  final String nodeId;
+  final String agentId;
+  final String sessionId;
+  final String state;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final String? returnSummary;
+  final List<AssistanceMessageModel> messages;
+
+  factory AssistanceSessionModel.fromJson(Map<String, dynamic> json) {
+    return AssistanceSessionModel(
+      assistanceSessionId: json['assistance_session_id'] as String,
+      requestId: json['request_id'] as String,
+      nodeId: json['node_id'] as String,
+      agentId: json['agent_id'] as String,
+      sessionId: json['session_id'] as String,
+      state: json['state'] as String,
+      createdAt: DateTime.parse(json['created_at'] as String),
+      updatedAt: DateTime.parse(json['updated_at'] as String),
+      returnSummary: json['return_summary'] as String?,
+      messages: (json['messages'] as List<dynamic>? ?? const [])
+          .map((item) => AssistanceMessageModel.fromJson(
+              Map<String, dynamic>.from(item as Map)))
+          .toList(),
+    );
+  }
+}
+
+class AssistanceMessageModel {
+  const AssistanceMessageModel({
+    required this.messageId,
+    required this.assistanceSessionId,
+    required this.senderType,
+    required this.senderId,
+    required this.body,
+    required this.createdAt,
+  });
+
+  final String messageId;
+  final String assistanceSessionId;
+  final String senderType;
+  final String senderId;
+  final String body;
+  final DateTime createdAt;
+
+  factory AssistanceMessageModel.fromJson(Map<String, dynamic> json) {
+    return AssistanceMessageModel(
+      messageId: json['message_id'] as String,
+      assistanceSessionId: json['assistance_session_id'] as String,
+      senderType: json['sender_type'] as String,
+      senderId: json['sender_id'] as String,
+      body: json['body'] as String,
+      createdAt: DateTime.parse(json['created_at'] as String),
+    );
+  }
+}
+
+class BrowserAssistanceSessionModel {
+  const BrowserAssistanceSessionModel({
+    required this.browserSessionId,
+    required this.nodeId,
+    required this.agentId,
+    required this.sessionId,
+    required this.reason,
+    required this.state,
+    required this.createdAt,
+    required this.updatedAt,
+    this.returnSummary,
+    this.userActionNotes = const [],
+  });
+
+  final String browserSessionId;
+  final String nodeId;
+  final String agentId;
+  final String sessionId;
+  final String reason;
+  final String state;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final String? returnSummary;
+  final List<String> userActionNotes;
+
+  factory BrowserAssistanceSessionModel.fromJson(Map<String, dynamic> json) {
+    return BrowserAssistanceSessionModel(
+      browserSessionId: json['browser_session_id'] as String,
+      nodeId: json['node_id'] as String,
+      agentId: json['agent_id'] as String,
+      sessionId: json['session_id'] as String,
+      reason: json['reason'] as String,
+      state: json['state'] as String,
+      createdAt: DateTime.parse(json['created_at'] as String),
+      updatedAt: DateTime.parse(json['updated_at'] as String),
+      returnSummary: json['return_summary'] as String?,
+      userActionNotes: _stringList(json['user_action_notes']),
+    );
+  }
+}
+
+class ApprovalResponseModel {
+  const ApprovalResponseModel({
+    required this.approvalResponseId,
+    required this.approvalId,
+    required this.decisionType,
+    required this.createdAt,
+    this.userMessage,
+    this.alternateDirective,
+    this.policyProposalId,
+  });
+
+  final String approvalResponseId;
+  final String approvalId;
+  final String decisionType;
+  final DateTime createdAt;
+  final String? userMessage;
+  final String? alternateDirective;
+  final String? policyProposalId;
+
+  factory ApprovalResponseModel.fromJson(Map<String, dynamic> json) {
+    return ApprovalResponseModel(
+      approvalResponseId: json['approval_response_id'] as String,
+      approvalId: json['approval_id'] as String,
+      decisionType: json['decision_type'] as String,
+      createdAt: DateTime.parse(json['created_at'] as String),
+      userMessage: json['user_message'] as String?,
+      alternateDirective: json['alternate_directive'] as String?,
+      policyProposalId: json['policy_proposal_id'] as String?,
+    );
+  }
+}
+
+class VoiceSessionModel {
+  const VoiceSessionModel({
+    required this.voiceSessionId,
+    required this.nodeId,
+    required this.agentId,
+    required this.mode,
+    required this.state,
+    required this.createdAt,
+    this.sessionId,
+    this.messages = const [],
+  });
+
+  final String voiceSessionId;
+  final String nodeId;
+  final String agentId;
+  final String? sessionId;
+  final String mode;
+  final String state;
+  final DateTime createdAt;
+  final List<VoiceMessageModel> messages;
+
+  factory VoiceSessionModel.fromJson(Map<String, dynamic> json) {
+    return VoiceSessionModel(
+      voiceSessionId: json['voice_session_id'] as String,
+      nodeId: json['node_id'] as String,
+      agentId: json['agent_id'] as String,
+      sessionId: json['session_id'] as String?,
+      mode: json['mode'] as String,
+      state: json['state'] as String,
+      createdAt: DateTime.parse(json['created_at'] as String),
+      messages: (json['messages'] as List<dynamic>? ?? const [])
+          .map((item) =>
+              VoiceMessageModel.fromJson(Map<String, dynamic>.from(item as Map)))
+          .toList(),
+    );
+  }
+}
+
+class VoiceMessageModel {
+  const VoiceMessageModel({
+    required this.voiceMessageId,
+    required this.voiceSessionId,
+    required this.senderType,
+    required this.body,
+    required this.inputMode,
+    required this.createdAt,
+  });
+
+  final String voiceMessageId;
+  final String voiceSessionId;
+  final String senderType;
+  final String body;
+  final String inputMode;
+  final DateTime createdAt;
+
+  factory VoiceMessageModel.fromJson(Map<String, dynamic> json) {
+    return VoiceMessageModel(
+      voiceMessageId: json['voice_message_id'] as String,
+      voiceSessionId: json['voice_session_id'] as String,
+      senderType: json['sender_type'] as String,
+      body: json['body'] as String,
+      inputMode: json['input_mode'] as String,
+      createdAt: DateTime.parse(json['created_at'] as String),
     );
   }
 }

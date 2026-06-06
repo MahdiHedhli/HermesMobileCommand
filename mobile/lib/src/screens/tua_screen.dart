@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../app_runtime.dart';
 import '../models/alpha_models.dart';
+import '../models/core_models.dart';
 import '../repositories/alpha_repository.dart';
 import '../routes.dart';
 import '../viewmodels/alpha_viewmodels.dart';
@@ -10,10 +12,12 @@ import '../widgets/screen_shell.dart';
 class TuaScreen extends StatefulWidget {
   const TuaScreen({
     required this.repository,
+    this.runtime,
     super.key,
   });
 
   final AlphaRepository repository;
+  final HermesAppRuntime? runtime;
 
   @override
   State<TuaScreen> createState() => _TuaScreenState();
@@ -24,6 +28,9 @@ class _TuaScreenState extends State<TuaScreen> {
   late Future<void> _load;
   final _replyController = TextEditingController();
   bool _loadedRoute = false;
+  AssistanceSessionModel? _gatewaySession;
+  bool _gatewayMode = false;
+  bool _busy = false;
 
   @override
   void initState() {
@@ -39,7 +46,7 @@ class _TuaScreenState extends State<TuaScreen> {
     }
     final sessionId = ModalRoute.of(context)?.settings.arguments as String? ??
         'assist-release';
-    _load = _viewModel.load(sessionId);
+    _load = _loadSession(sessionId);
     _loadedRoute = true;
   }
 
@@ -63,33 +70,34 @@ class _TuaScreenState extends State<TuaScreen> {
           return AnimatedBuilder(
             animation: _viewModel,
             builder: (context, _) {
-              final session = _viewModel.session;
+              final session = _currentSession;
               if (session == null) {
                 return const Center(
                     child: Text('Assistance session unavailable'));
               }
+              final messages = _gatewayMode
+                  ? _gatewayMessages(_gatewaySession)
+                  : _viewModel.messages;
               return Column(
                 children: [
                   _SessionHeader(
                       session: session,
-                      returnedToAgent: _viewModel.returnedToAgent),
+                      returnedToAgent:
+                          _viewModel.returnedToAgent || _isReturned(session)),
                   Expanded(
                     child: ListView.builder(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                      itemCount: _viewModel.messages.length,
+                      itemCount: messages.length,
                       itemBuilder: (context, index) {
-                        return _MessageBubble(
-                            message: _viewModel.messages[index]);
+                        return _MessageBubble(message: messages[index]);
                       },
                     ),
                   ),
                   _ReplyBar(
                     controller: _replyController,
-                    onSend: () {
-                      _viewModel.sendReply(_replyController.text);
-                      _replyController.clear();
-                    },
-                    onReturn: _viewModel.returnToAgent,
+                    busy: _busy,
+                    onSend: _sendReply,
+                    onReturn: _returnToAgent,
                   ),
                 ],
               );
@@ -98,6 +106,119 @@ class _TuaScreenState extends State<TuaScreen> {
         },
       ),
     );
+  }
+
+  AssistanceSessionAlpha? get _currentSession {
+    final gateway = _gatewaySession;
+    if (_gatewayMode && gateway != null) {
+      return AssistanceSessionAlpha(
+        id: gateway.assistanceSessionId,
+        agentName: gateway.agentId,
+        node: gateway.nodeId,
+        mission: gateway.sessionId,
+        state: _assistanceState(gateway.state),
+        reason: 'Gateway assistance session',
+        messages: _gatewayMessages(gateway),
+      );
+    }
+    return _viewModel.session;
+  }
+
+  Future<void> _loadSession(String contextId) async {
+    final repository = widget.runtime?.tuaRepository;
+    if (repository == null) {
+      await _viewModel.load(contextId);
+      return;
+    }
+    try {
+      _gatewaySession = await repository.getSession(contextId);
+      _gatewayMode = true;
+      return;
+    } on Object {
+      // Approval routes pass an approval id, not an assistance session id.
+    }
+    try {
+      final requests = await repository.listRequests();
+      AssistanceRequestModel? matched;
+      for (final request in requests) {
+        if (request.requestId == contextId || request.approvalId == contextId) {
+          matched = request;
+          break;
+        }
+      }
+      if (matched == null) {
+        await _viewModel.load(contextId);
+        return;
+      }
+      _gatewaySession = await repository.createSession(
+        matched.requestId,
+        initialMessage: 'Opened from Hermes Mobile Control Plane.',
+      );
+      _gatewayMode = true;
+    } on Object {
+      await _viewModel.load(contextId);
+    }
+  }
+
+  void _sendReply() {
+    final body = _replyController.text.trim();
+    if (body.isEmpty) {
+      return;
+    }
+    _replyController.clear();
+    if (!_gatewayMode || _gatewaySession == null) {
+      _viewModel.sendReply(body);
+      return;
+    }
+    _runGatewayAction(() async {
+      final repository = widget.runtime?.tuaRepository;
+      if (repository == null) {
+        return;
+      }
+      await repository.sendMessage(
+        _gatewaySession!.assistanceSessionId,
+        body: body,
+      );
+      _gatewaySession =
+          await repository.getSession(_gatewaySession!.assistanceSessionId);
+    });
+  }
+
+  void _returnToAgent() {
+    if (!_gatewayMode || _gatewaySession == null) {
+      _viewModel.returnToAgent();
+      return;
+    }
+    _runGatewayAction(() async {
+      final repository = widget.runtime?.tuaRepository;
+      if (repository == null) {
+        return;
+      }
+      _gatewaySession = await repository.returnControl(
+        _gatewaySession!.assistanceSessionId,
+        summary: 'Operator returned control from mobile.',
+      );
+    });
+  }
+
+  Future<void> _runGatewayAction(Future<void> Function() action) async {
+    setState(() => _busy = true);
+    try {
+      await action();
+      if (mounted) {
+        setState(() {});
+      }
+    } on Object catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.toString())),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+      }
+    }
   }
 }
 
@@ -198,11 +319,13 @@ class _MessageBubble extends StatelessWidget {
 class _ReplyBar extends StatelessWidget {
   const _ReplyBar({
     required this.controller,
+    required this.busy,
     required this.onSend,
     required this.onReturn,
   });
 
   final TextEditingController controller;
+  final bool busy;
   final VoidCallback onSend;
   final VoidCallback onReturn;
 
@@ -236,7 +359,7 @@ class _ReplyBar extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   IconButton.filled(
-                    onPressed: onSend,
+                    onPressed: busy ? null : onSend,
                     icon: const Icon(Icons.send_outlined),
                     tooltip: 'Send',
                   ),
@@ -246,7 +369,7 @@ class _ReplyBar extends StatelessWidget {
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
-                  onPressed: onReturn,
+                  onPressed: busy ? null : onReturn,
                   icon: const Icon(Icons.keyboard_return_outlined),
                   label: const Text('Return To Agent'),
                 ),
@@ -257,6 +380,35 @@ class _ReplyBar extends StatelessWidget {
       ),
     );
   }
+}
+
+List<AssistanceMessageAlpha> _gatewayMessages(AssistanceSessionModel? session) {
+  return (session?.messages ?? const [])
+      .map(
+        (message) => AssistanceMessageAlpha(
+          sender: message.senderType == 'user' ? 'You' : message.senderId,
+          body: message.body,
+          timeLabel: 'gateway',
+          fromUser: message.senderType == 'user',
+        ),
+      )
+      .toList();
+}
+
+AssistanceState _assistanceState(String state) {
+  return switch (state) {
+    'requested' => AssistanceState.requested,
+    'waiting_on_user' => AssistanceState.waitingOnUser,
+    'user_controlling' => AssistanceState.userControlling,
+    'returned_to_agent' => AssistanceState.returnedToAgent,
+    'closed' => AssistanceState.closed,
+    _ => AssistanceState.active,
+  };
+}
+
+bool _isReturned(AssistanceSessionAlpha session) {
+  return session.state == AssistanceState.returnedToAgent ||
+      session.state == AssistanceState.closed;
 }
 
 String _stateLabel(AssistanceState state) {

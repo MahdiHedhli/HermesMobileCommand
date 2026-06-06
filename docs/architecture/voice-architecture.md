@@ -86,13 +86,13 @@ sequenceDiagram
 
   M->>G: POST /voice/sessions
   G->>A: voice_session_started
-  M->>G: Send audio turn or WebRTC offer
-  G->>V: Transcribe/process audio
-  V->>H: Voice instruction
+  M->>G: POST /voice/sessions/{session_id}/messages
+  G->>V: Record text-backed voice message
+  V->>H: Voice/text fallback instruction
   H-->>V: Agent response
   V-->>G: Text/audio response
   G-->>M: Voice response event
-  G->>A: voice_turn_completed
+  G->>A: voice_message_created
 ```
 
 ## Voice Approval Safety

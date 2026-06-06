@@ -10,13 +10,17 @@ import 'config/gateway_config.dart';
 import 'models/core_models.dart';
 import 'repositories/agents_repository.dart';
 import 'repositories/alpha_repository.dart';
+import 'repositories/approval_responses_repository.dart';
 import 'repositories/approvals_repository.dart';
+import 'repositories/browser_assistance_repository.dart';
 import 'repositories/dashboard_repository.dart';
 import 'repositories/gateway_alpha_repository.dart';
 import 'repositories/mock_alpha_repository.dart';
 import 'repositories/notifications_repository.dart';
 import 'repositories/pairing_repository.dart';
+import 'repositories/tua_repository.dart';
 import 'repositories/tui_repository.dart';
+import 'repositories/voice_repository.dart';
 import 'security/device_request_signer.dart';
 import 'security/secure_key_store.dart';
 
@@ -38,6 +42,7 @@ class HermesAppRuntime extends ChangeNotifier {
   String? _privateKey;
   String? _publicKey;
   String _connectionStatus = 'Not checked';
+  String _secureStorageStatus = 'Storage not checked';
   String _eventStreamStatus = 'Live stream idle';
   bool _eventStreamConnected = false;
   int _eventRevision = 0;
@@ -51,7 +56,7 @@ class HermesAppRuntime extends ChangeNotifier {
     final preferences = await SharedPreferences.getInstance();
     final runtime = HermesAppRuntime(
       configStore: SharedPreferencesGatewayConfigStore(preferences),
-      keyStore: SharedPreferencesSecureKeyStore(preferences),
+      keyStore: PlatformAwareSecureKeyStore(preferences),
     );
     await runtime.initialize();
     return runtime;
@@ -61,6 +66,7 @@ class HermesAppRuntime extends ChangeNotifier {
   String? get deviceId => _deviceId;
   String? get accessToken => _accessToken;
   String get connectionStatus => _connectionStatus;
+  String get secureStorageStatus => _secureStorageStatus;
   String get eventStreamStatus => _eventStreamStatus;
   bool get eventStreamConnected => _eventStreamConnected;
   int get eventRevision => _eventRevision;
@@ -92,12 +98,40 @@ class HermesAppRuntime extends ChangeNotifier {
     return TuiRepository(_signedApiClient());
   }
 
+  TuaRepository? get tuaRepository {
+    if (!isPaired) {
+      return null;
+    }
+    return TuaRepository(_signedApiClient());
+  }
+
+  BrowserAssistanceRepository? get browserAssistanceRepository {
+    if (!isPaired) {
+      return null;
+    }
+    return BrowserAssistanceRepository(_signedApiClient());
+  }
+
+  ApprovalResponsesRepository? get approvalResponsesRepository {
+    if (!isPaired) {
+      return null;
+    }
+    return ApprovalResponsesRepository(_signedApiClient());
+  }
+
+  VoiceRepository? get voiceRepository {
+    if (!isPaired) {
+      return null;
+    }
+    return VoiceRepository(_signedApiClient());
+  }
+
   TuiStreamClient? get tuiStreamClient {
     final token = _accessToken;
     if (!isPaired || token == null || token.isEmpty) {
       return null;
     }
-    return TuiStreamClient(config: _config, accessToken: token);
+    return TuiStreamClient(config: _config);
   }
 
   Future<void> initialize() async {
@@ -107,6 +141,16 @@ class HermesAppRuntime extends ChangeNotifier {
     _refreshToken = await _keyStore.readRefreshToken();
     _privateKey = await _keyStore.readDevicePrivateKey();
     _publicKey = await _keyStore.readDevicePublicKey();
+    _secureStorageStatus = await _keyStore.storageWarning();
+    if (!await _storedDeviceKeyIsValid()) {
+      await _keyStore.clear();
+      _deviceId = null;
+      _accessToken = null;
+      _refreshToken = null;
+      _privateKey = null;
+      _publicKey = null;
+      _connectionStatus = 'Pairing reset: stored device key mismatch';
+    }
     if (isPaired && _accessToken != null) {
       await _startEventStream();
     }
@@ -220,6 +264,25 @@ class HermesAppRuntime extends ChangeNotifier {
         ),
       ),
     );
+  }
+
+  Future<bool> _storedDeviceKeyIsValid() async {
+    final privateKey = _privateKey;
+    final publicKey = _publicKey;
+    if (privateKey == null && publicKey == null && _deviceId == null) {
+      return true;
+    }
+    if (privateKey == null || publicKey == null || _deviceId == null) {
+      return false;
+    }
+    try {
+      return DeviceKeyPair.fromBase64(
+        privateKey: privateKey,
+        publicKey: publicKey,
+      ).validatesPair();
+    } on Object {
+      return false;
+    }
   }
 
   @override

@@ -45,4 +45,14 @@ void main() {
     expect(headers.values['X-HMCP-Nonce'], isNotEmpty);
     expect(headers.values['X-HMCP-Signature'], isNotEmpty);
   });
+
+  test('device key pair validates stored public/private match', () async {
+    final keyPair = await DeviceKeyPair.generate();
+    final restored = DeviceKeyPair.fromBase64(
+      privateKey: keyPair.privateKeyBase64,
+      publicKey: keyPair.publicKeyBase64,
+    );
+
+    expect(await restored.validatesPair(), isTrue);
+  });
 }

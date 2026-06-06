@@ -53,6 +53,24 @@ class DeviceKeyPair {
       publicKeyBytes: base64UrlDecodeNoPadding(publicKey),
     );
   }
+
+  Future<bool> validatesPair() async {
+    final algorithm = Ed25519();
+    final signingKey = SimpleKeyPairData(
+      privateKeyBytes,
+      publicKey: SimplePublicKey(publicKeyBytes, type: KeyPairType.ed25519),
+      type: KeyPairType.ed25519,
+    );
+    const probe = 'hmcp-device-key-validation';
+    final signature = await algorithm.sign(utf8.encode(probe), keyPair: signingKey);
+    return algorithm.verify(
+      utf8.encode(probe),
+      signature: Signature(
+        signature.bytes,
+        publicKey: SimplePublicKey(publicKeyBytes, type: KeyPairType.ed25519),
+      ),
+    );
+  }
 }
 
 class Ed25519DeviceRequestSigner implements DeviceRequestSigner {

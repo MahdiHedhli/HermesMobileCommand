@@ -8,8 +8,12 @@ This package turns the Hermes Mobile Control Plane feature specification into an
 
 - [Feature specification](../specs/001-hermes-mobile-command/spec.md)
 - [Product framing](mobile-control-plane-framing.md)
+- [Product assessment](product/product-assessment.md)
 - [System architecture](architecture/system-architecture.md)
 - [Service boundaries](architecture/service-boundaries.md)
+- [Domain model review](architecture/domain-model-review.md)
+- [Operator session review](architecture/operator-session-review.md)
+- [Technical debt review](architecture/technical-debt-review.md)
 - [Threat model](security/threat-model.md)
 - [Authentication and authorization](security/auth-authorization.md)
 - [Approval framework](architecture/approval-framework.md)
@@ -24,7 +28,12 @@ This package turns the Hermes Mobile Control Plane feature specification into an
 - [API contract](api/openapi.yaml)
 - [Data model](data-model.md)
 - [Mobile UX architecture](mobile-ux-architecture.md)
+- [UX consistency review](ux/ux-consistency-review.md)
+- [Approval experience review](ux/approval-experience-review.md)
 - [Build roadmap](roadmap.md)
+- [Platform roadmap](roadmap-next.md)
+- [Beta readiness assessment](release/beta-readiness.md)
+- [Demo gallery](demo/demo-gallery.md)
 
 ## Implementation Slices
 

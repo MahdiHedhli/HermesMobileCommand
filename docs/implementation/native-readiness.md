@@ -2,7 +2,7 @@
 
 Sprint: `HERMES-MCP-MOBILE-NATIVE-REALTIME-003`
 
-Date checked: 2026-06-05
+Last checked again during `HERMES-MCP-PLATFORM-CONSOLIDATION-006` on 2026-06-06.
 
 ## Current Host State
 
@@ -116,6 +116,8 @@ macOS is treated as a local validation convenience rather than a release target.
 
 No destructive or system-level changes were made during this sprint. The app
 continues to validate on Chrome while native setup remains an environment task.
-The code added in this sprint avoids platform-specific secure storage and keeps
-the current shared-preferences development storage abstraction in place until
-iOS/Android toolchains are available for real platform validation.
+The mobile code now includes a platform-aware secure storage abstraction using
+`flutter_secure_storage` where native platforms support it and an explicit
+SharedPreferences fallback for web/development. Native iOS Keychain and Android
+Keystore behavior still need validation once the iOS and Android toolchains are
+available.

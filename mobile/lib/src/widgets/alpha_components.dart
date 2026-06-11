@@ -251,9 +251,14 @@ String _agentStatusLabel(AgentRunStatus status) {
     AgentRunStatus.online => 'online',
     AgentRunStatus.running => 'running',
     AgentRunStatus.blocked => 'blocked',
+    AgentRunStatus.waitingApproval => 'waiting approval',
+    AgentRunStatus.waitingAssistance => 'waiting help',
+    AgentRunStatus.userControlling => 'user control',
     AgentRunStatus.paused => 'paused',
     AgentRunStatus.offline => 'offline',
     AgentRunStatus.warning => 'warning',
+    AgentRunStatus.failed => 'failed',
+    AgentRunStatus.completed => 'completed',
   };
 }
 
@@ -262,10 +267,15 @@ Color _agentStatusColor(BuildContext context, AgentRunStatus status) {
     AgentRunStatus.running => Theme.of(context).colorScheme.primary,
     AgentRunStatus.online => const Color(0xFF68D391),
     AgentRunStatus.blocked => const Color(0xFFFFB84D),
+    AgentRunStatus.waitingApproval => const Color(0xFFFFB84D),
+    AgentRunStatus.waitingAssistance => const Color(0xFF5DADEC),
+    AgentRunStatus.userControlling => const Color(0xFF2FD1B2),
     AgentRunStatus.warning => Theme.of(context).colorScheme.error,
     AgentRunStatus.paused => const Color(0xFFBCA7FF),
     AgentRunStatus.offline => Theme.of(context).colorScheme.outline,
     AgentRunStatus.idle => const Color(0xFF5DADEC),
+    AgentRunStatus.failed => Theme.of(context).colorScheme.error,
+    AgentRunStatus.completed => const Color(0xFF68D391),
   };
 }
 

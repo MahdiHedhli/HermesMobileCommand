@@ -117,3 +117,24 @@ A premature generic route layer could make authorization blurry. The better next
 ## Decision
 
 Create `OperatorSession` as a first-class product and architecture concept, but do not force immediate code consolidation. The initial cleanup should target naming, shared event/audit helpers, and mobile summaries.
+
+## Runtime Integration 007 Update
+
+`HERMES-MCP-RUNTIME-INTEGRATION-007` implements the first thin OperatorSession projection.
+
+Implemented:
+
+- `operator_sessions` SQLite projection table.
+- Shared fields for session ID, type, agent, mission, state, owner device, capability requirements, context, return summary, and timestamps.
+- Projection records for TUI, TUA, browser assistance, and voice flows.
+- Signed mobile list endpoint: `GET /v1/operator-sessions`.
+- Runtime result endpoints that expose TUA, browser assistance, and voice return state without making Hermes know subtype internals.
+
+Still separate by design:
+
+- TUI PTY process and attach-token handling.
+- TUA messages and request lifecycle.
+- Browser assistance notes and future stream/control state.
+- Voice messages and future audio transport state.
+
+This confirms the shared abstraction is useful as a projection and runtime contract, while route-specific security boundaries remain intact.

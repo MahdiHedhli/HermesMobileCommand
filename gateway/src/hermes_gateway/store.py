@@ -121,6 +121,18 @@ class SQLiteStore:
                     PRIMARY KEY (node_id, session_id)
                 );
 
+                CREATE TABLE IF NOT EXISTS missions (
+                    mission_id TEXT PRIMARY KEY,
+                    node_id TEXT NOT NULL,
+                    agent_id TEXT NOT NULL,
+                    session_id TEXT,
+                    state TEXT NOT NULL,
+                    title TEXT,
+                    summary TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS approval_requests (
                     approval_id TEXT PRIMARY KEY,
                     action_id TEXT NOT NULL,
@@ -282,6 +294,33 @@ class SQLiteStore:
                     body TEXT NOT NULL,
                     input_mode TEXT NOT NULL,
                     created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS operator_sessions (
+                    session_id TEXT PRIMARY KEY,
+                    session_type TEXT NOT NULL,
+                    agent_id TEXT NOT NULL,
+                    mission_id TEXT,
+                    state TEXT NOT NULL,
+                    owner_device_id TEXT,
+                    capability_requirements_json TEXT NOT NULL,
+                    context_json TEXT NOT NULL,
+                    return_summary TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS capability_grants (
+                    grant_id TEXT PRIMARY KEY,
+                    subject_type TEXT NOT NULL,
+                    subject_id TEXT NOT NULL,
+                    capability TEXT NOT NULL,
+                    node_id TEXT NOT NULL,
+                    agent_id TEXT,
+                    state TEXT NOT NULL,
+                    reason TEXT,
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT
                 );
 
                 CREATE TABLE IF NOT EXISTS audit_events (
@@ -539,6 +578,70 @@ class SQLiteStore:
             where.append("agent_id = ?")
             args.append(agent_id)
         sql = "SELECT * FROM sessions"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY updated_at DESC"
+        with self.connect() as db:
+            rows = db.execute(sql, tuple(args)).fetchall()
+        return [dict(row) for row in rows]
+
+    def upsert_mission(self, mission: dict[str, Any]) -> dict[str, Any]:
+        now = utc_iso()
+        created_at = mission.get("created_at") or now
+        updated_at = mission.get("updated_at") or now
+        with self.connect() as db:
+            db.execute(
+                """
+                INSERT INTO missions (
+                    mission_id, node_id, agent_id, session_id, state, title, summary,
+                    created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(mission_id) DO UPDATE SET
+                    node_id=excluded.node_id,
+                    agent_id=excluded.agent_id,
+                    session_id=excluded.session_id,
+                    state=excluded.state,
+                    title=excluded.title,
+                    summary=excluded.summary,
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    mission["mission_id"],
+                    mission["node_id"],
+                    mission["agent_id"],
+                    mission.get("session_id"),
+                    mission.get("state", "running"),
+                    mission.get("title"),
+                    mission.get("summary"),
+                    created_at,
+                    updated_at,
+                ),
+            )
+        return self.get_mission(mission["mission_id"])
+
+    def get_mission(self, mission_id: str) -> dict[str, Any]:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM missions WHERE mission_id = ?",
+                (mission_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(mission_id)
+        return dict(row)
+
+    def list_missions(
+        self, node_id: str | None = None, agent_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        sql = "SELECT * FROM missions"
+        args: list[Any] = []
+        where = []
+        if node_id:
+            where.append("node_id = ?")
+            args.append(node_id)
+        if agent_id:
+            where.append("agent_id = ?")
+            args.append(agent_id)
         if where:
             sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY updated_at DESC"
@@ -1157,6 +1260,35 @@ class SQLiteStore:
         session["messages"] = self.list_assistance_messages(session_id)
         return session
 
+    def list_assistance_sessions(
+        self,
+        *,
+        request_id: str | None = None,
+        state: str | None = None,
+    ) -> list[dict[str, Any]]:
+        sql = "SELECT * FROM assistance_sessions"
+        args: list[Any] = []
+        where = []
+        if request_id:
+            where.append("request_id = ?")
+            args.append(request_id)
+        if state:
+            where.append("state = ?")
+            args.append(state)
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY updated_at DESC"
+        with self.connect() as db:
+            rows = db.execute(sql, tuple(args)).fetchall()
+        sessions = []
+        for row in rows:
+            session = dict(row)
+            session["messages"] = self.list_assistance_messages(
+                session["assistance_session_id"]
+            )
+            sessions.append(session)
+        return sessions
+
     def update_assistance_session_state(
         self,
         session_id: str,
@@ -1499,6 +1631,196 @@ class SQLiteStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def create_operator_session(self, session: dict[str, Any]) -> dict[str, Any]:
+        now = utc_iso()
+        created_at = session.get("created_at") or now
+        updated_at = session.get("updated_at") or now
+        with self.connect() as db:
+            db.execute(
+                """
+                INSERT INTO operator_sessions (
+                    session_id, session_type, agent_id, mission_id, state, owner_device_id,
+                    capability_requirements_json, context_json, return_summary,
+                    created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(session_id) DO UPDATE SET
+                    session_type=excluded.session_type,
+                    agent_id=excluded.agent_id,
+                    mission_id=excluded.mission_id,
+                    state=excluded.state,
+                    owner_device_id=COALESCE(excluded.owner_device_id, owner_device_id),
+                    capability_requirements_json=excluded.capability_requirements_json,
+                    context_json=excluded.context_json,
+                    return_summary=COALESCE(excluded.return_summary, return_summary),
+                    updated_at=excluded.updated_at
+                """,
+                (
+                    session["session_id"],
+                    session["session_type"],
+                    session["agent_id"],
+                    session.get("mission_id"),
+                    session.get("state", "requested"),
+                    session.get("owner_device_id"),
+                    json.dumps(session.get("capability_requirements", [])),
+                    json.dumps(session.get("context", {})),
+                    session.get("return_summary"),
+                    created_at,
+                    updated_at,
+                ),
+            )
+        return self.get_operator_session(session["session_id"])
+
+    def get_operator_session(self, session_id: str) -> dict[str, Any]:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM operator_sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(session_id)
+        return self._operator_session_from_row(row)
+
+    def list_operator_sessions(
+        self,
+        *,
+        session_type: str | None = None,
+        state: str | None = None,
+        agent_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        sql = "SELECT * FROM operator_sessions"
+        args: list[Any] = []
+        where = []
+        if session_type:
+            where.append("session_type = ?")
+            args.append(session_type)
+        if state:
+            where.append("state = ?")
+            args.append(state)
+        if agent_id:
+            where.append("agent_id = ?")
+            args.append(agent_id)
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY updated_at DESC"
+        with self.connect() as db:
+            rows = db.execute(sql, tuple(args)).fetchall()
+        return [self._operator_session_from_row(row) for row in rows]
+
+    def update_operator_session_state(
+        self,
+        session_id: str,
+        state: str,
+        *,
+        owner_device_id: str | None = None,
+        return_summary: str | None = None,
+    ) -> dict[str, Any]:
+        with self.connect() as db:
+            db.execute(
+                """
+                UPDATE operator_sessions
+                SET state = ?,
+                    owner_device_id = COALESCE(?, owner_device_id),
+                    return_summary = COALESCE(?, return_summary),
+                    updated_at = ?
+                WHERE session_id = ?
+                """,
+                (state, owner_device_id, return_summary, utc_iso(), session_id),
+            )
+        return self.get_operator_session(session_id)
+
+    def create_capability_grant(self, grant: dict[str, Any]) -> dict[str, Any]:
+        grant_id = grant.get("grant_id") or new_id("cap")
+        with self.connect() as db:
+            db.execute(
+                """
+                INSERT INTO capability_grants (
+                    grant_id, subject_type, subject_id, capability, node_id, agent_id,
+                    state, reason, created_at, expires_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    grant_id,
+                    grant["subject_type"],
+                    grant["subject_id"],
+                    grant["capability"],
+                    grant["node_id"],
+                    grant.get("agent_id"),
+                    grant.get("state", "granted"),
+                    grant.get("reason"),
+                    grant.get("created_at") or utc_iso(),
+                    grant.get("expires_at"),
+                ),
+            )
+        return self.get_capability_grant(grant_id)
+
+    def get_capability_grant(self, grant_id: str) -> dict[str, Any]:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM capability_grants WHERE grant_id = ?",
+                (grant_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(grant_id)
+        return dict(row)
+
+    def list_capability_grants(
+        self,
+        *,
+        subject_type: str | None = None,
+        subject_id: str | None = None,
+        capability: str | None = None,
+        state: str | None = None,
+    ) -> list[dict[str, Any]]:
+        sql = "SELECT * FROM capability_grants"
+        args: list[Any] = []
+        where = []
+        if subject_type:
+            where.append("subject_type = ?")
+            args.append(subject_type)
+        if subject_id:
+            where.append("subject_id = ?")
+            args.append(subject_id)
+        if capability:
+            where.append("capability = ?")
+            args.append(capability)
+        if state:
+            where.append("state = ?")
+            args.append(state)
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY created_at DESC"
+        with self.connect() as db:
+            rows = db.execute(sql, tuple(args)).fetchall()
+        return [dict(row) for row in rows]
+
+    def has_active_capability_grant(
+        self,
+        *,
+        subject_type: str,
+        subject_id: str,
+        capability: str,
+        node_id: str,
+        agent_id: str | None = None,
+    ) -> bool:
+        now = now_utc()
+        for grant in self.list_capability_grants(
+            subject_type=subject_type,
+            subject_id=subject_id,
+            capability=capability,
+            state="granted",
+        ):
+            if grant["node_id"] != node_id:
+                continue
+            if grant.get("agent_id") and agent_id and grant["agent_id"] != agent_id:
+                continue
+            expires_at = grant.get("expires_at")
+            if expires_at and parse_utc(expires_at) <= now:
+                continue
+            return True
+        return False
+
     def _assistance_request_from_row(self, row: sqlite3.Row) -> dict[str, Any]:
         request = dict(row)
         request["context_redacted"] = json.loads(request.pop("context_redacted_json"))
@@ -1508,6 +1830,14 @@ class SQLiteStore:
         session = dict(row)
         session["context_redacted"] = json.loads(session.pop("context_redacted_json"))
         session["user_action_notes"] = json.loads(session.pop("user_action_notes_json"))
+        return session
+
+    def _operator_session_from_row(self, row: sqlite3.Row) -> dict[str, Any]:
+        session = dict(row)
+        session["capability_requirements"] = json.loads(
+            session.pop("capability_requirements_json")
+        )
+        session["context"] = json.loads(session.pop("context_json"))
         return session
 
     def append_audit_event(

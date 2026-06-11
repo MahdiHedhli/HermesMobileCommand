@@ -3,9 +3,14 @@ enum AgentRunStatus {
   online,
   running,
   blocked,
+  waitingApproval,
+  waitingAssistance,
+  userControlling,
   paused,
   offline,
   warning,
+  failed,
+  completed,
 }
 
 enum MissionState {

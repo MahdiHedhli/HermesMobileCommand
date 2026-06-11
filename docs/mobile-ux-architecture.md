@@ -132,6 +132,7 @@ Primary content:
 
 - Node identity
 - Agent status
+- Runtime state such as `waiting_approval`, `waiting_assistance`, or `user_controlling` when reported by the gateway
 - Current session/task
 - Capability list
 - Recent sessions

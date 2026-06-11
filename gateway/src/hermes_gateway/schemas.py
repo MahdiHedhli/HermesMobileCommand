@@ -19,9 +19,24 @@ Platform = Literal["ios", "android"]
 DeviceStatus = Literal["active", "revoked", "lost", "rotating", "disabled"]
 Environment = Literal["homelab", "laptop", "cloud", "workstation", "vps", "work_vm", "custom"]
 AgentStatus = Literal[
-    "idle", "running", "blocked", "paused", "stopping", "offline", "error", "quarantined"
+    "idle",
+    "running",
+    "blocked",
+    "waiting_approval",
+    "waiting_assistance",
+    "user_controlling",
+    "paused",
+    "stopping",
+    "offline",
+    "error",
+    "failed",
+    "completed",
+    "quarantined",
 ]
 SessionStatus = Literal["active", "blocked", "paused", "completed", "failed", "cancelled"]
+MissionState = Literal[
+    "queued", "running", "blocked", "waiting_user", "completed", "cancelled", "failed"
+]
 ApprovalState = Literal["pending", "approved", "denied", "expired", "cancelled"]
 RiskLevel = Literal["low", "medium", "high", "critical"]
 ApprovalScope = Literal["once", "session", "agent", "permanent"]
@@ -62,6 +77,26 @@ ApprovalResponseDecisionType = Literal[
     "propose_policy",
 ]
 VoiceSessionState = Literal["active", "closed"]
+CapabilityName = Literal[
+    "approvals",
+    "tui",
+    "tua",
+    "browser_assistance",
+    "voice",
+    "notifications",
+]
+CapabilitySubjectType = Literal["device", "agent", "node", "runtime"]
+OperatorSessionType = Literal["tui", "tua", "browser_assistance", "voice"]
+OperatorSessionState = Literal[
+    "requested",
+    "active",
+    "detached",
+    "user_controlling",
+    "returned_to_agent",
+    "closed",
+    "cancelled",
+    "failed",
+]
 
 
 class StrictModel(BaseModel):
@@ -210,6 +245,39 @@ class Session(BaseModel):
     current_target: str | None = None
     started_at: datetime
     updated_at: datetime | None = None
+
+
+class Mission(BaseModel):
+    mission_id: str
+    node_id: str
+    agent_id: str
+    session_id: str | None = None
+    state: MissionState
+    title: str | None = None
+    summary: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class RuntimeContextRequest(StrictModel):
+    agent_id: str
+    display_name: str | None = None
+    agent_status: AgentStatus = "running"
+    mission_id: str | None = None
+    mission_state: MissionState = "running"
+    session_id: str | None = None
+    mission_title: str | None = None
+    mission_summary: str | None = None
+    current_tool: str | None = None
+    current_target: str | None = None
+    node_id: str | None = None
+    capabilities: list[Capability] = Field(default_factory=list)
+
+
+class RuntimeContextResponse(BaseModel):
+    agent: Agent
+    mission: Mission | None = None
+    session: Session | None = None
 
 
 class ApprovalRequest(BaseModel):
@@ -468,6 +536,77 @@ class ApprovalPolicyProposal(BaseModel):
     warning: str
     constraints: list[ApprovalConstraint] = Field(default_factory=list)
     created_at: datetime
+
+
+class CapabilityGrant(BaseModel):
+    grant_id: str
+    subject_type: CapabilitySubjectType
+    subject_id: str
+    capability: CapabilityName
+    node_id: str
+    agent_id: str | None = None
+    state: Literal["granted", "revoked"]
+    reason: str | None = None
+    created_at: datetime
+    expires_at: datetime | None = None
+
+
+class CreateCapabilityGrantRequest(StrictModel):
+    subject_type: CapabilitySubjectType
+    subject_id: str
+    capability: CapabilityName
+    node_id: str | None = None
+    agent_id: str | None = None
+    reason: str | None = None
+    expires_at: datetime | None = None
+
+
+class OperatorSession(BaseModel):
+    session_id: str
+    session_type: OperatorSessionType
+    agent_id: str
+    mission_id: str | None = None
+    state: OperatorSessionState
+    created_at: datetime
+    updated_at: datetime
+    owner_device_id: str | None = None
+    capability_requirements: list[CapabilityName] = Field(default_factory=list)
+    context: dict[str, Any] = Field(default_factory=dict)
+    return_summary: str | None = None
+
+
+class RuntimeApprovalResult(BaseModel):
+    approval_id: str
+    state: ApprovalState
+    selected_scope: ApprovalScope | None = None
+    decided_at: datetime | None = None
+    decision_metadata: dict[str, Any] = Field(default_factory=dict)
+    responses: list[ApprovalResponse] = Field(default_factory=list)
+
+
+class RuntimeTuaResult(BaseModel):
+    request: AssistanceRequest
+    sessions: list[AssistanceSession] = Field(default_factory=list)
+    latest_session: AssistanceSession | None = None
+    return_summary: str | None = None
+
+
+class RuntimeBrowserAssistanceResult(BaseModel):
+    session: BrowserAssistanceSession
+    return_summary: str | None = None
+
+
+class RuntimeCreateVoiceSessionRequest(StrictModel):
+    agent_id: str
+    session_id: str | None = None
+    node_id: str | None = None
+    mode: Literal["push_to_talk", "text_fallback"] = "text_fallback"
+    context_redacted: dict[str, Any] = Field(default_factory=dict)
+
+
+class RuntimeVoiceResult(BaseModel):
+    session: VoiceSession
+    messages: list[VoiceMessage] = Field(default_factory=list)
 
 
 class CreateVoiceSessionRequest(StrictModel):

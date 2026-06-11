@@ -14,3 +14,7 @@ def test_openapi_contract_includes_slice_paths() -> None:
     assert "/events/stream" in paths
     assert "/notifications/mobile_notify" in paths
     assert "/audit/events" in paths
+    assert "/runtime/context" in paths
+    assert "/runtime/approvals" in paths
+    assert "/runtime/tua/requests/{request_id}/result" in paths
+    assert "/operator-sessions" in paths

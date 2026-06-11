@@ -228,9 +228,15 @@ AgentRunStatus _statusFromGateway(String status) {
   return switch (status) {
     'running' => AgentRunStatus.running,
     'blocked' => AgentRunStatus.blocked,
+    'waiting_approval' => AgentRunStatus.waitingApproval,
+    'waiting_assistance' => AgentRunStatus.waitingAssistance,
+    'user_controlling' => AgentRunStatus.userControlling,
     'paused' => AgentRunStatus.paused,
     'offline' => AgentRunStatus.offline,
+    'failed' => AgentRunStatus.failed,
+    'completed' => AgentRunStatus.completed,
     'warning' => AgentRunStatus.warning,
+    'error' => AgentRunStatus.warning,
     'idle' => AgentRunStatus.idle,
     _ => AgentRunStatus.online,
   };

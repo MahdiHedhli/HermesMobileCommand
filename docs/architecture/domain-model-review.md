@@ -30,7 +30,7 @@ Supporting or embedded concepts:
 - BrowserAssistanceSession
 - VoiceSession
 
-The main cleanup opportunity is to introduce a shared `OperatorSession` abstraction while keeping terminal, assistance, browser, and voice details separate. The product should also promote capability grants into an explicit policy concept instead of spreading permissions across device fields, node capabilities, and session checks.
+Runtime Integration 007 introduced the first shared `OperatorSession` projection and a `CapabilityGrant` storage/enforcement foundation. Terminal, assistance, browser, and voice details still remain separate by design.
 
 ## Entity Review
 
@@ -45,7 +45,7 @@ The main cleanup opportunity is to introduce a shared `OperatorSession` abstract
 | ApprovalPolicyProposal | Records an operator's request to create durable policy, especially the Approve Forever path. | Created after explicit confirmation, remains proposed/rejected/accepted by future policy workflow. | Gateway policy layer, initiated by Device. | Belongs to ApprovalResponse/Approval and may reference Agent, tool, risk category, resource scope. | Keep as first-class proposal. Do not auto-promote into active permanent policy. |
 | Notification | Durable mobile-readable attention item and push dispatch source. | Created by Hermes/gateway, marked read/archived, linked to event/audit trail. | Gateway notification framework. | References Agent, Session/Mission, Approval, Voice callback, or system health. | Keep as first-class attention record. Push is a delivery hint; Notification is durable state. |
 | Device | A trusted mobile app installation with a registered public key and permissions. | Paired, active, revoked/lost/disabled, eventually rotated. | Gateway identity layer. | Owns signed requests, ApprovalResponses, TUI attach tokens, AuditEvents. | Keep as first-class security principal. |
-| CapabilityGrant | Authorizes a device, agent, or node to use operator capabilities such as TUI or browser assistance. | Granted explicitly, checked at request time, revocable, audited. | Gateway policy layer. | Applies to Device, Agent, Node, capability, and optional risk scope. | Promote to first-class in the next backend cleanup. Current implicit grants are too scattered for beta. |
+| CapabilityGrant | Authorizes a device, agent, node, or runtime caller to use operator capabilities such as TUI, TUA, browser assistance, voice, notifications, or approvals. | Granted explicitly, checked at request time, revocable, audited. | Gateway policy layer. | Applies to Device, Agent, Node, runtime caller, capability, and optional agent scope. | Keep as first-class. Runtime Integration 007 added the initial table and centralized helper; grant management UX remains future work. |
 | TUISession | Represents terminal access to a node/agent context. | Requested, active, detached, closed, or failed. | Gateway TUI subsystem. | Created by Device, references Agent/Node, audited, may be launched from Approval. | Keep as specialized OperatorSession subtype. Do not keep as totally separate concept long-term. |
 | TUASession | Represents take-user-assistance collaboration between operator and agent. | Requested, active/waiting/user controlling, returned, closed, or cancelled. | Gateway assistance subsystem. | References Agent/Mission/Approval, has AssistanceMessages, emits events/audit. | Keep as specialized OperatorSession subtype. |
 | BrowserAssistanceSession | Represents operator assistance for a browser task without full browser streaming. | Requested, active/user controlling, returned, closed, or failed. | Gateway browser assistance subsystem. | References Agent/Mission/Approval, has notes/events, emits audit. | Keep as specialized OperatorSession subtype until browser streaming makes it richer. |
@@ -81,8 +81,8 @@ flowchart LR
 High confidence:
 
 - Make `Mission` the durable work-context model across Home, Agents, approvals, TUA, TUI, browser assistance, and voice.
-- Introduce `OperatorSession` as a shared base schema for TUI, TUA, browser assistance, and voice.
-- Promote `CapabilityGrant` to an explicit auditable resource before beta.
+- Continue using `OperatorSession` as a shared projection for TUI, TUA, browser assistance, and voice.
+- Continue promoting `CapabilityGrant` into visible, revocable operator policy before beta.
 - Keep `ApprovalResponse` separate from `Approval.state`; terminal state should remain compact and fail-closed.
 
 Medium confidence:

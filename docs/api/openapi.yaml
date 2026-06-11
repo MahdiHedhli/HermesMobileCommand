@@ -33,6 +33,8 @@ tags:
   - name: tua
   - name: browser-assistance
   - name: voice
+  - name: runtime
+  - name: operator-sessions
 paths:
   /health:
     get:
@@ -1637,6 +1639,251 @@ paths:
               schema:
                 $ref: "#/components/schemas/VoiceSession"
 
+  /operator-sessions:
+    get:
+      tags: [operator-sessions]
+      summary: List shared operator session projections
+      description: Signed mobile endpoint returning TUI, TUA, browser assistance, and voice session summaries.
+      parameters:
+        - name: session_type
+          in: query
+          schema:
+            enum: [tui, tua, browser_assistance, voice]
+        - name: state
+          in: query
+          schema:
+            type: string
+        - name: agent_id
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
+      responses:
+        "200":
+          description: Operator sessions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  operator_sessions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/OperatorSession"
+
+  /runtime/context:
+    post:
+      tags: [runtime]
+      summary: Register runtime agent, mission, and session context
+      description: Loopback-only runtime contract for Hermes to identify active work without coupling the gateway to Hermes internals.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeContextRequest"
+      responses:
+        "200":
+          description: Runtime context projection
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeContextResponse"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /runtime/notifications:
+    post:
+      tags: [runtime]
+      summary: Create runtime-originated mobile notification
+      description: Loopback-only notification request. Does not dispatch APNs or FCM.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MobileNotifyRequest"
+      responses:
+        "202":
+          description: Notification queued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Notification"
+
+  /runtime/approvals:
+    post:
+      tags: [runtime]
+      summary: Create runtime-originated approval request
+      description: Creates a pending approval and exposes result polling for the runtime.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/HermesApprovalRequestedRequest"
+      responses:
+        "201":
+          description: Approval created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalRequest"
+
+  /runtime/approvals/{approval_id}/result:
+    get:
+      tags: [runtime]
+      summary: Poll runtime approval result
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/ApprovalId"
+      responses:
+        "200":
+          description: Approval result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeApprovalResult"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /runtime/approvals/{approval_id}/cancel:
+    post:
+      tags: [runtime]
+      summary: Cancel runtime approval request
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/ApprovalId"
+      responses:
+        "200":
+          description: Cancelled approval result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeApprovalResult"
+
+  /runtime/tua/requests:
+    post:
+      tags: [runtime]
+      summary: Create runtime-originated TUA request
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAssistanceRequest"
+      responses:
+        "201":
+          description: TUA request created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssistanceRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /runtime/tua/requests/{request_id}/result:
+    get:
+      tags: [runtime]
+      summary: Poll runtime TUA result
+      security: []
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: TUA result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeTuaResult"
+
+  /runtime/browser-assistance/sessions:
+    post:
+      tags: [runtime]
+      summary: Create runtime-originated browser assistance session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBrowserAssistanceSessionRequest"
+      responses:
+        "201":
+          description: Browser assistance session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BrowserAssistanceSession"
+
+  /runtime/browser-assistance/sessions/{session_id}/result:
+    get:
+      tags: [runtime]
+      summary: Poll runtime browser assistance result
+      security: []
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Browser assistance result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeBrowserAssistanceResult"
+
+  /runtime/voice/sessions:
+    post:
+      tags: [runtime]
+      summary: Create runtime-originated text-backed voice session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RuntimeCreateVoiceSessionRequest"
+      responses:
+        "201":
+          description: Voice session created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceSession"
+
+  /runtime/voice/sessions/{session_id}/result:
+    get:
+      tags: [runtime]
+      summary: Poll runtime voice result
+      security: []
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Voice result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RuntimeVoiceResult"
+
 components:
   securitySchemes:
     bearerAuth:
@@ -1996,7 +2243,20 @@ components:
           enum: [available, disabled, requires_pairing, requires_permission, unsupported, degraded]
 
     AgentStatus:
-      enum: [idle, running, blocked, paused, stopping, offline, error, quarantined]
+      enum:
+        - idle
+        - running
+        - blocked
+        - waiting_approval
+        - waiting_assistance
+        - user_controlling
+        - paused
+        - stopping
+        - offline
+        - error
+        - failed
+        - completed
+        - quarantined
 
     Agent:
       type: object
@@ -2125,6 +2385,76 @@ components:
         updated_at:
           type: string
           format: date-time
+
+    MissionState:
+      enum: [queued, running, blocked, waiting_user, completed, cancelled, failed]
+
+    Mission:
+      type: object
+      required: [mission_id, node_id, agent_id, state, created_at, updated_at]
+      properties:
+        mission_id:
+          type: string
+        node_id:
+          type: string
+        agent_id:
+          type: string
+        session_id:
+          type: string
+        state:
+          $ref: "#/components/schemas/MissionState"
+        title:
+          type: string
+        summary:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    RuntimeContextRequest:
+      type: object
+      required: [agent_id]
+      properties:
+        agent_id:
+          type: string
+        display_name:
+          type: string
+        agent_status:
+          $ref: "#/components/schemas/AgentStatus"
+        mission_id:
+          type: string
+        mission_state:
+          $ref: "#/components/schemas/MissionState"
+        session_id:
+          type: string
+        mission_title:
+          type: string
+        mission_summary:
+          type: string
+        current_tool:
+          type: string
+        current_target:
+          type: string
+        node_id:
+          type: string
+        capabilities:
+          type: array
+          items:
+            $ref: "#/components/schemas/Capability"
+
+    RuntimeContextResponse:
+      type: object
+      required: [agent]
+      properties:
+        agent:
+          $ref: "#/components/schemas/Agent"
+        mission:
+          $ref: "#/components/schemas/Mission"
+        session:
+          $ref: "#/components/schemas/Session"
 
     LiveActivity:
       type: object
@@ -2462,6 +2792,27 @@ components:
         created_at:
           type: string
           format: date-time
+
+    RuntimeApprovalResult:
+      type: object
+      required: [approval_id, state, decision_metadata, responses]
+      properties:
+        approval_id:
+          type: string
+        state:
+          $ref: "#/components/schemas/ApprovalState"
+        selected_scope:
+          $ref: "#/components/schemas/ApprovalScope"
+        decided_at:
+          type: string
+          format: date-time
+        decision_metadata:
+          type: object
+          additionalProperties: true
+        responses:
+          type: array
+          items:
+            $ref: "#/components/schemas/ApprovalResponse"
 
     MoreInfoRequest:
       type: object
@@ -3075,3 +3426,124 @@ components:
         created_at:
           type: string
           format: date-time
+
+    CapabilityName:
+      enum: [approvals, tui, tua, browser_assistance, voice, notifications]
+
+    CapabilityGrant:
+      type: object
+      required: [grant_id, subject_type, subject_id, capability, node_id, state, created_at]
+      properties:
+        grant_id:
+          type: string
+        subject_type:
+          enum: [device, agent, node, runtime]
+        subject_id:
+          type: string
+        capability:
+          $ref: "#/components/schemas/CapabilityName"
+        node_id:
+          type: string
+        agent_id:
+          type: string
+        state:
+          enum: [granted, revoked]
+        reason:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        expires_at:
+          type: string
+          format: date-time
+
+    OperatorSession:
+      type: object
+      required:
+        - session_id
+        - session_type
+        - agent_id
+        - state
+        - created_at
+        - updated_at
+        - capability_requirements
+        - context
+      properties:
+        session_id:
+          type: string
+        session_type:
+          enum: [tui, tua, browser_assistance, voice]
+        agent_id:
+          type: string
+        mission_id:
+          type: string
+        state:
+          enum: [requested, active, detached, user_controlling, returned_to_agent, closed, cancelled, failed]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        owner_device_id:
+          type: string
+        capability_requirements:
+          type: array
+          items:
+            $ref: "#/components/schemas/CapabilityName"
+        context:
+          type: object
+          additionalProperties: true
+        return_summary:
+          type: string
+
+    RuntimeTuaResult:
+      type: object
+      required: [request, sessions]
+      properties:
+        request:
+          $ref: "#/components/schemas/AssistanceRequest"
+        sessions:
+          type: array
+          items:
+            $ref: "#/components/schemas/AssistanceSession"
+        latest_session:
+          $ref: "#/components/schemas/AssistanceSession"
+        return_summary:
+          type: string
+
+    RuntimeBrowserAssistanceResult:
+      type: object
+      required: [session]
+      properties:
+        session:
+          $ref: "#/components/schemas/BrowserAssistanceSession"
+        return_summary:
+          type: string
+
+    RuntimeCreateVoiceSessionRequest:
+      type: object
+      required: [agent_id]
+      properties:
+        agent_id:
+          type: string
+        session_id:
+          type: string
+        node_id:
+          type: string
+        mode:
+          enum: [push_to_talk, text_fallback]
+        context_redacted:
+          type: object
+          additionalProperties: true
+
+    RuntimeVoiceResult:
+      type: object
+      required: [session, messages]
+      properties:
+        session:
+          $ref: "#/components/schemas/VoiceSession"
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/VoiceMessage"

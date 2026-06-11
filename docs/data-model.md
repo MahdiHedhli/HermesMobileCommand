@@ -16,6 +16,9 @@ erDiagram
   NODE ||--o{ DEVICE : trusts
   NODE ||--o{ AUDIT_EVENT : records
   AGENT ||--o{ SESSION : runs
+  AGENT ||--o{ MISSION : owns
+  MISSION ||--o{ SESSION : projects
+  MISSION ||--o{ OPERATOR_SESSION : opens
   SESSION ||--o{ CONVERSATION : contains
   CONVERSATION ||--o{ MESSAGE : has
   SESSION ||--o{ APPROVAL_REQUEST : requires
@@ -24,13 +27,21 @@ erDiagram
   APPROVAL_POLICY ||--o{ APPROVAL_RESPONSE : created_by
   SESSION ||--o{ NOTIFICATION : triggers
   SESSION ||--o{ VOICE_SESSION : uses
+  VOICE_SESSION ||--|| OPERATOR_SESSION : projects
   SESSION ||--o{ TERMINAL_SESSION : opens
+  TERMINAL_SESSION ||--|| OPERATOR_SESSION : projects
   TERMINAL_SESSION ||--o{ TERMINAL_IO_EVENT : streams
   SESSION ||--o{ ASSISTANCE_REQUEST : requests
   ASSISTANCE_REQUEST ||--o{ ASSISTANCE_SESSION : opens
+  ASSISTANCE_SESSION ||--|| OPERATOR_SESSION : projects
   ASSISTANCE_SESSION ||--o{ ASSISTANCE_MESSAGE : contains
+  SESSION ||--o{ BROWSER_ASSISTANCE_SESSION : opens
+  BROWSER_ASSISTANCE_SESSION ||--|| OPERATOR_SESSION : projects
   APPROVAL_REQUEST ||--o{ APPROVAL_DECISION : resolves
   DEVICE ||--o{ APPROVAL_DECISION : signs
+  DEVICE ||--o{ CAPABILITY_GRANT : receives
+  AGENT ||--o{ CAPABILITY_GRANT : receives
+  NODE ||--o{ CAPABILITY_GRANT : receives
   DEVICE ||--o{ PUSH_TOKEN : registers
   APPROVAL_REQUEST ||--o{ AUDIT_EVENT : audits
   NOTIFICATION ||--o{ AUDIT_EVENT : audits
@@ -79,7 +90,7 @@ Represents a Hermes agent registered under one node.
 | `node_id` | string | yes | Parent node |
 | `display_name` | string | yes | User-facing name |
 | `agent_kind` | string | no | `primary`, `subagent`, `voice`, custom |
-| `status` | enum | yes | `idle`, `running`, `blocked`, `paused`, `stopping`, `offline`, `error`, `quarantined` |
+| `status` | enum | yes | `idle`, `running`, `blocked`, `waiting_approval`, `waiting_assistance`, `user_controlling`, `paused`, `stopping`, `offline`, `error`, `failed`, `completed`, `quarantined` |
 | `capabilities` | object array | yes | Capability name/status |
 | `tags` | string array | no | User or gateway assigned |
 | `active_session_id` | string | no | Current session |
@@ -131,6 +142,23 @@ Represents a trusted mobile app installation.
 | `registered_at` | datetime | yes | Pairing time |
 | `last_seen_at` | datetime | no | Last API use |
 
+### CapabilityGrant
+
+Centralized capability authorization record used by device and runtime checks.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `grant_id` | string | yes | Stable grant ID |
+| `subject_type` | enum | yes | `device`, `agent`, `node`, `runtime` |
+| `subject_id` | string | yes | Device, agent, node, or runtime caller ID |
+| `capability` | enum | yes | `approvals`, `tui`, `tua`, `browser_assistance`, `voice`, `notifications` |
+| `node_id` | string | yes | Node scope |
+| `agent_id` | string | no | Optional agent scope |
+| `state` | enum | yes | `granted`, `revoked` |
+| `reason` | string | no | Redacted reason |
+| `created_at` | datetime | yes | Creation time |
+| `expires_at` | datetime | no | Optional expiry |
+
 ### PushToken
 
 | Field | Type | Required | Notes |
@@ -161,6 +189,22 @@ Represents a trusted mobile app installation.
 | `started_at` | datetime | yes | Start time |
 | `updated_at` | datetime | yes | Last update |
 | `ended_at` | datetime | no | End time |
+
+### Mission
+
+Runtime-projected work context that ties agent state, approvals, notifications, and operator sessions together.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `mission_id` | string | yes | Runtime-provided or gateway-generated work ID |
+| `node_id` | string | yes | Parent node |
+| `agent_id` | string | yes | Owning agent |
+| `session_id` | string | no | Related Hermes session |
+| `state` | enum | yes | `queued`, `running`, `blocked`, `waiting_user`, `completed`, `cancelled`, `failed` |
+| `title` | string | no | Display title |
+| `summary` | string | no | Redacted summary |
+| `created_at` | datetime | yes | Creation time |
+| `updated_at` | datetime | yes | Last runtime update |
 
 ### Conversation
 
@@ -292,7 +336,7 @@ Persistent or proposed policy created by Approve Forever.
 | `node_id` | string | yes | Node scope |
 | `agent_id` | string | no | Agent scope |
 | `session_id` | string | no | Session scope |
-| `actor_type` | enum | yes | `device`, `user`, `gateway`, `agent`, `system` |
+| `actor_type` | enum | yes | `device`, `user`, `gateway`, `hermes`, `agent`, `system` |
 | `actor_id` | string | no | Device/user/agent ID |
 | `target_type` | string | no | Approval, notification, session, device |
 | `target_id` | string | no | Target ID |
@@ -300,6 +344,24 @@ Persistent or proposed policy created by Approve Forever.
 | `hash` | string | yes | Event integrity hash |
 | `previous_hash` | string | no | Chain hash for tamper evidence |
 | `created_at` | datetime | yes | Event time |
+
+### OperatorSession
+
+Shared projection for terminal, assistance, browser assistance, and voice intervention modes.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `session_id` | string | yes | Subtype session ID |
+| `session_type` | enum | yes | `tui`, `tua`, `browser_assistance`, `voice` |
+| `agent_id` | string | yes | Related agent |
+| `mission_id` | string | no | Related mission |
+| `state` | enum | yes | `requested`, `active`, `detached`, `user_controlling`, `returned_to_agent`, `closed`, `cancelled`, `failed` |
+| `owner_device_id` | string | no | Mobile device controlling or owning the session |
+| `capability_requirements` | enum array | yes | Required capabilities |
+| `context` | object | yes | Redacted launch context |
+| `return_summary` | string | no | Summary returned to runtime |
+| `created_at` | datetime | yes | Creation time |
+| `updated_at` | datetime | yes | Last state change |
 
 ### TuiSession
 
@@ -384,6 +446,27 @@ Message inside a TUA session.
 | `content_redacted` | string | yes | Redacted message content |
 | `created_at` | datetime | yes | Message time |
 
+### BrowserAssistanceSession
+
+Thin browser assistance handoff record. It carries context, operator notes, and return-control summary, but no live browser stream yet.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `browser_session_id` | string | yes | Stable session ID |
+| `node_id` | string | yes | Source node |
+| `agent_id` | string | yes | Source agent |
+| `session_id` | string | yes | Source Hermes session |
+| `approval_id` | string | no | Linked approval |
+| `reason` | string | yes | Redacted assistance reason |
+| `state` | enum | yes | `requested`, `active`, `user_controlling`, `returned_to_agent`, `closed`, `failed` |
+| `context_redacted` | object | yes | Browser context safe for mobile |
+| `user_action_notes` | string array | yes | Operator notes |
+| `return_summary` | string | no | Summary returned to runtime |
+| `created_at` | datetime | yes | Creation time |
+| `updated_at` | datetime | yes | Last update |
+| `returned_at` | datetime | no | Return-control time |
+| `closed_at` | datetime | no | Close time |
+
 ### VoiceSession
 
 | Field | Type | Required | Notes |
@@ -391,13 +474,12 @@ Message inside a TUA session.
 | `voice_session_id` | string | yes | Stable ID |
 | `node_id` | string | yes | Node scope |
 | `agent_id` | string | yes | Agent scope |
-| `session_id` | string | yes | Parent session |
-| `device_id` | string | yes | Initiating device |
-| `mode` | enum | yes | `push_to_talk`, `half_duplex`, `full_duplex` |
-| `provider` | string | no | Hermes voice, XTTS, OmniVoice, etc. |
-| `state` | enum | yes | `starting`, `active`, `paused`, `ended`, `failed` |
-| `started_at` | datetime | yes | Start time |
-| `ended_at` | datetime | no | End time |
+| `session_id` | string | no | Parent Hermes session |
+| `created_by_device_id` | string | yes | Initiating device or runtime placeholder |
+| `mode` | enum | yes | `push_to_talk`, `text_fallback` |
+| `state` | enum | yes | `active`, `closed` |
+| `created_at` | datetime | yes | Creation time |
+| `closed_at` | datetime | no | Close time |
 
 ## Retention Recommendations
 
@@ -411,8 +493,10 @@ Message inside a TUA session.
 | Team | Until deleted plus 1 year | Preserve grouping context for audit history |
 | AgentTeamMembership | Until removed plus 1 year | Preserve source context for Team actions |
 | Session | 90 days default, configurable | Longer if user wants history |
+| Mission | 90 days default, configurable | Runtime work context for operator review |
 | Conversation | 90 days default, configurable | Redaction policy applies |
 | Message | 90 days default, configurable | Avoid retaining sensitive raw tool output by default |
+| CapabilityGrant | Until revoked plus 1 year | Needed for safety and authorization review |
 | ApprovalRequest | 1 year minimum | Safety-critical auditability |
 | ApprovalDecision | 1 year minimum | Needed for forensic review |
 | ApprovalResponse | 1 year minimum | Needed for advanced approval auditability |
@@ -420,11 +504,13 @@ Message inside a TUA session.
 | ApprovalPolicy | Until revoked plus 1 year | Keep history of policy creation and revocation |
 | Notification | 90 days | Dispatch history and abuse review |
 | AuditEvent | 1 year minimum; 7 years optional | Local self-hosted owner controls final retention |
+| OperatorSession | 90 days default | Shared projection; subtype records retain details |
 | TuiSession | 30 days metadata; configurable | Terminal output may contain sensitive data |
 | TerminalIOEvent | Short retention by default | Retain metadata longer than raw stream content |
 | AssistanceRequest | 90 days default | Preserve help request context |
 | AssistanceSession | 90 days default | Preserve return-control summary |
 | AssistanceMessage | 90 days default; configurable | Redaction policy applies |
+| BrowserAssistanceSession | 90 days default | Preserve notes and return-control summary |
 | VoiceSession | 30 days metadata; audio/transcripts shorter | Audio may contain sensitive data |
 
 ## Storage Notes

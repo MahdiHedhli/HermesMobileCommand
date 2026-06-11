@@ -52,24 +52,24 @@ Recommendation:
 - Move schema constants/migrations into their own module.
 - Keep SQLite as the storage engine for now; the debt is shape, not database choice.
 
-### Capability grants are implicit
+### Capability grants need management UX
 
 Evidence:
 
-- Device permissions include capability-like strings.
-- TUI also checks node/agent capability availability.
-- Browser assistance and future interventions will need similar policy decisions.
+- Runtime Integration 007 added a `capability_grants` table and centralized capability checks.
+- Device permissions still coexist with capability grants for compatibility.
+- There is no mobile/operator UX yet to review, revoke, or explain grants.
 
 Risk:
 
-- A user may appear authorized in one subsystem and blocked in another without an explainable grant record.
-- Revocation and audit trails are weaker than the rest of the security model.
+- Operators may not understand why a runtime-created TUA/browser/voice request was allowed or denied.
+- Grant revocation remains a backend concern rather than a visible safety workflow.
 
 Recommendation:
 
-- Add an explicit `CapabilityGrant` model before beta.
-- Scope by subject type, subject ID, capability, node, agent, risk level, expiry, and creator.
-- Audit every grant, revocation, and failed capability check.
+- Add signed mobile grant review and revocation screens before beta.
+- Show failed capability checks in Agent Detail and audit views.
+- Preserve the centralized helper as the single enforcement path.
 
 ### Operator session lifecycle duplicated
 

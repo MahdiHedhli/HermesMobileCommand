@@ -35,6 +35,7 @@ Goal:
 
 Scope:
 
+- Build on the Runtime Integration 007 adapter boundary and result polling contract.
 - Wire mobile_notify and approval_requested into Hermes runtime/tool policy.
 - Make approval_status consumable by blocked Hermes actions.
 - Create durable Mission model mapped from Hermes sessions/tasks.
@@ -47,6 +48,7 @@ Exit criteria:
 - A real Hermes action can block on mobile approval and resume/deny correctly.
 - A real Hermes task can request TUA or browser assistance and receive returned control.
 - Mission timelines include events, approvals, assistance, notifications, and audit references.
+- Runtime polling can be replaced or supplemented by callback/blocking wait helpers where Hermes needs synchronous tool behavior.
 
 ## Phase C: Browser Streaming And Voice Audio
 

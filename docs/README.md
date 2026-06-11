@@ -45,6 +45,7 @@ This package turns the Hermes Mobile Control Plane feature specification into an
 - [Mobile native realtime 003](implementation/mobile-native-realtime-003.md)
 - [TUI PTY prototype 004](implementation/tui-pty-prototype-004.md)
 - [Operator capabilities mega slice 005](implementation/operator-capabilities-mega-slice-005.md)
+- [Runtime integration 007](implementation/runtime-integration-007.md)
 
 ## Feature Specifications
 

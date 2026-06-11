@@ -9,9 +9,11 @@ from typing import Any
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 
+from .capabilities import require_device_capability, require_runtime_capability
 from .config import Settings
 from .ids import new_id
 from .local_binding import HermesLocalCaller, verify_hermes_local_request
+from .runtime_adapter import HermesRuntimeAdapter
 from .schemas import (
     Agent,
     ApprovalDecisionRequest,
@@ -49,9 +51,17 @@ from .schemas import (
     Node,
     NodeRegistration,
     Notification,
+    OperatorSession,
     PairingSession,
     RefreshTokenRequest,
     ReturnControlRequest,
+    RuntimeApprovalResult,
+    RuntimeBrowserAssistanceResult,
+    RuntimeContextRequest,
+    RuntimeContextResponse,
+    RuntimeCreateVoiceSessionRequest,
+    RuntimeTuaResult,
+    RuntimeVoiceResult,
     TuiAttachTokenResponse,
     TuiSession,
     TuiSessionControlResponse,
@@ -75,6 +85,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     _ensure_local_node(store, resolved_settings)
     store.seed_mock_data(node_id=resolved_settings.node_id)
     tui_manager = LocalPtyManager(store=store, settings=resolved_settings)
+    runtime_adapter = HermesRuntimeAdapter(store=store, settings=resolved_settings)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -92,6 +103,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = resolved_settings
     app.state.store = store
     app.state.tui_manager = tui_manager
+    app.state.runtime_adapter = runtime_adapter
     if resolved_settings.cors_allowed_origin_regex:
         app.add_middleware(
             CORSMiddleware,
@@ -239,6 +251,150 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "terminal_tail": None,
             "browser_state": None,
         }
+
+    @app.post("/v1/runtime/context", response_model=RuntimeContextResponse)
+    def runtime_register_context(
+        payload: RuntimeContextRequest,
+        request: Request,
+        _caller: HermesLocalCaller = hermes_local_dependency,
+    ) -> RuntimeContextResponse:
+        return runtime_adapter.register_context(
+            payload=payload,
+            request_id=_request_id(request),
+        )
+
+    @app.post(
+        "/v1/runtime/notifications",
+        response_model=Notification,
+        status_code=status.HTTP_202_ACCEPTED,
+    )
+    def runtime_notification(
+        payload: MobileNotifyRequest,
+        request: Request,
+        _caller: HermesLocalCaller = hermes_local_dependency,
+    ) -> Notification:
+        require_runtime_capability(
+            store=store,
+            settings=resolved_settings,
+            capability="notifications",
+            request_id=_request_id(request),
+            actor_id=payload.agent_id,
+            agent_id=payload.agent_id,
+        )
+        return runtime_adapter.create_notification(payload=payload, request_id=_request_id(request))
+
+    @app.post(
+        "/v1/runtime/approvals",
+        response_model=ApprovalRequest,
+        status_code=status.HTTP_201_CREATED,
+    )
+    def runtime_approval_requested(
+        payload: HermesApprovalRequestedRequest,
+        request: Request,
+        _caller: HermesLocalCaller = hermes_local_dependency,
+    ) -> ApprovalRequest:
+        require_runtime_capability(
+            store=store,
+            settings=resolved_settings,
+            capability="approvals",
+            request_id=_request_id(request),
+            actor_id=payload.agent_id,
+            node_id=payload.node_id,
+            agent_id=payload.agent_id,
+        )
+        return runtime_adapter.request_approval(payload=payload, request_id=_request_id(request))
+
+    @app.get("/v1/runtime/approvals/{approval_id}/result", response_model=RuntimeApprovalResult)
+    def runtime_approval_result(
+        approval_id: str,
+        _caller: HermesLocalCaller = hermes_local_dependency,
+    ) -> RuntimeApprovalResult:
+        return runtime_adapter.approval_result(approval_id)
+
+    @app.post("/v1/runtime/approvals/{approval_id}/cancel", response_model=RuntimeApprovalResult)
+    def runtime_cancel_approval(
+        approval_id: str,
+        request: Request,
+        _caller: HermesLocalCaller = hermes_local_dependency,
+    ) -> RuntimeApprovalResult:
+        return runtime_adapter.cancel_approval(
+            approval_id=approval_id,
+            request_id=_request_id(request),
+            actor_id="runtime",
+        )
+
+    @app.post(
+        "/v1/runtime/tua/requests",
+        response_model=AssistanceRequest,
+        status_code=status.HTTP_201_CREATED,
+    )
+    def runtime_tua_request(
+        payload: CreateAssistanceRequest,
+        request: Request,
+        _caller: HermesLocalCaller = hermes_local_dependency,
+    ) -> AssistanceRequest:
+        assistance_request = runtime_adapter.create_tua_request(
+            payload=payload,
+            request_id=_request_id(request),
+            actor_id=payload.agent_id,
+        )
+        return AssistanceRequest.model_validate(assistance_request)
+
+    @app.get("/v1/runtime/tua/requests/{request_id}/result", response_model=RuntimeTuaResult)
+    def runtime_tua_result(
+        request_id: str,
+        _caller: HermesLocalCaller = hermes_local_dependency,
+    ) -> RuntimeTuaResult:
+        return runtime_adapter.tua_result(request_id)
+
+    @app.post(
+        "/v1/runtime/browser-assistance/sessions",
+        response_model=BrowserAssistanceSession,
+        status_code=status.HTTP_201_CREATED,
+    )
+    def runtime_browser_assistance_session(
+        payload: CreateBrowserAssistanceSessionRequest,
+        request: Request,
+        _caller: HermesLocalCaller = hermes_local_dependency,
+    ) -> BrowserAssistanceSession:
+        return runtime_adapter.create_browser_assistance_session(
+            payload=payload,
+            request_id=_request_id(request),
+            actor_id=payload.agent_id,
+        )
+
+    @app.get(
+        "/v1/runtime/browser-assistance/sessions/{session_id}/result",
+        response_model=RuntimeBrowserAssistanceResult,
+    )
+    def runtime_browser_assistance_result(
+        session_id: str,
+        _caller: HermesLocalCaller = hermes_local_dependency,
+    ) -> RuntimeBrowserAssistanceResult:
+        return runtime_adapter.browser_result(session_id)
+
+    @app.post(
+        "/v1/runtime/voice/sessions",
+        response_model=VoiceSession,
+        status_code=status.HTTP_201_CREATED,
+    )
+    def runtime_voice_session(
+        payload: RuntimeCreateVoiceSessionRequest,
+        request: Request,
+        _caller: HermesLocalCaller = hermes_local_dependency,
+    ) -> VoiceSession:
+        return runtime_adapter.create_voice_session(
+            payload=payload,
+            request_id=_request_id(request),
+            actor_id=payload.agent_id,
+        )
+
+    @app.get("/v1/runtime/voice/sessions/{session_id}/result", response_model=RuntimeVoiceResult)
+    def runtime_voice_result(
+        session_id: str,
+        _caller: HermesLocalCaller = hermes_local_dependency,
+    ) -> RuntimeVoiceResult:
+        return runtime_adapter.voice_result(session_id)
 
     @app.post(
         "/v1/pairing/start",
@@ -506,6 +662,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         device: VerifiedDevice = signed_device_dependency,
     ) -> ApprovalDecisionResponse:
+        _require_approval_capability(
+            store=store,
+            settings=resolved_settings,
+            request=request,
+            device=device,
+            approval_id=approval_id,
+        )
         state = "approved" if payload.decision == "approve" else "denied"
         return _transition_approval(
             store=store,
@@ -523,6 +686,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         device: VerifiedDevice = signed_device_dependency,
     ) -> ApprovalDecisionResponse:
+        _require_approval_capability(
+            store=store,
+            settings=resolved_settings,
+            request=request,
+            device=device,
+            approval_id=approval_id,
+        )
         return _transition_approval(
             store=store,
             approval_id=approval_id,
@@ -539,6 +709,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         device: VerifiedDevice = signed_device_dependency,
     ) -> ApprovalDecisionResponse:
+        _require_approval_capability(
+            store=store,
+            settings=resolved_settings,
+            request=request,
+            device=device,
+            approval_id=approval_id,
+        )
         return _transition_approval(
             store=store,
             approval_id=approval_id,
@@ -555,6 +732,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         device: VerifiedDevice = signed_device_dependency,
     ) -> ApprovalDecisionResponse:
+        _require_approval_capability(
+            store=store,
+            settings=resolved_settings,
+            request=request,
+            device=device,
+            approval_id=approval_id,
+        )
         return _transition_approval(
             store=store,
             approval_id=approval_id,
@@ -571,6 +755,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         device: VerifiedDevice = signed_device_dependency,
     ) -> ApprovalDecisionResponse:
+        _require_approval_capability(
+            store=store,
+            settings=resolved_settings,
+            request=request,
+            device=device,
+            approval_id=approval_id,
+        )
         return _transition_approval(
             store=store,
             approval_id=approval_id,
@@ -635,6 +826,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> dict[str, list[dict[str, Any]]]:
         return {"audit_events": store.list_audit_events(event_type=event_type, limit=limit)}
 
+    @app.get("/v1/operator-sessions")
+    def list_operator_sessions(
+        session_type: str | None = None,
+        state: str | None = None,
+        agent_id: str | None = None,
+        _device: VerifiedDevice = signed_device_dependency,
+    ) -> dict[str, list[OperatorSession]]:
+        return {
+            "operator_sessions": [
+                OperatorSession.model_validate(session)
+                for session in store.list_operator_sessions(
+                    session_type=session_type,
+                    state=state,
+                    agent_id=agent_id,
+                )
+            ]
+        }
+
     @app.post("/v1/sessions/{session_id}/interventions", response_model=InterventionResponse)
     def intervention_placeholder(
         session_id: str,
@@ -666,7 +875,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         device: VerifiedDevice = signed_device_dependency,
     ) -> TuiSession:
-        _require_permission(device, "tui")
+        node_id = payload.node_id or resolved_settings.node_id
+        require_device_capability(
+            store=store,
+            settings=resolved_settings,
+            device=device,
+            capability="tui",
+            request_id=_request_id(request),
+            node_id=node_id,
+            agent_id=payload.agent_id,
+        )
         await tui_manager.cleanup_idle_sessions()
         if store.count_open_tui_sessions() >= resolved_settings.tui_max_sessions:
             raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "TUI session limit reached")
@@ -677,7 +895,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             working_directory=payload.working_directory,
         )
         session_id = new_id("tui")
-        node_id = payload.node_id or resolved_settings.node_id
         _require_tui_capability(store, node_id=node_id, agent_id=payload.agent_id)
         session = store.create_tui_session(
             {
@@ -726,6 +943,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             },
         )
         session = store.add_tui_audit_ref(session_id, audit["audit_event_id"])
+        store.create_operator_session(
+            {
+                "session_id": session_id,
+                "session_type": "tui",
+                "agent_id": payload.agent_id,
+                "state": session["state"],
+                "owner_device_id": device.device_id,
+                "capability_requirements": ["tui"],
+                "context": {
+                    "hermes_session_id": payload.session_context_id,
+                    "command": command,
+                    "working_directory": working_directory,
+                    "risk_level": payload.risk_level,
+                },
+            }
+        )
         store.create_event(
             node_id=node_id,
             agent_id=payload.agent_id,
@@ -744,7 +977,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         device: VerifiedDevice = signed_device_dependency,
     ) -> TuiAttachTokenResponse:
-        _require_permission(device, "tui")
+        require_device_capability(
+            store=store,
+            settings=resolved_settings,
+            device=device,
+            capability="tui",
+            request_id=_request_id(request),
+        )
         session = _owned_tui_session(store, session_id, device)
         if session["state"] in {"closed", "failed"}:
             raise HTTPException(status.HTTP_409_CONFLICT, "TUI session is not attachable")
@@ -904,11 +1143,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         device: VerifiedDevice = signed_device_dependency,
     ) -> AssistanceSession:
-        _require_permission(device, "intervene")
         try:
             assistance_request = store.get_assistance_request(request_id)
         except KeyError as exc:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "TUA request not found") from exc
+        require_device_capability(
+            store=store,
+            settings=resolved_settings,
+            device=device,
+            capability="tua",
+            request_id=_request_id(request),
+            node_id=assistance_request["node_id"],
+            agent_id=assistance_request["agent_id"],
+        )
         session = store.create_assistance_session(
             {
                 "request_id": request_id,
@@ -938,6 +1185,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             session_id=session["session_id"],
             request_id=_request_id(request),
             payload_redacted={"assistance_session_id": session["assistance_session_id"]},
+        )
+        store.create_operator_session(
+            {
+                "session_id": session["assistance_session_id"],
+                "session_type": "tua",
+                "agent_id": session["agent_id"],
+                "mission_id": _mission_id_from_context(
+                    assistance_request.get("context_redacted", {})
+                ),
+                "state": session["state"],
+                "owner_device_id": device.device_id,
+                "capability_requirements": ["tua"],
+                "context": assistance_request.get("context_redacted", {}),
+            }
         )
         store.create_event(
             node_id=session["node_id"],
@@ -969,8 +1230,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         device: VerifiedDevice = signed_device_dependency,
     ) -> AssistanceMessage:
-        _require_permission(device, "intervene")
         session = _get_assistance_session_or_404(store, session_id)
+        require_device_capability(
+            store=store,
+            settings=resolved_settings,
+            device=device,
+            capability="tua",
+            request_id=_request_id(request),
+            node_id=session["node_id"],
+            agent_id=session["agent_id"],
+        )
         message = store.create_assistance_message(
             {
                 "assistance_session_id": session_id,
@@ -1008,8 +1277,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         device: VerifiedDevice = signed_device_dependency,
     ) -> AssistanceSession:
-        _require_permission(device, "intervene")
         session = _get_assistance_session_or_404(store, session_id)
+        require_device_capability(
+            store=store,
+            settings=resolved_settings,
+            device=device,
+            capability="tua",
+            request_id=_request_id(request),
+            node_id=session["node_id"],
+            agent_id=session["agent_id"],
+        )
         updated = store.update_assistance_session_state(
             session_id,
             "returned_to_agent",
@@ -1032,6 +1309,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             event_type="tua.returned_to_agent",
             payload={"assistance_session_id": session_id},
         )
+        _update_operator_session_if_exists(
+            store,
+            session_id,
+            "returned_to_agent",
+            owner_device_id=device.device_id,
+            return_summary=payload.summary,
+        )
         return AssistanceSession.model_validate(updated)
 
     @app.post("/v1/tua/sessions/{session_id}/close", response_model=AssistanceSession)
@@ -1040,8 +1324,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         device: VerifiedDevice = signed_device_dependency,
     ) -> AssistanceSession:
-        _require_permission(device, "intervene")
         session = _get_assistance_session_or_404(store, session_id)
+        require_device_capability(
+            store=store,
+            settings=resolved_settings,
+            device=device,
+            capability="tua",
+            request_id=_request_id(request),
+            node_id=session["node_id"],
+            agent_id=session["agent_id"],
+        )
         updated = store.update_assistance_session_state(session_id, "closed")
         store.append_audit_event(
             event_type="tua_session_closed",
@@ -1059,6 +1351,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             session_id=session["session_id"],
             event_type="tua.closed",
             payload={"assistance_session_id": session_id},
+        )
+        _update_operator_session_if_exists(
+            store,
+            session_id,
+            "closed",
+            owner_device_id=device.device_id,
         )
         return AssistanceSession.model_validate(updated)
 
@@ -1093,6 +1391,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             session_id=payload.session_id,
             request_id=_request_id(request),
             payload_redacted={"browser_session_id": session["browser_session_id"]},
+        )
+        store.create_operator_session(
+            {
+                "session_id": session["browser_session_id"],
+                "session_type": "browser_assistance",
+                "agent_id": session["agent_id"],
+                "mission_id": _mission_id_from_context(payload.context_redacted),
+                "state": session["state"],
+                "capability_requirements": ["browser_assistance"],
+                "context": payload.context_redacted,
+            }
         )
         store.create_event(
             node_id=node_id,
@@ -1142,8 +1451,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         device: VerifiedDevice = signed_device_dependency,
     ) -> BrowserAssistanceSession:
-        _require_permission(device, "browser_assist")
         session = _get_browser_session_or_404(store, session_id)
+        require_device_capability(
+            store=store,
+            settings=resolved_settings,
+            device=device,
+            capability="browser_assistance",
+            request_id=_request_id(request),
+            node_id=session["node_id"],
+            agent_id=session["agent_id"],
+        )
         updated = store.add_browser_assistance_note(session_id, payload.note)
         store.append_audit_event(
             event_type="browser_assistance_event_recorded",
@@ -1162,6 +1479,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             event_type="browser_assistance.event",
             payload={"browser_session_id": session_id},
         )
+        _update_operator_session_if_exists(
+            store,
+            session_id,
+            "user_controlling",
+            owner_device_id=device.device_id,
+        )
         return BrowserAssistanceSession.model_validate(updated)
 
     @app.post(
@@ -1174,8 +1497,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         device: VerifiedDevice = signed_device_dependency,
     ) -> BrowserAssistanceSession:
-        _require_permission(device, "browser_assist")
         session = _get_browser_session_or_404(store, session_id)
+        require_device_capability(
+            store=store,
+            settings=resolved_settings,
+            device=device,
+            capability="browser_assistance",
+            request_id=_request_id(request),
+            node_id=session["node_id"],
+            agent_id=session["agent_id"],
+        )
         updated = store.update_browser_assistance_state(
             session_id,
             "returned_to_agent",
@@ -1198,6 +1529,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             event_type="browser_assistance.returned_to_agent",
             payload={"browser_session_id": session_id},
         )
+        _update_operator_session_if_exists(
+            store,
+            session_id,
+            "returned_to_agent",
+            owner_device_id=device.device_id,
+            return_summary=payload.summary,
+        )
         return BrowserAssistanceSession.model_validate(updated)
 
     @app.post(
@@ -1209,8 +1547,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         device: VerifiedDevice = signed_device_dependency,
     ) -> BrowserAssistanceSession:
-        _require_permission(device, "browser_assist")
         session = _get_browser_session_or_404(store, session_id)
+        require_device_capability(
+            store=store,
+            settings=resolved_settings,
+            device=device,
+            capability="browser_assistance",
+            request_id=_request_id(request),
+            node_id=session["node_id"],
+            agent_id=session["agent_id"],
+        )
         updated = store.update_browser_assistance_state(session_id, "closed")
         store.append_audit_event(
             event_type="browser_assistance_closed",
@@ -1229,6 +1575,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             event_type="browser_assistance.closed",
             payload={"browser_session_id": session_id},
         )
+        _update_operator_session_if_exists(
+            store,
+            session_id,
+            "closed",
+            owner_device_id=device.device_id,
+        )
         return BrowserAssistanceSession.model_validate(updated)
 
     @app.post(
@@ -1242,8 +1594,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         device: VerifiedDevice = signed_device_dependency,
     ) -> ApprovalResponse:
-        _require_permission(device, "approve")
         approval = _get_approval_or_404(store, approval_id)
+        require_device_capability(
+            store=store,
+            settings=resolved_settings,
+            device=device,
+            capability="approvals",
+            request_id=_request_id(request),
+            node_id=approval["node_id"],
+            agent_id=approval["agent_id"],
+        )
         policy_proposal_id = None
         if payload.decision_type == "propose_policy":
             if payload.confirmation_phrase != "PROPOSE POLICY":
@@ -1351,7 +1711,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         device: VerifiedDevice = signed_device_dependency,
     ) -> VoiceSession:
-        _require_permission(device, "voice")
+        require_device_capability(
+            store=store,
+            settings=resolved_settings,
+            device=device,
+            capability="voice",
+            request_id=_request_id(request),
+            agent_id=payload.agent_id,
+        )
         session = store.create_voice_session(
             {
                 "node_id": resolved_settings.node_id,
@@ -1372,6 +1739,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             voice_session_id=session["voice_session_id"],
             request_id=_request_id(request),
             payload_redacted={"mode": payload.mode},
+        )
+        store.create_operator_session(
+            {
+                "session_id": session["voice_session_id"],
+                "session_type": "voice",
+                "agent_id": session["agent_id"],
+                "state": session["state"],
+                "owner_device_id": device.device_id,
+                "capability_requirements": ["voice"],
+                "context": {"hermes_session_id": payload.session_id, "mode": payload.mode},
+            }
         )
         store.create_event(
             node_id=session["node_id"],
@@ -1403,8 +1781,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         device: VerifiedDevice = signed_device_dependency,
     ) -> VoiceMessage:
-        _require_permission(device, "voice")
         session = _get_voice_session_or_404(store, session_id)
+        require_device_capability(
+            store=store,
+            settings=resolved_settings,
+            device=device,
+            capability="voice",
+            request_id=_request_id(request),
+            node_id=session["node_id"],
+            agent_id=session["agent_id"],
+        )
         message = store.create_voice_message(
             {
                 "voice_session_id": session_id,
@@ -1442,8 +1828,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         device: VerifiedDevice = signed_device_dependency,
     ) -> VoiceSession:
-        _require_permission(device, "voice")
         session = _get_voice_session_or_404(store, session_id)
+        require_device_capability(
+            store=store,
+            settings=resolved_settings,
+            device=device,
+            capability="voice",
+            request_id=_request_id(request),
+            node_id=session["node_id"],
+            agent_id=session["agent_id"],
+        )
         updated = store.update_voice_session_state(session_id, "closed")
         store.append_audit_event(
             event_type="voice_session_closed",
@@ -1462,6 +1856,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             session_id=session.get("session_id"),
             event_type="voice.session.closed",
             payload={"voice_session_id": session_id},
+        )
+        _update_operator_session_if_exists(
+            store,
+            session_id,
+            "closed",
+            owner_device_id=device.device_id,
         )
         return VoiceSession.model_validate(updated)
 
@@ -1909,6 +2309,50 @@ def _owned_tui_session(
     return session
 
 
+def _require_approval_capability(
+    *,
+    store: SQLiteStore,
+    settings: Settings,
+    request: Request,
+    device: VerifiedDevice,
+    approval_id: str,
+) -> None:
+    approval = _get_approval_or_404(store, approval_id)
+    require_device_capability(
+        store=store,
+        settings=settings,
+        device=device,
+        capability="approvals",
+        request_id=_request_id(request),
+        node_id=approval["node_id"],
+        agent_id=approval["agent_id"],
+    )
+
+
+def _mission_id_from_context(context: dict[str, Any]) -> str | None:
+    value = context.get("mission_id")
+    return value if isinstance(value, str) and value else None
+
+
+def _update_operator_session_if_exists(
+    store: SQLiteStore,
+    session_id: str,
+    state: str,
+    *,
+    owner_device_id: str | None = None,
+    return_summary: str | None = None,
+) -> None:
+    try:
+        store.update_operator_session_state(
+            session_id,
+            state,
+            owner_device_id=owner_device_id,
+            return_summary=return_summary,
+        )
+    except KeyError:
+        return
+
+
 def _get_approval_or_404(store: SQLiteStore, approval_id: str) -> dict[str, Any]:
     try:
         return store.get_approval(approval_id)
@@ -1947,7 +2391,14 @@ def _record_tui_state_change(
     request_id: str,
     actor_device_id: str,
 ) -> dict[str, Any]:
-    session = store.get_tui_session(session_id)
+    target_state = "closed" if event_type == "tui_session_closed" else "detached"
+    session = store.update_tui_session_state(session_id, target_state)
+    _update_operator_session_if_exists(
+        store,
+        session_id,
+        session["state"],
+        owner_device_id=actor_device_id,
+    )
     audit = store.append_audit_event(
         event_type=event_type,
         actor_type="device",

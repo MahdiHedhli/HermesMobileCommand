@@ -44,6 +44,8 @@ class HermesAppRuntime extends ChangeNotifier {
   String? _publicKey;
   String _connectionStatus = 'Not checked';
   String _secureStorageStatus = 'Storage not checked';
+  ClearanceKeyProtection _clearanceKeyProtection =
+      ClearanceKeyProtection.unavailable;
   String _eventStreamStatus = 'Live stream idle';
   bool _eventStreamConnected = false;
   int _eventRevision = 0;
@@ -68,6 +70,7 @@ class HermesAppRuntime extends ChangeNotifier {
   String? get accessToken => _accessToken;
   String get connectionStatus => _connectionStatus;
   String get secureStorageStatus => _secureStorageStatus;
+  ClearanceKeyProtection get clearanceKeyProtection => _clearanceKeyProtection;
   String get eventStreamStatus => _eventStreamStatus;
   bool get eventStreamConnected => _eventStreamConnected;
   int get eventRevision => _eventRevision;
@@ -144,6 +147,7 @@ class HermesAppRuntime extends ChangeNotifier {
     _privateKey = await _keyStore.readDevicePrivateKey();
     _publicKey = await _keyStore.readDevicePublicKey();
     _secureStorageStatus = await _keyStore.storageWarning();
+    _clearanceKeyProtection = await _keyStore.clearanceKeyProtection();
     if (!await _storedDeviceKeyIsValid()) {
       await _keyStore.clear();
       _deviceId = null;
@@ -212,6 +216,7 @@ class HermesAppRuntime extends ChangeNotifier {
     _refreshToken = completion.refreshToken;
     _privateKey = keyPair.privateKeyBase64;
     _publicKey = keyPair.publicKeyBase64;
+    _clearanceKeyProtection = await _keyStore.clearanceKeyProtection();
     _lastPairing = null;
     _connectionStatus = 'Paired with ${completion.node.displayName}';
     await _restartEventStream();
@@ -228,6 +233,7 @@ class HermesAppRuntime extends ChangeNotifier {
     _publicKey = null;
     _lastPairing = null;
     _connectionStatus = 'Pairing cleared';
+    _clearanceKeyProtection = await _keyStore.clearanceKeyProtection();
     _eventStreamStatus = 'Live stream idle';
     _eventStreamConnected = false;
     _eventRevision += 1;

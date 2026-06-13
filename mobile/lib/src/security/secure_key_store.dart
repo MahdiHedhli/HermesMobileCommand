@@ -2,6 +2,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'device_request_signer.dart';
+
 abstract class SecureKeyStore {
   Future<String?> readDeviceId();
   Future<String?> readAccessToken();
@@ -9,6 +11,7 @@ abstract class SecureKeyStore {
   Future<String?> readDevicePrivateKey();
   Future<String?> readDevicePublicKey();
   Future<String> storageWarning();
+  Future<ClearanceKeyProtection> clearanceKeyProtection();
   Future<void> saveDeviceKeyPair({
     required String privateKey,
     required String publicKey,
@@ -52,6 +55,22 @@ class PlatformAwareSecureKeyStore implements SecureKeyStore {
       return 'Web/dev fallback storage active; private key is not in native secure storage.';
     }
     return 'Native secure storage enabled for device secrets.';
+  }
+
+  @override
+  Future<ClearanceKeyProtection> clearanceKeyProtection() async {
+    if (_useFallback) {
+      return ClearanceKeyProtection.developmentExportableEd25519;
+    }
+    return const ClearanceKeyProtection(
+      backend: 'flutter_secure_storage_exportable_ed25519',
+      hardwareBacked: null,
+      userPresenceRequired: false,
+      privateKeyExportable: true,
+      productionReady: false,
+      warning:
+          'Native secure storage protects bytes at rest, but signing is not yet non-exportable or user-presence gated.',
+    );
   }
 
   @override
@@ -139,6 +158,10 @@ class SharedPreferencesSecureKeyStore implements SecureKeyStore {
       'Development fallback storage active; private key is not in native secure storage.';
 
   @override
+  Future<ClearanceKeyProtection> clearanceKeyProtection() async =>
+      ClearanceKeyProtection.developmentExportableEd25519;
+
+  @override
   Future<String?> readRefreshToken() async =>
       preferences.getString(_refreshTokenKey);
 
@@ -193,6 +216,10 @@ class InMemorySecureKeyStore implements SecureKeyStore {
 
   @override
   Future<String> storageWarning() async => 'In-memory test storage active.';
+
+  @override
+  Future<ClearanceKeyProtection> clearanceKeyProtection() async =>
+      ClearanceKeyProtection.developmentExportableEd25519;
 
   @override
   Future<String?> readRefreshToken() async => _refreshToken;

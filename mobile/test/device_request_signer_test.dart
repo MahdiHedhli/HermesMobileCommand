@@ -44,6 +44,9 @@ void main() {
     expect(headers.values['X-HMCP-Timestamp'], isNotEmpty);
     expect(headers.values['X-HMCP-Nonce'], isNotEmpty);
     expect(headers.values['X-HMCP-Signature'], isNotEmpty);
+    expect(signer.protection.hardwareBacked, isFalse);
+    expect(signer.protection.userPresenceRequired, isFalse);
+    expect(signer.protection.productionReady, isFalse);
   });
 
   test('device key pair validates stored public/private match', () async {
@@ -54,5 +57,13 @@ void main() {
     );
 
     expect(await restored.validatesPair(), isTrue);
+  });
+
+  test('unavailable signer reports unknown clearance key protection', () {
+    const signer = UnavailableDeviceRequestSigner();
+
+    expect(signer.protection.backend, 'unavailable');
+    expect(signer.protection.hardwareBacked, isNull);
+    expect(signer.protection.userPresenceRequired, isNull);
   });
 }

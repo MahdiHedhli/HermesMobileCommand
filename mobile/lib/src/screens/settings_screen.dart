@@ -77,8 +77,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         label: 'Push',
                         value: 'Notification records only in alpha'),
                     DetailRow(
-                        label: 'Storage',
-                        value: runtime.secureStorageStatus),
+                        label: 'Storage', value: runtime.secureStorageStatus),
+                    DetailRow(
+                        label: 'Key backend',
+                        value: runtime.clearanceKeyProtection.backend),
+                    DetailRow(
+                        label: 'Hardware-backed',
+                        value:
+                            runtime.clearanceKeyProtection.hardwareBackedLabel),
+                    DetailRow(
+                        label: 'User presence',
+                        value:
+                            runtime.clearanceKeyProtection.userPresenceLabel),
+                    DetailRow(
+                        label: 'Production key',
+                        value: runtime.clearanceKeyProtection.productionReady
+                            ? 'ready'
+                            : 'not yet'),
+                    DetailRow(
+                        label: 'Key warning',
+                        value: runtime.clearanceKeyProtection.warning),
                   ],
                 ),
               ),

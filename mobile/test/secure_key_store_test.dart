@@ -18,6 +18,11 @@ void main() {
     expect(await store.readDeviceId(), 'dev_1');
     expect(await store.readDevicePrivateKey(), 'private');
     expect(await store.storageWarning(), contains('In-memory'));
+    final protection = await store.clearanceKeyProtection();
+    expect(protection.backend, 'development_exportable_ed25519');
+    expect(protection.hardwareBacked, isFalse);
+    expect(protection.userPresenceRequired, isFalse);
+    expect(protection.productionReady, isFalse);
 
     await store.clear();
 

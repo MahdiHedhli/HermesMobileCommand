@@ -14,11 +14,62 @@ class SignedRequestHeaders {
 }
 
 abstract class DeviceRequestSigner {
+  ClearanceKeyProtection get protection;
+
   Future<SignedRequestHeaders> sign({
     required String method,
     required String pathWithQuery,
     required Uint8List body,
   });
+}
+
+class ClearanceKeyProtection {
+  const ClearanceKeyProtection({
+    required this.backend,
+    required this.hardwareBacked,
+    required this.userPresenceRequired,
+    required this.privateKeyExportable,
+    required this.productionReady,
+    required this.warning,
+  });
+
+  final String backend;
+  final bool? hardwareBacked;
+  final bool? userPresenceRequired;
+  final bool privateKeyExportable;
+  final bool productionReady;
+  final String warning;
+
+  static const developmentExportableEd25519 = ClearanceKeyProtection(
+    backend: 'development_exportable_ed25519',
+    hardwareBacked: false,
+    userPresenceRequired: false,
+    privateKeyExportable: true,
+    productionReady: false,
+    warning:
+        'Development signing key is exportable and does not require user presence.',
+  );
+
+  static const unavailable = ClearanceKeyProtection(
+    backend: 'unavailable',
+    hardwareBacked: null,
+    userPresenceRequired: null,
+    privateKeyExportable: false,
+    productionReady: false,
+    warning: 'No clearance signing key is configured.',
+  );
+
+  String get hardwareBackedLabel => switch (hardwareBacked) {
+        true => 'yes',
+        false => 'no',
+        null => 'unknown',
+      };
+
+  String get userPresenceLabel => switch (userPresenceRequired) {
+        true => 'yes',
+        false => 'no',
+        null => 'unknown',
+      };
 }
 
 class DeviceKeyPair {
@@ -62,7 +113,8 @@ class DeviceKeyPair {
       type: KeyPairType.ed25519,
     );
     const probe = 'hmcp-device-key-validation';
-    final signature = await algorithm.sign(utf8.encode(probe), keyPair: signingKey);
+    final signature =
+        await algorithm.sign(utf8.encode(probe), keyPair: signingKey);
     return algorithm.verify(
       utf8.encode(probe),
       signature: Signature(
@@ -83,6 +135,10 @@ class Ed25519DeviceRequestSigner implements DeviceRequestSigner {
   final DeviceKeyPair keyPair;
   final _algorithm = Ed25519();
   final _random = Random.secure();
+
+  @override
+  ClearanceKeyProtection get protection =>
+      ClearanceKeyProtection.developmentExportableEd25519;
 
   @override
   Future<SignedRequestHeaders> sign({
@@ -126,6 +182,9 @@ class Ed25519DeviceRequestSigner implements DeviceRequestSigner {
 
 class UnavailableDeviceRequestSigner implements DeviceRequestSigner {
   const UnavailableDeviceRequestSigner();
+
+  @override
+  ClearanceKeyProtection get protection => ClearanceKeyProtection.unavailable;
 
   @override
   Future<SignedRequestHeaders> sign({

@@ -73,6 +73,8 @@ Security posture today:
 - Tailscale/local-network first
 - paired device identities
 - Ed25519 signed sensitive requests
+- explicit clearance channel policy
+- allowlist-composed notification text
 - fail-closed clearance behavior
 - local audit logging
 - dangerous development features disabled by default
@@ -94,6 +96,7 @@ Security posture today:
 - [API contract](docs/api/openapi.yaml)
 - [Runtime client integration](docs/implementation/real-hermes-client-008.md)
 - [Security threat model](docs/security/threat-model.md)
+- [Clearance channel policy](docs/security/clearance-channel-policy.md)
 - [Runtime security review](docs/security/runtime-integration-review.md)
 - [Roadmap](docs/roadmap-next.md)
 

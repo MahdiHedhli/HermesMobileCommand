@@ -112,6 +112,7 @@ class SQLiteStore:
                     active_session_id TEXT,
                     current_tool TEXT,
                     current_target TEXT,
+                    deployment_trust_context TEXT NOT NULL DEFAULT 'trusted_host',
                     tags_json TEXT NOT NULL,
                     capabilities_json TEXT NOT NULL,
                     last_seen_at TEXT,
@@ -156,6 +157,7 @@ class SQLiteStore:
                     requested_tool TEXT NOT NULL,
                     risk_level TEXT NOT NULL,
                     risk_category TEXT,
+                    risk_family TEXT NOT NULL DEFAULT 'external_effect',
                     summary TEXT NOT NULL,
                     full_payload_redacted_json TEXT NOT NULL,
                     payload_hash TEXT NOT NULL,
@@ -380,6 +382,18 @@ class SQLiteStore:
                 "unsafe_input_detected",
                 "INTEGER NOT NULL DEFAULT 0",
             )
+            _ensure_column(
+                db,
+                "agents",
+                "deployment_trust_context",
+                "TEXT NOT NULL DEFAULT 'trusted_host'",
+            )
+            _ensure_column(
+                db,
+                "approval_requests",
+                "risk_family",
+                "TEXT NOT NULL DEFAULT 'external_effect'",
+            )
             self._ensure_column(db, "approval_requests", "decision_scope", "TEXT")
             self._ensure_column(db, "approval_requests", "decision_actor_device_id", "TEXT")
             self._ensure_column(
@@ -475,14 +489,24 @@ class SQLiteStore:
         return [self.get_node(row["node_id"]) for row in rows]
 
     def upsert_agent(self, agent: dict[str, Any]) -> dict[str, Any]:
+        if "deployment_trust_context" not in agent:
+            try:
+                existing = self.get_agent(agent["node_id"], agent["agent_id"])
+                agent["deployment_trust_context"] = existing.get(
+                    "deployment_trust_context",
+                    "trusted_host",
+                )
+            except KeyError:
+                agent["deployment_trust_context"] = "trusted_host"
         with self.connect() as db:
             db.execute(
                 """
                 INSERT INTO agents (
                     agent_id, node_id, display_name, agent_kind, status, active_session_id,
-                    current_tool, current_target, tags_json, capabilities_json, last_seen_at
+                    current_tool, current_target, deployment_trust_context, tags_json,
+                    capabilities_json, last_seen_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(node_id, agent_id) DO UPDATE SET
                     display_name=excluded.display_name,
                     agent_kind=excluded.agent_kind,
@@ -490,6 +514,7 @@ class SQLiteStore:
                     active_session_id=excluded.active_session_id,
                     current_tool=excluded.current_tool,
                     current_target=excluded.current_target,
+                    deployment_trust_context=excluded.deployment_trust_context,
                     tags_json=excluded.tags_json,
                     capabilities_json=excluded.capabilities_json,
                     last_seen_at=excluded.last_seen_at
@@ -503,6 +528,7 @@ class SQLiteStore:
                     agent.get("active_session_id"),
                     agent.get("current_tool"),
                     agent.get("current_target"),
+                    agent.get("deployment_trust_context", "trusted_host"),
                     json.dumps(agent.get("tags", [])),
                     json.dumps(agent.get("capabilities", [])),
                     agent.get("last_seen_at") or utc_iso(),
@@ -882,10 +908,10 @@ class SQLiteStore:
                 """
                 INSERT INTO approval_requests (
                     approval_id, action_id, node_id, agent_id, session_id, requested_tool,
-                    risk_level, risk_category, summary, full_payload_redacted_json,
+                    risk_level, risk_category, risk_family, summary, full_payload_redacted_json,
                     payload_hash, resource_scope, state, options_json, requested_at, expires_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     approval["approval_id"],
@@ -896,6 +922,7 @@ class SQLiteStore:
                     approval["requested_tool"],
                     approval["risk_level"],
                     approval.get("risk_category"),
+                    approval.get("risk_family", "external_effect"),
                     approval["summary"],
                     json.dumps(payload),
                     approval.get("payload_hash") or content_hash(payload),

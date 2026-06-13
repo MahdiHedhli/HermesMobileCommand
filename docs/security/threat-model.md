@@ -105,7 +105,7 @@ operator decisions from paired devices.
 | Attacker grants clearance for a destructive shell command | Data loss or compromise | Device-key signatures, clearance expiry, action binding, audit, high/critical scope limits |
 | Agent floods phone with push notifications | Alert fatigue, denial of attention | Rate limits, dedupe, category quotas, policy rejection, audit |
 | Rogue backend impersonates a trusted backend | Unauthorized data/control path | Explicit pairing, node fingerprint, device registry, user-visible backend identity |
-| Secret appears in push body | Credential leakage through OS notification surfaces | Secret scanner, payload minimization, rejection audit |
+| Secret appears in push body | Credential leakage through OS notification surfaces | Allowlist template composition, raw text non-echo, backstop secret/entropy detection, audit |
 | Stale approval is replayed | Unauthorized action after context changed | `approval_id`, `decision_id`, expiry, signed payload hash, idempotency store |
 | Lost phone remains trusted | Unauthorized control | Device revocation, session invalidation, emergency revoke from gateway |
 | Tailscale identity stolen | Network reachability to gateway | App-level device identity, session token binding, gateway authorization |
@@ -113,6 +113,51 @@ operator decisions from paired devices.
 | Local PTY prototype abused | Direct shell access to the gateway host | Disabled by default, signed session creation, access-token stream, command allowlist, working directory root, max sessions, idle timeout, metadata-only audit |
 | Voice command misheard as approval | Unsafe action | Confirmation phrase, touch fallback, high/critical touch requirement |
 | Optional relay observes sensitive payloads | Confidentiality loss | No relay required, future app-layer encryption, minimal relay storage |
+
+## Clearance Channel Policy
+
+Multi-channel clearance security equals the security of the weakest channel
+permitted for a given risk family. ACT therefore owns channel eligibility once
+for the whole ecosystem; Hermes, AgenticKVM, BrowserBridge, and future backends
+do not define their own channel rules.
+
+Supported channels:
+
+- `mobile_signed`: default and recommended. The operator phone is the
+  controller headset. It signs sensitive decisions out-of-band from the backend
+  host.
+- `local_terminal`: optional local render surface. It must route through ACT,
+  must be signature verified by the local terminal path where practical, and is
+  never the authority.
+
+Mobile-mandatory risk families:
+
+- `external_effect`
+- `destructive`
+- `credential_or_secret`
+- `safety_critical`
+- `irreversible`
+
+Low-risk reversible families `observe`, `read_only`, and `routine` may clear
+from `local_terminal` only when tower policy enables local terminal and the
+requesting aircraft is configured as `trusted_host`.
+
+Deployment trust context is tower-owned and configured per registered
+aircraft/agent. It is never read from a clearance request. If an aircraft could
+self-declare `trusted_host`, a compromised co-resident agent with shell access
+could re-enable the local channel and unravel the protection against the
+`untrusted agent sharing the gateway host` actor.
+
+ACT audits channel and risk family on every issued clearance and audits rejected
+channel attempts with `clearance_channel_rejected`. Requests attempting to set
+`deployment_trust_context` or `channel_eligibility` are ignored and audited as
+`clearance_request_policy_override_ignored`.
+
+Known limitation for ACT-003: ACT currently trusts the backend-supplied
+`risk_family` label for routing. This is acceptable only as a named interim
+state. A later capability registry should validate or pin risk family per known
+backend capability so a dishonest aircraft cannot label a high-risk action as
+routine.
 
 ## Failure Modes
 

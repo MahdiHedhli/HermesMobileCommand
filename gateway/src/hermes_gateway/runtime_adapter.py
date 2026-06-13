@@ -6,6 +6,7 @@ from typing import Any, Protocol
 from fastapi import HTTPException, status
 
 from .capabilities import require_runtime_capability
+from .clearance_policy import risk_family_from_request
 from .config import Settings
 from .ids import new_id
 from .notification_composer import compose_notification
@@ -80,6 +81,7 @@ class RuntimeClearanceRequest:
     action_ref: str | None = None
     node_ref: str | None = None
     risk_category: str | None = None
+    risk_family: str | None = None
     resource_scope: str | None = None
 
 
@@ -253,6 +255,7 @@ class HermesRuntimeAdapter:
                 action_id=clearance.action_ref,
                 node_id=clearance.node_ref,
                 risk_category=clearance.risk_category,
+                risk_family=clearance.risk_family,
                 resource_scope=clearance.resource_scope,
             ),
             request_id=request_id,
@@ -562,6 +565,11 @@ class HermesRuntimeAdapter:
                 "requested_tool": payload.requested_tool,
                 "risk_level": payload.risk_level,
                 "risk_category": payload.risk_category or "unknown_action",
+                "risk_family": risk_family_from_request(
+                    risk_family=payload.risk_family,
+                    risk_category=payload.risk_category,
+                    risk_level=payload.risk_level,
+                ),
                 "summary": payload.summary,
                 "full_payload_redacted": payload.payload_redacted,
                 "resource_scope": payload.resource_scope,
@@ -590,6 +598,7 @@ class HermesRuntimeAdapter:
                 "requested_tool": payload.requested_tool,
                 "risk_level": payload.risk_level,
                 "risk_category": payload.risk_category or "unknown_action",
+                "risk_family": approval["risk_family"],
             },
         )
         self.store.create_event(
@@ -601,6 +610,7 @@ class HermesRuntimeAdapter:
                 "approval_id": approval_id,
                 "state": "pending",
                 "risk_level": payload.risk_level,
+                "risk_family": approval["risk_family"],
             },
         )
         return ApprovalRequest.model_validate(approval)

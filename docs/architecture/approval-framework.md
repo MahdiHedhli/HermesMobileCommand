@@ -21,6 +21,33 @@ also still say Hermes where it is adapting Hermes runtime behavior.
 | high | External, destructive, sensitive, or hard-to-reverse action | Delete file, submit browser form, send email, push repository, access credentials | Mobile approval required |
 | critical | Broad destructive, financial, security-sensitive, or potentially harmful action | Payment, credential exfiltration risk, network scan, privileged shell, bulk delete | Mobile approval required, critical notification, short expiry, stronger confirmation |
 
+## Clearance Channel Policy
+
+ACT owns channel eligibility. Backends label requested capabilities with a risk
+family, but they do not define channel rules and they do not supply deployment
+trust context.
+
+Default risk-family channel map:
+
+| Risk Family | Eligible Channels |
+| --- | --- |
+| `observe` | `mobile_signed`, `local_terminal` |
+| `read_only` | `mobile_signed`, `local_terminal` |
+| `routine` | `mobile_signed`, `local_terminal` |
+| `external_effect` | `mobile_signed` |
+| `destructive` | `mobile_signed` |
+| `credential_or_secret` | `mobile_signed` |
+| `safety_critical` | `mobile_signed` |
+| `irreversible` | `mobile_signed` |
+
+`local_terminal` is disabled for `untrusted_host` and `adversarial_host`
+aircraft even for low-risk families. Deployment trust context is configured at
+the tower per registered aircraft/agent and is ignored if present in a
+clearance request.
+
+Every clearance decision audits the channel, risk family, eligible channels,
+deployment trust context, actor identity, and eligibility result.
+
 ## Escalation Categories
 
 The gateway approval policy must escalate at least:

@@ -46,7 +46,19 @@ MissionState = Literal[
 ]
 ApprovalState = Literal["pending", "approved", "denied", "expired", "cancelled"]
 RiskLevel = Literal["low", "medium", "high", "critical"]
+RiskFamily = Literal[
+    "observe",
+    "read_only",
+    "routine",
+    "external_effect",
+    "destructive",
+    "credential_or_secret",
+    "safety_critical",
+    "irreversible",
+]
 ApprovalScope = Literal["once", "session", "agent", "permanent"]
+ClearanceChannel = Literal["mobile_signed", "local_terminal"]
+DeploymentTrustContext = Literal["trusted_host", "untrusted_host", "adversarial_host"]
 NotificationCategory = Literal[
     "approval_required",
     "security_alert",
@@ -234,6 +246,7 @@ class Agent(BaseModel):
     active_session_id: str | None = None
     current_tool: str | None = None
     current_target: str | None = None
+    deployment_trust_context: DeploymentTrustContext = "trusted_host"
     tags: list[str] = Field(default_factory=list)
     capabilities: list[Capability] = Field(default_factory=list)
     last_seen_at: datetime | None = None
@@ -296,6 +309,7 @@ class ApprovalRequest(BaseModel):
     requested_tool: str
     risk_level: RiskLevel
     risk_category: str | None = None
+    risk_family: RiskFamily = "external_effect"
     summary: str
     full_payload_redacted: dict[str, Any]
     resource_scope: str | None = None
@@ -317,6 +331,9 @@ class CreateApprovalRequest(StrictModel):
     full_payload_redacted: dict[str, Any]
     node_id: str | None = None
     risk_category: str | None = None
+    risk_family: RiskFamily | None = None
+    deployment_trust_context: DeploymentTrustContext | None = None
+    channel_eligibility: dict[str, Any] | None = None
     resource_scope: str | None = None
     options: list[str] = Field(default_factory=lambda: ["approve_once", "deny"])
     expires_at: datetime
@@ -334,6 +351,9 @@ class HermesApprovalRequestedRequest(StrictModel):
     action_id: str | None = None
     node_id: str | None = None
     risk_category: str | None = None
+    risk_family: RiskFamily | None = None
+    deployment_trust_context: DeploymentTrustContext | None = None
+    channel_eligibility: dict[str, Any] | None = None
     resource_scope: str | None = None
 
 
@@ -362,6 +382,13 @@ class ApprovalDecisionResponse(BaseModel):
     approval_id: str
     state: ApprovalState
     applied_scope: ApprovalScope | None = None
+
+
+class LocalTerminalApprovalDecisionRequest(StrictModel):
+    decision: Literal["approve", "deny"]
+    scope: ApprovalScope = "once"
+    terminal_identity: str
+    signature_verified: bool
 
 
 class InterventionRequest(StrictModel):

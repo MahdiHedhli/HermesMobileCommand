@@ -10,6 +10,12 @@ from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSock
 from fastapi.middleware.cors import CORSMiddleware
 
 from .capabilities import require_device_capability, require_runtime_capability
+from .clearance_policy import (
+    ClearanceChannelPolicy,
+    decision_metadata,
+    enforce_clearance_channel,
+    risk_family_from_request,
+)
 from .config import Settings
 from .ids import new_id
 from .local_binding import HermesLocalCaller, verify_hermes_local_request
@@ -55,6 +61,7 @@ from .schemas import (
     InterventionRequest,
     InterventionResponse,
     Inventory,
+    LocalTerminalApprovalDecisionRequest,
     Mission,
     MobileNotifyRequest,
     Node,
@@ -86,6 +93,7 @@ DEFAULT_PERMISSIONS = ["read_state", "chat", "approve", "intervene"]
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     resolved_settings = settings or Settings.from_env()
+    ClearanceChannelPolicy.from_settings(resolved_settings)
     store = SQLiteStore(resolved_settings.database_path)
     store.initialize()
     _ensure_local_node(store, resolved_settings)
@@ -373,6 +381,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 action_ref=payload.action_id,
                 node_ref=payload.node_id,
                 risk_category=payload.risk_category,
+                risk_family=payload.risk_family,
                 resource_scope=payload.resource_scope,
             ),
             request_id=_request_id(request),
@@ -699,6 +708,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             requested_tool=payload.requested_tool,
             risk_level=payload.risk_level,
             risk_category=payload.risk_category,
+            risk_family=payload.risk_family,
+            deployment_trust_context=payload.deployment_trust_context,
+            channel_eligibility=payload.channel_eligibility,
             summary=payload.summary,
             full_payload_redacted=payload.payload_redacted,
             resource_scope=payload.resource_scope,
@@ -771,10 +783,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         state = "approved" if payload.decision == "approve" else "denied"
         return _transition_approval(
             store=store,
+            settings=resolved_settings,
             approval_id=approval_id,
             target_state=state,
             request_id=_request_id(request),
             actor_device_id=device.device_id,
+            actor_type="device",
+            channel="mobile_signed",
             decision=payload.decision,
             scope=payload.scope,
         )
@@ -794,10 +809,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         return _transition_approval(
             store=store,
+            settings=resolved_settings,
             approval_id=approval_id,
             target_state="approved",
             request_id=_request_id(request),
             actor_device_id=device.device_id,
+            actor_type="device",
+            channel="mobile_signed",
             decision="approve",
             scope="once",
         )
@@ -817,10 +835,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         return _transition_approval(
             store=store,
+            settings=resolved_settings,
             approval_id=approval_id,
             target_state="denied",
             request_id=_request_id(request),
             actor_device_id=device.device_id,
+            actor_type="device",
+            channel="mobile_signed",
             decision="deny",
             scope="once",
         )
@@ -840,10 +861,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         return _transition_approval(
             store=store,
+            settings=resolved_settings,
             approval_id=approval_id,
             target_state="expired",
             request_id=_request_id(request),
             actor_device_id=device.device_id,
+            actor_type="device",
+            channel="mobile_signed",
             decision=None,
             scope=None,
         )
@@ -863,12 +887,59 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         return _transition_approval(
             store=store,
+            settings=resolved_settings,
             approval_id=approval_id,
             target_state="cancelled",
             request_id=_request_id(request),
             actor_device_id=device.device_id,
+            actor_type="device",
+            channel="mobile_signed",
             decision=None,
             scope=None,
+        )
+
+    @app.post(
+        "/v1/local-terminal/approvals/{approval_id}/decisions",
+        response_model=ApprovalDecisionResponse,
+    )
+    def local_terminal_decide_approval(
+        approval_id: str,
+        payload: LocalTerminalApprovalDecisionRequest,
+        request: Request,
+        _caller: HermesLocalCaller = hermes_local_dependency,
+    ) -> ApprovalDecisionResponse:
+        if not payload.signature_verified:
+            approval = _get_approval_or_404(store, approval_id)
+            store.append_audit_event(
+                event_type="clearance_channel_rejected",
+                actor_type="device",
+                actor_id=payload.terminal_identity,
+                node_id=approval["node_id"],
+                agent_id=approval["agent_id"],
+                session_id=approval["session_id"],
+                approval_id=approval_id,
+                request_id=_request_id(request),
+                payload_redacted={
+                    "channel": "local_terminal",
+                    "reason": "local_terminal_signature_not_verified",
+                },
+            )
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED,
+                "local terminal signature not verified",
+            )
+        target_state = "approved" if payload.decision == "approve" else "denied"
+        return _transition_approval(
+            store=store,
+            settings=resolved_settings,
+            approval_id=approval_id,
+            target_state=target_state,
+            request_id=_request_id(request),
+            actor_device_id=payload.terminal_identity,
+            actor_type="device",
+            channel="local_terminal",
+            decision=payload.decision,
+            scope=payload.scope,
         )
 
     @app.post(
@@ -1740,10 +1811,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             }[payload.decision_type]
             _transition_approval(
                 store=store,
+                settings=resolved_settings,
                 approval_id=approval_id,
                 target_state=transition[0],
                 request_id=_request_id(request),
                 actor_device_id=device.device_id,
+                actor_type="device",
+                channel="mobile_signed",
                 decision=transition[1],
                 scope=transition[2],
             )
@@ -2118,6 +2192,11 @@ def _create_approval_request(
             "requested_tool": payload.requested_tool,
             "risk_level": payload.risk_level,
             "risk_category": payload.risk_category or "unknown_action",
+            "risk_family": risk_family_from_request(
+                risk_family=payload.risk_family,
+                risk_category=payload.risk_category,
+                risk_level=payload.risk_level,
+            ),
             "summary": payload.summary,
             "full_payload_redacted": payload.full_payload_redacted,
             "resource_scope": payload.resource_scope,
@@ -2126,6 +2205,22 @@ def _create_approval_request(
             "expires_at": payload.expires_at.isoformat(),
         }
     )
+    if payload.deployment_trust_context or payload.channel_eligibility:
+        store.append_audit_event(
+            event_type="clearance_request_policy_override_ignored",
+            actor_type="hermes",
+            actor_id=payload.agent_id,
+            node_id=node_id,
+            agent_id=payload.agent_id,
+            session_id=payload.session_id,
+            approval_id=approval_id,
+            request_id=_request_id(request),
+            payload_redacted={
+                "attempted_deployment_trust_context": payload.deployment_trust_context,
+                "attempted_channel_eligibility": bool(payload.channel_eligibility),
+                "reason": "tower_owned_channel_policy",
+            },
+        )
     store.append_audit_event(
         event_type="approval_requested",
         actor_type="hermes",
@@ -2139,6 +2234,7 @@ def _create_approval_request(
             "requested_tool": payload.requested_tool,
             "risk_level": payload.risk_level,
             "risk_category": payload.risk_category or "unknown_action",
+            "risk_family": approval["risk_family"],
         },
     )
     store.create_event(
@@ -2150,6 +2246,7 @@ def _create_approval_request(
             "approval_id": approval_id,
             "state": "pending",
             "risk_level": payload.risk_level,
+            "risk_family": approval["risk_family"],
         },
     )
     return ApprovalRequest.model_validate(approval)
@@ -2265,10 +2362,13 @@ def _expire_pending_approvals(store: SQLiteStore) -> None:
 def _transition_approval(
     *,
     store: SQLiteStore,
+    settings: Settings,
     approval_id: str,
     target_state: str,
     request_id: str,
     actor_device_id: str,
+    actor_type: str,
+    channel: str,
     decision: str | None,
     scope: str | None,
 ) -> ApprovalDecisionResponse:
@@ -2279,6 +2379,16 @@ def _transition_approval(
 
     if approval["state"] != "pending":
         raise HTTPException(status.HTTP_409_CONFLICT, "approval is not pending")
+
+    channel_decision = enforce_clearance_channel(
+        store=store,
+        settings=settings,
+        approval=approval,
+        channel=channel,
+        actor_type=actor_type,
+        actor_id=actor_device_id,
+        request_id=request_id,
+    )
 
     if target_state in {"approved", "denied"} and parse_utc(approval["expires_at"]) <= now_utc():
         store.resolve_approval(
@@ -2311,7 +2421,11 @@ def _transition_approval(
         target_state,
         decision_scope=scope,
         decision_actor_device_id=actor_device_id,
-        decision_metadata={"decision": decision, "state": target_state},
+        decision_metadata={
+            "decision": decision,
+            "state": target_state,
+            **decision_metadata(channel_decision),
+        },
     )
     event_type = {
         "approved": "approval_decision",
@@ -2321,7 +2435,7 @@ def _transition_approval(
     }[target_state]
     store.append_audit_event(
         event_type=event_type,
-        actor_type="device",
+        actor_type=actor_type,
         actor_id=actor_device_id,
         node_id=approval["node_id"],
         agent_id=approval["agent_id"],
@@ -2332,6 +2446,7 @@ def _transition_approval(
             "decision": decision,
             "scope": scope,
             "state": target_state,
+            **decision_metadata(channel_decision),
         },
     )
     store.create_event(

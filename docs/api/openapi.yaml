@@ -737,6 +737,37 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /local-terminal/approvals/{approval_id}/decisions:
+    post:
+      tags: [approvals]
+      summary: Submit a local-terminal clearance decision through ACT policy
+      description: >
+        Loopback/local-bound channel for terminal-rendered decisions. The
+        terminal is a render surface; ACT still verifies local signature status,
+        risk-family channel eligibility, tower-configured deployment trust
+        context, and audit requirements before changing approval state.
+      parameters:
+        - $ref: "#/components/parameters/ApprovalId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LocalTerminalApprovalDecisionRequest"
+      responses:
+        "200":
+          description: Decision accepted by channel policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApprovalDecisionResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
   /approvals/{approval_id}/expire:
     post:
       tags: [approvals]
@@ -2334,6 +2365,8 @@ components:
           type: string
         current_target:
           type: string
+        deployment_trust_context:
+          $ref: "#/components/schemas/DeploymentTrustContext"
         tags:
           type: array
           items: {type: string}
@@ -2570,6 +2603,15 @@ components:
     RiskLevel:
       enum: [low, medium, high, critical]
 
+    RiskFamily:
+      enum: [observe, read_only, routine, external_effect, destructive, credential_or_secret, safety_critical, irreversible]
+
+    ClearanceChannel:
+      enum: [mobile_signed, local_terminal]
+
+    DeploymentTrustContext:
+      enum: [trusted_host, untrusted_host, adversarial_host]
+
     ApprovalScope:
       enum: [once, session, agent, permanent]
 
@@ -2605,6 +2647,8 @@ components:
           $ref: "#/components/schemas/RiskLevel"
         risk_category:
           type: string
+        risk_family:
+          $ref: "#/components/schemas/RiskFamily"
         summary:
           type: string
         full_payload_redacted:
@@ -2656,6 +2700,15 @@ components:
           $ref: "#/components/schemas/RiskLevel"
         risk_category:
           type: string
+        risk_family:
+          $ref: "#/components/schemas/RiskFamily"
+        deployment_trust_context:
+          $ref: "#/components/schemas/DeploymentTrustContext"
+          description: Ignored if supplied by a backend; tower configuration is authoritative.
+        channel_eligibility:
+          type: object
+          additionalProperties: true
+          description: Ignored if supplied by a backend; tower policy owns channel eligibility.
         summary:
           type: string
         full_payload_redacted:
@@ -2709,6 +2762,15 @@ components:
           type: string
         risk_category:
           type: string
+        risk_family:
+          $ref: "#/components/schemas/RiskFamily"
+        deployment_trust_context:
+          $ref: "#/components/schemas/DeploymentTrustContext"
+          description: Ignored if supplied by a backend; tower configuration is authoritative.
+        channel_eligibility:
+          type: object
+          additionalProperties: true
+          description: Ignored if supplied by a backend; tower policy owns channel eligibility.
         resource_scope:
           type: string
 
@@ -2753,6 +2815,19 @@ components:
           additionalProperties: true
         signature:
           type: string
+
+    LocalTerminalApprovalDecisionRequest:
+      type: object
+      required: [decision, terminal_identity, signature_verified]
+      properties:
+        decision:
+          enum: [approve, deny]
+        scope:
+          $ref: "#/components/schemas/ApprovalScope"
+        terminal_identity:
+          type: string
+        signature_verified:
+          type: boolean
 
     ApprovalDecisionResponse:
       type: object
@@ -3003,6 +3078,22 @@ components:
           type: string
         dedupe_key:
           type: string
+        backend_display_name:
+          type: string
+        subject_display_name:
+          type: string
+        risk_family:
+          type: string
+          description: Safe label used only for tower-owned notification templates.
+        clearance_category:
+          type: string
+        action_category:
+          type: string
+        operation_label:
+          type: string
+        pending_count:
+          type: integer
+          minimum: 0
 
     Notification:
       type: object
@@ -3028,6 +3119,10 @@ components:
           type: string
         body_safe:
           type: string
+        composition_mode:
+          enum: [template_allowlist, template_sanitized]
+        unsafe_input_detected:
+          type: boolean
         created_at:
           type: string
           format: date-time

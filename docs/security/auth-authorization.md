@@ -238,6 +238,24 @@ Device key rotation:
 5. Gateway accepts new key and invalidates old refresh grants.
 6. Gateway audits `device_key_rotated`.
 
+## Mobile Clearance Key Protection
+
+Production clearance signing should use hardware-backed, non-exportable keys
+with user presence:
+
+- iOS: Secure Enclave or platform-backed key storage where practical, with Face
+  ID, Touch ID, or device credential per clearance.
+- Android: Android Keystore with user authentication required where practical.
+
+ACT-003 adds mobile key-protection metadata and visible settings warnings, but
+the current repository has only web/dev Flutter platform files. The current
+development signer remains exportable Ed25519 bytes and is explicitly marked
+`development_exportable_ed25519`.
+
+Native hardware-backed signing is therefore code-path planned but not
+device-verified in ACT-003. Do not treat web/desktop fallback validation as
+proof of Secure Enclave or Android Keystore protection.
+
 Gateway key rotation:
 
 - Gateway publishes new fingerprint during maintenance.

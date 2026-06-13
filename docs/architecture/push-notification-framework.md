@@ -2,18 +2,20 @@
 
 ## Purpose
 
-Push notifications wake the mobile operator for urgent Hermes events. They are not durable state, do not contain secrets, and do not replace the approval queue, audit log, or event stream.
+Push notifications wake the mobile operator for urgent ACT backend events. They are not durable state, do not contain secrets, and do not replace the clearance queue, audit log, or event stream.
 
 ## `mobile_notify` Tool Contract
 
-Hermes can request a mobile notification through the gateway.
+Backends can request notification intent through the gateway. Legacy
+Hermes-compatible fields remain accepted, but ACT composes visible notification
+text from allowlisted templates.
 
 Required fields:
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `title` | string | Short user-facing title, secret-free |
-| `body` | string | Short user-facing body, secret-free |
+| `title` | string | Legacy raw title input; never echoed directly to push text |
+| `body` | string | Legacy raw body input; never echoed directly to push text |
 | `urgency` | enum | `low`, `normal`, `high`, `critical` |
 | `category` | enum | See notification categories |
 | `agent_id` | string | Requesting agent |
@@ -27,6 +29,10 @@ Optional fields:
 | `deep_link` | string | Mobile route to related state |
 | `dedupe_key` | string | Stable key for collapsing repeated events |
 | `expires_at` | datetime | Time after which notification is no longer actionable |
+| `subject_display_name` | string | Safe backend/agent display label |
+| `risk_family` | string | Safe risk label for templates |
+| `operation_label` | string | Safe generic operation label |
+| `pending_count` | integer | Safe count of pending items |
 
 ## Notification Categories
 
@@ -54,17 +60,17 @@ Critical delivery depends on OS permissions, platform rules, and user settings. 
 
 ```mermaid
 sequenceDiagram
-  participant H as Hermes Agent
+  participant H as Backend Adapter
   participant G as Gateway
   participant P as Push Dispatcher
-  participant S as Secret Filter
+  participant S as Template Composer
   participant N as APNs / FCM
   participant M as Mobile App
   participant A as Audit Log
 
-  H->>G: mobile_notify request
-  G->>S: Validate and scan title/body
-  S-->>G: allowed or rejected
+  H->>G: notification intent
+  G->>S: Compose allowlisted title/body
+  S-->>G: safe template text + unsafe-input metadata
   G->>P: Queue notification
   P->>P: Rate limit and dedupe
   P->>A: notification_queued
@@ -77,10 +83,13 @@ sequenceDiagram
 ## Payload Rules
 
 - Push payloads must be minimal.
-- Push title/body must not contain secrets, tokens, credentials, file contents, command output, private keys, or raw tool payloads.
+- Push title/body must not contain secrets, tokens, credentials, file contents, command output, private keys, raw prompts, stack traces, or raw tool payloads.
+- ACT must not echo backend-supplied raw `title` or `body` directly into visible push text.
+- Secret/entropy detection is a backstop only; allowlist template composition is the primary control.
 - Deep links must reference IDs, not embed sensitive data.
 - Approval details are fetched from the gateway after authentication.
 - Notifications include `node_id`, `category`, and opaque IDs only where platform limits allow.
+- Audit records include `composition_mode`, template name, safe fields, and unsafe-input reasons when detected.
 
 ## Rate Limits
 

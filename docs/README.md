@@ -27,6 +27,7 @@ boundary is the backend-neutral `RuntimeAdapter` seam.
 - [Operator session review](architecture/operator-session-review.md)
 - [Technical debt review](architecture/technical-debt-review.md)
 - [Authentication and authorization](security/auth-authorization.md)
+- [Clearance channel policy](security/clearance-channel-policy.md)
 - [Runtime integration security review](security/runtime-integration-review.md)
 - [Approval framework](architecture/approval-framework.md)
 - [Advanced approval actions](architecture/advanced-approval-actions.md)
@@ -74,6 +75,7 @@ clearance, handoff, and audit.
 - [Runtime integration 007](implementation/runtime-integration-007.md)
 - [Real Hermes client integration 008](implementation/real-hermes-client-008.md)
 - [Real Hermes desktop discovery 009](implementation/real-hermes-desktop-discovery-009.md)
+- [ACT-003 security hardening](implementation/act-003-security-hardening.md)
 - [Runtime integration QA](qa/runtime-integration-qa.md)
 
 ## Feature Specifications

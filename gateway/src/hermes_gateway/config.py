@@ -3,10 +3,25 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import ClassVar
+
+DEFAULT_CLEARANCE_RISK_CHANNEL_MAP = {
+    "observe": ("mobile_signed", "local_terminal"),
+    "read_only": ("mobile_signed", "local_terminal"),
+    "routine": ("mobile_signed", "local_terminal"),
+    "external_effect": ("mobile_signed",),
+    "destructive": ("mobile_signed",),
+    "credential_or_secret": ("mobile_signed",),
+    "safety_critical": ("mobile_signed",),
+    "irreversible": ("mobile_signed",),
+}
 
 
 @dataclass(frozen=True)
 class Settings:
+    default_clearance_risk_channel_map: ClassVar[dict[str, tuple[str, ...]]] = (
+        DEFAULT_CLEARANCE_RISK_CHANNEL_MAP
+    )
     node_id: str = "node_local"
     node_display_name: str = "Local Hermes"
     node_environment: str = "homelab"
@@ -26,6 +41,11 @@ class Settings:
     tui_idle_timeout_seconds: int = 900
     tui_attach_token_ttl_seconds: int = 60
     tui_output_retention_enabled: bool = False
+    clearance_enabled_channels: tuple[str, ...] = ("mobile_signed",)
+    clearance_default_channel: str = "mobile_signed"
+    clearance_local_terminal_enabled: bool = False
+    clearance_default_deployment_trust_context: str = "trusted_host"
+    clearance_risk_channel_map: dict[str, tuple[str, ...]] | None = None
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -77,6 +97,22 @@ class Settings:
                 "HERMES_TUI_OUTPUT_RETENTION_ENABLED",
                 cls.tui_output_retention_enabled,
             ),
+            clearance_enabled_channels=_csv_env("ACT_CLEARANCE_ENABLED_CHANNELS")
+            or cls.clearance_enabled_channels,
+            clearance_default_channel=os.getenv(
+                "ACT_CLEARANCE_DEFAULT_CHANNEL",
+                cls.clearance_default_channel,
+            ),
+            clearance_local_terminal_enabled=_bool_env(
+                "ACT_CLEARANCE_LOCAL_TERMINAL_ENABLED",
+                cls.clearance_local_terminal_enabled,
+            ),
+            clearance_default_deployment_trust_context=os.getenv(
+                "ACT_CLEARANCE_DEFAULT_DEPLOYMENT_TRUST_CONTEXT",
+                cls.clearance_default_deployment_trust_context,
+            ),
+            clearance_risk_channel_map=_risk_channel_map_env()
+            or dict(cls.default_clearance_risk_channel_map),
         )
 
     @property
@@ -94,3 +130,18 @@ def _bool_env(name: str, default: bool) -> bool:
     if value is None:
         return default
     return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _risk_channel_map_env() -> dict[str, tuple[str, ...]] | None:
+    raw = os.getenv("ACT_CLEARANCE_RISK_CHANNEL_MAP")
+    if not raw:
+        return None
+    mapping: dict[str, tuple[str, ...]] = {}
+    for entry in raw.split(";"):
+        if not entry.strip() or "=" not in entry:
+            continue
+        risk, channels = entry.split("=", 1)
+        mapping[risk.strip()] = tuple(
+            channel.strip() for channel in channels.split(",") if channel.strip()
+        )
+    return mapping

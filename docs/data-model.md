@@ -98,6 +98,7 @@ Represents a Hermes agent registered under one node.
 | `active_session_id` | string | no | Current session |
 | `current_tool` | string | no | Current tool name |
 | `current_target` | string | no | Current target/resource |
+| `deployment_trust_context` | enum | yes | Tower-owned `trusted_host`, `untrusted_host`, or `adversarial_host`; never aircraft-supplied |
 | `last_seen_at` | datetime | yes | Health timestamp |
 
 ### Team
@@ -242,6 +243,7 @@ Runtime-projected work context that ties agent state, approvals, notifications, 
 | `requested_tool` | string | yes | Tool/action requested |
 | `risk_level` | enum | yes | `low`, `medium`, `high`, `critical` |
 | `risk_category` | string | yes | Policy category |
+| `risk_family` | enum | yes | Channel-policy family: `observe`, `read_only`, `routine`, `external_effect`, `destructive`, `credential_or_secret`, `safety_critical`, `irreversible` |
 | `summary` | string | yes | Human-readable redacted summary |
 | `full_payload_redacted` | object | yes | Redacted payload |
 | `payload_hash` | string | yes | Hash of canonical original payload |
@@ -264,6 +266,10 @@ Runtime-projected work context that ties agent state, approvals, notifications, 
 | `control` | enum | no | `pause`, `kill_task`, `kill_agent`, `quarantine_agent` |
 | `signed_payload_hash` | string | yes | Hash of signed body |
 | `signature` | string | yes | Device signature |
+| `channel` | enum | yes | `mobile_signed` or `local_terminal` |
+| `risk_family` | enum | yes | Risk family evaluated for channel policy |
+| `deployment_trust_context` | enum | yes | Tower-configured trust context applied at decision time |
+| `channel_rejection_reason` | string | no | Rejection reason when channel is not eligible |
 | `created_at` | datetime | yes | Decision time |
 
 ### ApprovalResponse
@@ -324,6 +330,8 @@ Persistent or proposed policy created by Approve Forever.
 | `urgency` | enum | yes | `low`, `normal`, `high`, `critical` |
 | `title_safe` | string | yes | Secret-free title |
 | `body_safe` | string | yes | Secret-free body |
+| `composition_mode` | string | yes | `template_allowlist` or `template_sanitized` |
+| `unsafe_input_detected` | boolean | yes | Whether raw backend text triggered backstop detection |
 | `dedupe_key` | string | no | Collapse key |
 | `state` | enum | yes | `queued`, `dispatched`, `rate_limited`, `deduped`, `failed`, `opened` |
 | `created_at` | datetime | yes | Request time |

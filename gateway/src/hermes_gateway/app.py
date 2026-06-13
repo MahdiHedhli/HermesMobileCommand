@@ -47,6 +47,7 @@ from .schemas import (
     InterventionRequest,
     InterventionResponse,
     Inventory,
+    Mission,
     MobileNotifyRequest,
     Node,
     NodeRegistration,
@@ -251,6 +252,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "terminal_tail": None,
             "browser_state": None,
         }
+
+    @app.get("/v1/missions")
+    def list_missions(
+        node_id: str | None = None,
+        agent_id: str | None = None,
+        _device: VerifiedDevice = signed_device_dependency,
+    ) -> dict[str, list[Mission]]:
+        return {
+            "missions": [
+                Mission.model_validate(mission)
+                for mission in store.list_missions(node_id=node_id, agent_id=agent_id)
+            ]
+        }
+
+    @app.get("/v1/missions/{mission_id}", response_model=Mission)
+    def get_mission(
+        mission_id: str,
+        _device: VerifiedDevice = signed_device_dependency,
+    ) -> Mission:
+        try:
+            return Mission.model_validate(store.get_mission(mission_id))
+        except KeyError as exc:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "mission not found") from exc
 
     @app.post("/v1/runtime/context", response_model=RuntimeContextResponse)
     def runtime_register_context(

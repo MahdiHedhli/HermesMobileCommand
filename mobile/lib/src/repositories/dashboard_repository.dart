@@ -9,6 +9,7 @@ class DashboardRepository {
   Future<DashboardSnapshot> loadSnapshot() async {
     final inventory = await apiClient.getJson('/inventory');
     final agents = await apiClient.getJson('/agents');
+    final missions = await apiClient.getJson('/missions');
     final approvals = await apiClient.getJson(
       '/approvals',
       query: {'state': 'pending'},
@@ -18,6 +19,7 @@ class DashboardRepository {
     return DashboardSnapshot(
       nodes: _list(inventory['nodes']).map(GatewayNode.fromJson).toList(),
       agents: _list(agents['agents']).map(GatewayAgent.fromJson).toList(),
+      missions: _list(missions['missions']).map(MissionRecord.fromJson).toList(),
       pendingApprovals: _list(approvals['approvals'])
           .map(ApprovalRequestModel.fromJson)
           .toList(),

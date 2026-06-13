@@ -125,11 +125,12 @@ Mission states now include:
 
 - `queued`
 - `running`
-- `blocked`
-- `waiting_user`
+- `waiting_approval`
+- `waiting_assistance`
+- `user_controlling`
 - `completed`
-- `cancelled`
 - `failed`
+- `cancelled`
 
 Runtime context registration emits `agent.status` and `mission.state` events.
 
@@ -184,9 +185,9 @@ Not implemented:
 
 ## Remaining Before Real Hermes Process Integration
 
-- Build a Hermes-side client wrapper that calls `/v1/runtime/...` from actual tool policy.
-- Replace polling with optional callback delivery or blocking wait helper for runtime actions.
-- Map real Hermes task/session identifiers into durable Mission IDs.
+- Integrate the `HermesRuntimeClient` wrapper into actual Hermes tool policy.
+- Replace polling with optional callback delivery where blocking wait helpers are not sufficient.
+- Map real Hermes task/session identifiers into durable Mission IDs in Hermes core.
 - Feed real Hermes live activity into `agent.status`, `agent.activity`, and `mission.state`.
 - Add runtime cancellation semantics for TUA, browser assistance, and voice.
 - Complete native iOS/Android validation of signed mobile decisions.

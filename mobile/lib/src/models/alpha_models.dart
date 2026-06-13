@@ -14,10 +14,14 @@ enum AgentRunStatus {
 }
 
 enum MissionState {
+  queued,
   running,
-  waiting,
-  blocked,
+  waitingApproval,
+  waitingAssistance,
+  userControlling,
   complete,
+  failed,
+  cancelled,
 }
 
 enum InboxKind {

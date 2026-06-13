@@ -610,7 +610,7 @@ def _session_status_from_mission(mission_state: str) -> str:
         return {"completed": "completed", "cancelled": "cancelled", "failed": "failed"}[
             mission_state
         ]
-    if mission_state in {"blocked", "waiting_user"}:
+    if mission_state in {"waiting_approval", "waiting_assistance", "user_controlling"}:
         return "blocked"
     return "active"
 

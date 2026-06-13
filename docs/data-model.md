@@ -200,7 +200,7 @@ Runtime-projected work context that ties agent state, approvals, notifications, 
 | `node_id` | string | yes | Parent node |
 | `agent_id` | string | yes | Owning agent |
 | `session_id` | string | no | Related Hermes session |
-| `state` | enum | yes | `queued`, `running`, `blocked`, `waiting_user`, `completed`, `cancelled`, `failed` |
+| `state` | enum | yes | `queued`, `running`, `waiting_approval`, `waiting_assistance`, `user_controlling`, `completed`, `failed`, `cancelled` |
 | `title` | string | no | Display title |
 | `summary` | string | no | Redacted summary |
 | `created_at` | datetime | yes | Creation time |

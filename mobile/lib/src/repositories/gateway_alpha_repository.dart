@@ -7,6 +7,7 @@ import 'alpha_repository.dart';
 import 'approvals_repository.dart';
 import 'dashboard_repository.dart';
 import 'mock_alpha_repository.dart';
+import 'missions_repository.dart';
 import 'notifications_repository.dart';
 
 class GatewayAlphaRepository implements AlphaRepository {
@@ -14,6 +15,7 @@ class GatewayAlphaRepository implements AlphaRepository {
     required this.dashboardRepository,
     required this.agentsRepository,
     required this.approvalsRepository,
+    required this.missionsRepository,
     required this.notificationsRepository,
     this.fallback = const MockAlphaRepository(),
   });
@@ -21,6 +23,7 @@ class GatewayAlphaRepository implements AlphaRepository {
   final DashboardRepository dashboardRepository;
   final AgentsRepository agentsRepository;
   final ApprovalsRepository approvalsRepository;
+  final MissionsRepository missionsRepository;
   final NotificationsRepository notificationsRepository;
   final AlphaRepository fallback;
 
@@ -33,6 +36,10 @@ class GatewayAlphaRepository implements AlphaRepository {
         snapshot.pendingApprovals.map(_approvalFromGateway).toList();
     final notifications =
         snapshot.notifications.map(_inboxFromNotification).toList();
+    final missions =
+        snapshot.missions.map((mission) => _missionFromGateway(mission)).toList();
+    final activeMissions =
+        missions.where((mission) => mission.state != MissionState.complete).toList();
     final onlineAgents = agents
         .where((agent) => agent.status != AgentRunStatus.offline)
         .length
@@ -52,10 +59,10 @@ class GatewayAlphaRepository implements AlphaRepository {
           trend: '${snapshot.nodes.length} nodes registered',
           intent: 'good',
         ),
-        const DashboardStat(
+        DashboardStat(
           label: 'Missions',
-          value: '0',
-          trend: 'gateway surface pending',
+          value: missions.length.toString(),
+          trend: '${activeMissions.length} active',
           intent: 'active',
         ),
         DashboardStat(
@@ -81,7 +88,7 @@ class GatewayAlphaRepository implements AlphaRepository {
         ),
       ],
       pendingApprovals: approvals,
-      activeMissions: fallbackHome.activeMissions,
+      activeMissions: activeMissions,
       agents: agents,
       activity: fallbackHome.activity,
       notifications: notifications,
@@ -106,7 +113,10 @@ class GatewayAlphaRepository implements AlphaRepository {
   }
 
   @override
-  Future<List<MissionSummary>> loadMissions() => fallback.loadMissions();
+  Future<List<MissionSummary>> loadMissions() async {
+    final missions = await missionsRepository.listMissions();
+    return missions.map(_missionFromGateway).toList();
+  }
 
   @override
   Future<List<InboxItem>> loadInbox() async {
@@ -198,6 +208,18 @@ ApprovalAlpha _approvalFromGateway(ApprovalRequestModel approval) {
   );
 }
 
+MissionSummary _missionFromGateway(MissionRecord mission) {
+  return MissionSummary(
+    id: mission.missionId,
+    title: mission.title ?? mission.missionId,
+    agentName: mission.agentId,
+    team: mission.nodeId,
+    state: _missionStateFromGateway(mission.state),
+    progressLabel: mission.summary ?? mission.state,
+    lastEvent: _timeAgo(mission.updatedAt),
+  );
+}
+
 InboxItem _inboxFromApproval(ApprovalRequestModel approval) {
   return InboxItem(
     id: approval.approvalId,
@@ -239,6 +261,20 @@ AgentRunStatus _statusFromGateway(String status) {
     'error' => AgentRunStatus.warning,
     'idle' => AgentRunStatus.idle,
     _ => AgentRunStatus.online,
+  };
+}
+
+MissionState _missionStateFromGateway(String state) {
+  return switch (state) {
+    'queued' => MissionState.queued,
+    'running' => MissionState.running,
+    'waiting_approval' => MissionState.waitingApproval,
+    'waiting_assistance' => MissionState.waitingAssistance,
+    'user_controlling' => MissionState.userControlling,
+    'completed' => MissionState.complete,
+    'failed' => MissionState.failed,
+    'cancelled' => MissionState.cancelled,
+    _ => MissionState.running,
   };
 }
 

@@ -35,7 +35,14 @@ AgentStatus = Literal[
 ]
 SessionStatus = Literal["active", "blocked", "paused", "completed", "failed", "cancelled"]
 MissionState = Literal[
-    "queued", "running", "blocked", "waiting_user", "completed", "cancelled", "failed"
+    "queued",
+    "running",
+    "waiting_approval",
+    "waiting_assistance",
+    "user_controlling",
+    "completed",
+    "failed",
+    "cancelled",
 ]
 ApprovalState = Literal["pending", "approved", "denied", "expired", "cancelled"]
 RiskLevel = Literal["low", "medium", "high", "critical"]

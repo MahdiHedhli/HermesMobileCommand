@@ -203,6 +203,41 @@ class NotificationRecord {
   }
 }
 
+class MissionRecord {
+  const MissionRecord({
+    required this.missionId,
+    required this.nodeId,
+    required this.agentId,
+    required this.state,
+    required this.updatedAt,
+    this.sessionId,
+    this.title,
+    this.summary,
+  });
+
+  final String missionId;
+  final String nodeId;
+  final String agentId;
+  final String? sessionId;
+  final String state;
+  final String? title;
+  final String? summary;
+  final DateTime updatedAt;
+
+  factory MissionRecord.fromJson(Map<String, dynamic> json) {
+    return MissionRecord(
+      missionId: json['mission_id'] as String,
+      nodeId: json['node_id'] as String,
+      agentId: json['agent_id'] as String,
+      sessionId: json['session_id'] as String?,
+      state: json['state'] as String,
+      title: json['title'] as String?,
+      summary: json['summary'] as String?,
+      updatedAt: DateTime.parse(json['updated_at'] as String),
+    );
+  }
+}
+
 class GatewayEvent {
   const GatewayEvent({
     required this.eventId,
@@ -566,12 +601,14 @@ class DashboardSnapshot {
   const DashboardSnapshot({
     required this.nodes,
     required this.agents,
+    required this.missions,
     required this.pendingApprovals,
     required this.notifications,
   });
 
   final List<GatewayNode> nodes;
   final List<GatewayAgent> agents;
+  final List<MissionRecord> missions;
   final List<ApprovalRequestModel> pendingApprovals;
   final List<NotificationRecord> notifications;
 }

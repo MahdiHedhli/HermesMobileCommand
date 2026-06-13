@@ -12,6 +12,10 @@ def test_runtime_context_registers_agent_mission_and_state(client: TestClient) -
 
     assert context["agent"]["status"] == "running"
     assert context["mission"]["state"] == "running"
+    missions = _signed_json(client, paired, "GET", "/v1/missions")
+    assert missions["missions"][0]["mission_id"] == "mission_runtime"
+    mission_detail = _signed_json(client, paired, "GET", "/v1/missions/mission_runtime")
+    assert mission_detail["state"] == "running"
     events = _signed_json(client, paired, "GET", "/v1/events")
     assert _has_event(events, "mission.state")
     assert _has_event(events, "agent.status")

@@ -281,18 +281,26 @@ Color _agentStatusColor(BuildContext context, AgentRunStatus status) {
 
 String _missionStateLabel(MissionState state) {
   return switch (state) {
+    MissionState.queued => 'queued',
     MissionState.running => 'running',
-    MissionState.waiting => 'waiting',
-    MissionState.blocked => 'blocked',
+    MissionState.waitingApproval => 'approval',
+    MissionState.waitingAssistance => 'assistance',
+    MissionState.userControlling => 'user control',
     MissionState.complete => 'complete',
+    MissionState.failed => 'failed',
+    MissionState.cancelled => 'cancelled',
   };
 }
 
 Color _missionStateColor(BuildContext context, MissionState state) {
   return switch (state) {
+    MissionState.queued => Theme.of(context).colorScheme.outline,
     MissionState.running => Theme.of(context).colorScheme.primary,
-    MissionState.waiting => const Color(0xFF5DADEC),
-    MissionState.blocked => const Color(0xFFFFB84D),
+    MissionState.waitingApproval => const Color(0xFFFFB84D),
+    MissionState.waitingAssistance => const Color(0xFF5DADEC),
+    MissionState.userControlling => const Color(0xFF2FD1B2),
     MissionState.complete => const Color(0xFF68D391),
+    MissionState.failed => Theme.of(context).colorScheme.error,
+    MissionState.cancelled => Theme.of(context).colorScheme.outline,
   };
 }

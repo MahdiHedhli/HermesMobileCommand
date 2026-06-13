@@ -16,6 +16,7 @@ This package turns the Hermes Mobile Control Plane feature specification into an
 - [Technical debt review](architecture/technical-debt-review.md)
 - [Threat model](security/threat-model.md)
 - [Authentication and authorization](security/auth-authorization.md)
+- [Runtime integration security review](security/runtime-integration-review.md)
 - [Approval framework](architecture/approval-framework.md)
 - [Advanced approval actions](architecture/advanced-approval-actions.md)
 - [Push notification framework](architecture/push-notification-framework.md)
@@ -46,6 +47,8 @@ This package turns the Hermes Mobile Control Plane feature specification into an
 - [TUI PTY prototype 004](implementation/tui-pty-prototype-004.md)
 - [Operator capabilities mega slice 005](implementation/operator-capabilities-mega-slice-005.md)
 - [Runtime integration 007](implementation/runtime-integration-007.md)
+- [Real Hermes client integration 008](implementation/real-hermes-client-008.md)
+- [Runtime integration QA](qa/runtime-integration-qa.md)
 
 ## Feature Specifications
 

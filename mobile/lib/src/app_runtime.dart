@@ -15,6 +15,7 @@ import 'repositories/approvals_repository.dart';
 import 'repositories/browser_assistance_repository.dart';
 import 'repositories/dashboard_repository.dart';
 import 'repositories/gateway_alpha_repository.dart';
+import 'repositories/missions_repository.dart';
 import 'repositories/mock_alpha_repository.dart';
 import 'repositories/notifications_repository.dart';
 import 'repositories/pairing_repository.dart';
@@ -87,6 +88,7 @@ class HermesAppRuntime extends ChangeNotifier {
       dashboardRepository: DashboardRepository(apiClient),
       agentsRepository: AgentsRepository(apiClient),
       approvalsRepository: ApprovalsRepository(apiClient),
+      missionsRepository: MissionsRepository(apiClient),
       notificationsRepository: NotificationsRepository(apiClient),
     );
   }

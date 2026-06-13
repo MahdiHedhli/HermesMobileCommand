@@ -1674,6 +1674,61 @@ paths:
                     items:
                       $ref: "#/components/schemas/OperatorSession"
 
+  /missions:
+    get:
+      tags: [missions]
+      summary: List runtime missions visible to the mobile app
+      parameters:
+        - name: node_id
+          in: query
+          schema:
+            type: string
+        - name: agent_id
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
+      responses:
+        "200":
+          description: Runtime missions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [missions]
+                properties:
+                  missions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Mission"
+
+  /missions/{mission_id}:
+    get:
+      tags: [missions]
+      summary: Get a runtime mission
+      parameters:
+        - name: mission_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
+      responses:
+        "200":
+          description: Runtime mission
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Mission"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /runtime/context:
     post:
       tags: [runtime]
@@ -2387,7 +2442,15 @@ components:
           format: date-time
 
     MissionState:
-      enum: [queued, running, blocked, waiting_user, completed, cancelled, failed]
+      enum:
+        - queued
+        - running
+        - waiting_approval
+        - waiting_assistance
+        - user_controlling
+        - completed
+        - failed
+        - cancelled
 
     Mission:
       type: object

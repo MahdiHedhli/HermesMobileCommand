@@ -13,7 +13,14 @@ from .capabilities import require_device_capability, require_runtime_capability
 from .config import Settings
 from .ids import new_id
 from .local_binding import HermesLocalCaller, verify_hermes_local_request
-from .runtime_adapter import HermesRuntimeAdapter
+from .runtime_adapter import (
+    HermesRuntimeAdapter,
+    RuntimeAdapter,
+    RuntimeClearanceRequest,
+    RuntimeHandoffRequest,
+    RuntimeNotice,
+    RuntimeWorkState,
+)
 from .schemas import (
     Agent,
     ApprovalDecisionRequest,
@@ -86,7 +93,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     _ensure_local_node(store, resolved_settings)
     store.seed_mock_data(node_id=resolved_settings.node_id)
     tui_manager = LocalPtyManager(store=store, settings=resolved_settings)
-    runtime_adapter = HermesRuntimeAdapter(store=store, settings=resolved_settings)
+    runtime_adapter: RuntimeAdapter = HermesRuntimeAdapter(
+        store=store,
+        settings=resolved_settings,
+    )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -282,8 +292,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         _caller: HermesLocalCaller = hermes_local_dependency,
     ) -> RuntimeContextResponse:
-        return runtime_adapter.register_context(
-            payload=payload,
+        return runtime_adapter.record_work_state(
+            RuntimeWorkState(
+                actor_ref=payload.agent_id,
+                display_name=payload.display_name,
+                state=payload.agent_status,
+                unit_ref=payload.mission_id,
+                unit_state=payload.mission_state,
+                work_ref=payload.session_id,
+                unit_title=payload.mission_title,
+                unit_summary=payload.mission_summary,
+                operation=payload.current_tool,
+                target=payload.current_target,
+                node_ref=payload.node_id,
+                capabilities=[capability.model_dump() for capability in payload.capabilities],
+            ),
             request_id=_request_id(request),
         )
 
@@ -305,7 +328,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             actor_id=payload.agent_id,
             agent_id=payload.agent_id,
         )
-        return runtime_adapter.create_notification(payload=payload, request_id=_request_id(request))
+        result = runtime_adapter.publish_notice(
+            RuntimeNotice(
+                title=payload.title,
+                body=payload.body,
+                urgency=payload.urgency,
+                category=payload.category,
+                actor_ref=payload.agent_id,
+                work_ref=payload.session_id,
+                action_ref=payload.action_id,
+                deep_link=payload.deep_link,
+            ),
+            request_id=_request_id(request),
+        )
+        return result.raw
 
     @app.post(
         "/v1/runtime/approvals",
@@ -326,14 +362,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             node_id=payload.node_id,
             agent_id=payload.agent_id,
         )
-        return runtime_adapter.request_approval(payload=payload, request_id=_request_id(request))
+        result = runtime_adapter.request_clearance(
+            RuntimeClearanceRequest(
+                operation=payload.requested_tool,
+                risk_level=payload.risk_level,
+                summary=payload.summary,
+                payload_redacted=payload.payload_redacted,
+                actor_ref=payload.agent_id,
+                work_ref=payload.session_id,
+                expires_in_seconds=payload.expires_in_seconds,
+                scopes=payload.suggested_scopes,
+                action_ref=payload.action_id,
+                node_ref=payload.node_id,
+                risk_category=payload.risk_category,
+                resource_scope=payload.resource_scope,
+            ),
+            request_id=_request_id(request),
+        )
+        return result.raw
 
     @app.get("/v1/runtime/approvals/{approval_id}/result", response_model=RuntimeApprovalResult)
     def runtime_approval_result(
         approval_id: str,
         _caller: HermesLocalCaller = hermes_local_dependency,
     ) -> RuntimeApprovalResult:
-        return runtime_adapter.approval_result(approval_id)
+        return runtime_adapter.check_clearance(approval_id).raw
 
     @app.post("/v1/runtime/approvals/{approval_id}/cancel", response_model=RuntimeApprovalResult)
     def runtime_cancel_approval(
@@ -341,11 +394,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         _caller: HermesLocalCaller = hermes_local_dependency,
     ) -> RuntimeApprovalResult:
-        return runtime_adapter.cancel_approval(
-            approval_id=approval_id,
+        return runtime_adapter.cancel_clearance(
+            approval_id,
             request_id=_request_id(request),
-            actor_id="runtime",
-        )
+            actor_ref="runtime",
+        ).raw
 
     @app.post(
         "/v1/runtime/tua/requests",
@@ -357,19 +410,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         _caller: HermesLocalCaller = hermes_local_dependency,
     ) -> AssistanceRequest:
-        assistance_request = runtime_adapter.create_tua_request(
-            payload=payload,
+        result = runtime_adapter.request_handoff(
+            RuntimeHandoffRequest(
+                handoff_kind="operator_guidance",
+                actor_ref=payload.agent_id,
+                work_ref=payload.session_id,
+                reason=payload.reason,
+                node_ref=payload.node_id,
+                clearance_ref=payload.approval_id,
+                context_redacted=payload.context_redacted,
+            ),
             request_id=_request_id(request),
-            actor_id=payload.agent_id,
+            actor_ref=payload.agent_id,
         )
-        return AssistanceRequest.model_validate(assistance_request)
+        return AssistanceRequest.model_validate(result.raw)
 
     @app.get("/v1/runtime/tua/requests/{request_id}/result", response_model=RuntimeTuaResult)
     def runtime_tua_result(
         request_id: str,
         _caller: HermesLocalCaller = hermes_local_dependency,
     ) -> RuntimeTuaResult:
-        return runtime_adapter.tua_result(request_id)
+        return runtime_adapter.check_handoff("operator_guidance", request_id).raw
 
     @app.post(
         "/v1/runtime/browser-assistance/sessions",
@@ -381,11 +442,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         _caller: HermesLocalCaller = hermes_local_dependency,
     ) -> BrowserAssistanceSession:
-        return runtime_adapter.create_browser_assistance_session(
-            payload=payload,
+        return runtime_adapter.request_handoff(
+            RuntimeHandoffRequest(
+                handoff_kind="browser_review",
+                actor_ref=payload.agent_id,
+                work_ref=payload.session_id,
+                reason=payload.reason,
+                node_ref=payload.node_id,
+                clearance_ref=payload.approval_id,
+                context_redacted=payload.context_redacted,
+            ),
             request_id=_request_id(request),
-            actor_id=payload.agent_id,
-        )
+            actor_ref=payload.agent_id,
+        ).raw
 
     @app.get(
         "/v1/runtime/browser-assistance/sessions/{session_id}/result",
@@ -395,7 +464,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session_id: str,
         _caller: HermesLocalCaller = hermes_local_dependency,
     ) -> RuntimeBrowserAssistanceResult:
-        return runtime_adapter.browser_result(session_id)
+        return runtime_adapter.check_handoff("browser_review", session_id).raw
 
     @app.post(
         "/v1/runtime/voice/sessions",
@@ -407,18 +476,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         _caller: HermesLocalCaller = hermes_local_dependency,
     ) -> VoiceSession:
-        return runtime_adapter.create_voice_session(
-            payload=payload,
+        return runtime_adapter.request_handoff(
+            RuntimeHandoffRequest(
+                handoff_kind="voice_prompt",
+                actor_ref=payload.agent_id,
+                work_ref=payload.session_id,
+                reason="Runtime requested a voice prompt.",
+                node_ref=payload.node_id,
+                context_redacted=payload.context_redacted,
+                mode=payload.mode,
+            ),
             request_id=_request_id(request),
-            actor_id=payload.agent_id,
-        )
+            actor_ref=payload.agent_id,
+        ).raw
 
     @app.get("/v1/runtime/voice/sessions/{session_id}/result", response_model=RuntimeVoiceResult)
     def runtime_voice_result(
         session_id: str,
         _caller: HermesLocalCaller = hermes_local_dependency,
     ) -> RuntimeVoiceResult:
-        return runtime_adapter.voice_result(session_id)
+        return runtime_adapter.check_handoff("voice_prompt", session_id).raw
 
     @app.post(
         "/v1/pairing/start",

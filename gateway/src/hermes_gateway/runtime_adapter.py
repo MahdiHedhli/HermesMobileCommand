@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 from fastapi import HTTPException, status
 
@@ -35,9 +35,371 @@ MAX_NOTIFICATION_BODY_CHARS = 800
 
 
 @dataclass(frozen=True)
+class RuntimeWorkState:
+    actor_ref: str
+    state: str
+    node_ref: str | None = None
+    work_ref: str | None = None
+    display_name: str | None = None
+    unit_ref: str | None = None
+    unit_state: str = "running"
+    unit_title: str | None = None
+    unit_summary: str | None = None
+    operation: str | None = None
+    target: str | None = None
+    capabilities: list[dict[str, Any]] | None = None
+
+
+@dataclass(frozen=True)
+class RuntimeNotice:
+    title: str
+    body: str
+    urgency: str
+    category: str
+    actor_ref: str
+    work_ref: str
+    action_ref: str | None = None
+    deep_link: str | None = None
+
+
+@dataclass(frozen=True)
+class RuntimeNoticeResult:
+    notice_ref: str
+    state: str
+    raw: Any
+
+
+@dataclass(frozen=True)
+class RuntimeClearanceRequest:
+    operation: str
+    risk_level: str
+    summary: str
+    payload_redacted: dict[str, Any]
+    actor_ref: str
+    work_ref: str
+    expires_in_seconds: int
+    scopes: list[str] | None = None
+    action_ref: str | None = None
+    node_ref: str | None = None
+    risk_category: str | None = None
+    resource_scope: str | None = None
+
+
+@dataclass(frozen=True)
+class RuntimeClearanceHandle:
+    clearance_ref: str
+    state: str
+    raw: Any
+
+
+@dataclass(frozen=True)
+class RuntimeClearanceDecision:
+    clearance_ref: str
+    state: str
+    selected_scope: str | None
+    decision_type: str | None
+    alternate_directive: str | None
+    user_message: str | None
+    constraints: list[dict[str, Any]]
+    raw: Any
+
+
+@dataclass(frozen=True)
+class RuntimeHandoffRequest:
+    handoff_kind: str
+    actor_ref: str
+    work_ref: str
+    reason: str
+    node_ref: str | None = None
+    clearance_ref: str | None = None
+    context_redacted: dict[str, Any] | None = None
+    mode: str | None = None
+
+
+@dataclass(frozen=True)
+class RuntimeHandoffHandle:
+    handoff_ref: str
+    state: str
+    raw: Any
+
+
+@dataclass(frozen=True)
+class RuntimeHandoffResult:
+    handoff_ref: str
+    state: str
+    return_summary: str | None
+    messages: list[dict[str, Any]]
+    raw: Any
+
+
+class RuntimeAdapter(Protocol):
+    def record_work_state(
+        self,
+        work_state: RuntimeWorkState,
+        *,
+        request_id: str,
+    ) -> Any: ...
+
+    def publish_notice(
+        self,
+        notice: RuntimeNotice,
+        *,
+        request_id: str,
+    ) -> RuntimeNoticeResult: ...
+
+    def request_clearance(
+        self,
+        clearance: RuntimeClearanceRequest,
+        *,
+        request_id: str,
+    ) -> RuntimeClearanceHandle: ...
+
+    def check_clearance(
+        self,
+        clearance_ref: str,
+    ) -> RuntimeClearanceDecision: ...
+
+    def cancel_clearance(
+        self,
+        clearance_ref: str,
+        *,
+        request_id: str,
+        actor_ref: str,
+    ) -> RuntimeClearanceDecision: ...
+
+    def request_handoff(
+        self,
+        handoff: RuntimeHandoffRequest,
+        *,
+        request_id: str,
+        actor_ref: str,
+    ) -> RuntimeHandoffHandle: ...
+
+    def check_handoff(
+        self,
+        handoff_kind: str,
+        handoff_ref: str,
+    ) -> RuntimeHandoffResult: ...
+
+
+@dataclass(frozen=True)
 class HermesRuntimeAdapter:
     store: SQLiteStore
     settings: Settings
+
+    def record_work_state(
+        self,
+        work_state: RuntimeWorkState,
+        *,
+        request_id: str,
+    ) -> RuntimeContextResponse:
+        return self.register_context(
+            payload=RuntimeContextRequest(
+                agent_id=work_state.actor_ref,
+                display_name=work_state.display_name,
+                agent_status=work_state.state,
+                mission_id=work_state.unit_ref,
+                mission_state=work_state.unit_state,
+                session_id=work_state.work_ref,
+                mission_title=work_state.unit_title,
+                mission_summary=work_state.unit_summary,
+                current_tool=work_state.operation,
+                current_target=work_state.target,
+                node_id=work_state.node_ref,
+                capabilities=work_state.capabilities or [],
+            ),
+            request_id=request_id,
+        )
+
+    def publish_notice(
+        self,
+        notice: RuntimeNotice,
+        *,
+        request_id: str,
+    ) -> RuntimeNoticeResult:
+        notification = self.create_notification(
+            payload=MobileNotifyRequest(
+                title=notice.title,
+                body=notice.body,
+                urgency=notice.urgency,
+                category=notice.category,
+                agent_id=notice.actor_ref,
+                session_id=notice.work_ref,
+                action_id=notice.action_ref,
+                deep_link=notice.deep_link,
+            ),
+            request_id=request_id,
+        )
+        return RuntimeNoticeResult(
+            notice_ref=notification.notification_id,
+            state=notification.state,
+            raw=notification,
+        )
+
+    def request_clearance(
+        self,
+        clearance: RuntimeClearanceRequest,
+        *,
+        request_id: str,
+    ) -> RuntimeClearanceHandle:
+        approval = self.request_approval(
+            payload=HermesApprovalRequestedRequest(
+                requested_tool=clearance.operation,
+                risk_level=clearance.risk_level,
+                summary=clearance.summary,
+                payload_redacted=clearance.payload_redacted,
+                agent_id=clearance.actor_ref,
+                session_id=clearance.work_ref,
+                expires_in_seconds=clearance.expires_in_seconds,
+                suggested_scopes=clearance.scopes,
+                action_id=clearance.action_ref,
+                node_id=clearance.node_ref,
+                risk_category=clearance.risk_category,
+                resource_scope=clearance.resource_scope,
+            ),
+            request_id=request_id,
+        )
+        return RuntimeClearanceHandle(
+            clearance_ref=approval.approval_id,
+            state=approval.state,
+            raw=approval,
+        )
+
+    def check_clearance(
+        self,
+        clearance_ref: str,
+    ) -> RuntimeClearanceDecision:
+        result = self.approval_result(clearance_ref)
+        latest = result.responses[0] if result.responses else None
+        return RuntimeClearanceDecision(
+            clearance_ref=result.approval_id,
+            state=result.state,
+            selected_scope=result.selected_scope,
+            decision_type=latest.decision_type if latest else None,
+            alternate_directive=latest.alternate_directive if latest else None,
+            user_message=latest.user_message if latest else None,
+            constraints=[constraint.model_dump() for constraint in latest.constraints]
+            if latest
+            else [],
+            raw=result,
+        )
+
+    def cancel_clearance(
+        self,
+        clearance_ref: str,
+        *,
+        request_id: str,
+        actor_ref: str,
+    ) -> RuntimeClearanceDecision:
+        self.cancel_approval(
+            approval_id=clearance_ref,
+            request_id=request_id,
+            actor_id=actor_ref,
+        )
+        return self.check_clearance(clearance_ref)
+
+    def request_handoff(
+        self,
+        handoff: RuntimeHandoffRequest,
+        *,
+        request_id: str,
+        actor_ref: str,
+    ) -> RuntimeHandoffHandle:
+        context_redacted = handoff.context_redacted or {}
+        if handoff.handoff_kind == "operator_guidance":
+            request = self.create_tua_request(
+                payload=CreateAssistanceRequest(
+                    agent_id=handoff.actor_ref,
+                    session_id=handoff.work_ref,
+                    reason=handoff.reason,
+                    node_id=handoff.node_ref,
+                    approval_id=handoff.clearance_ref,
+                    context_redacted=context_redacted,
+                ),
+                request_id=request_id,
+                actor_id=actor_ref,
+            )
+            return RuntimeHandoffHandle(
+                handoff_ref=request["request_id"],
+                state=request["state"],
+                raw=request,
+            )
+        if handoff.handoff_kind == "browser_review":
+            browser = self.create_browser_assistance_session(
+                payload=CreateBrowserAssistanceSessionRequest(
+                    agent_id=handoff.actor_ref,
+                    session_id=handoff.work_ref,
+                    reason=handoff.reason,
+                    node_id=handoff.node_ref,
+                    approval_id=handoff.clearance_ref,
+                    context_redacted=context_redacted,
+                ),
+                request_id=request_id,
+                actor_id=actor_ref,
+            )
+            return RuntimeHandoffHandle(
+                handoff_ref=browser.browser_session_id,
+                state=browser.state,
+                raw=browser,
+            )
+        if handoff.handoff_kind == "voice_prompt":
+            voice = self.create_voice_session(
+                payload=RuntimeCreateVoiceSessionRequest(
+                    agent_id=handoff.actor_ref,
+                    session_id=handoff.work_ref,
+                    mode=handoff.mode or "text_fallback",
+                    node_id=handoff.node_ref,
+                    context_redacted=context_redacted,
+                ),
+                request_id=request_id,
+                actor_id=actor_ref,
+            )
+            return RuntimeHandoffHandle(
+                handoff_ref=voice.voice_session_id,
+                state=voice.state,
+                raw=voice,
+            )
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "unknown handoff kind")
+
+    def check_handoff(
+        self,
+        handoff_kind: str,
+        handoff_ref: str,
+    ) -> RuntimeHandoffResult:
+        if handoff_kind == "operator_guidance":
+            result = self.tua_result(handoff_ref)
+            latest = result.latest_session
+            return RuntimeHandoffResult(
+                handoff_ref=result.request.request_id,
+                state=result.request.state,
+                return_summary=result.return_summary,
+                messages=[
+                    message.model_dump()
+                    for message in latest.messages
+                ]
+                if latest
+                else [],
+                raw=result,
+            )
+        if handoff_kind == "browser_review":
+            result = self.browser_result(handoff_ref)
+            return RuntimeHandoffResult(
+                handoff_ref=result.session.browser_session_id,
+                state=result.session.state,
+                return_summary=result.return_summary,
+                messages=[],
+                raw=result,
+            )
+        if handoff_kind == "voice_prompt":
+            result = self.voice_result(handoff_ref)
+            return RuntimeHandoffResult(
+                handoff_ref=result.session.voice_session_id,
+                state=result.session.state,
+                return_summary=None,
+                messages=[message.model_dump() for message in result.messages],
+                raw=result,
+            )
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "unknown handoff kind")
 
     def register_context(
         self,

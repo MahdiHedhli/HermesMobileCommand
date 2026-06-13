@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 from .capabilities import require_runtime_capability
 from .config import Settings
 from .ids import new_id
+from .notification_composer import compose_notification
 from .schemas import (
     ApprovalRequest,
     ApprovalResponse,
@@ -27,11 +28,8 @@ from .schemas import (
     RuntimeVoiceResult,
     VoiceSession,
 )
-from .security import expires_in, has_secret_text, now_utc, parse_utc
+from .security import expires_in, now_utc, parse_utc
 from .store import SQLiteStore
-
-MAX_NOTIFICATION_TITLE_CHARS = 120
-MAX_NOTIFICATION_BODY_CHARS = 800
 
 
 @dataclass(frozen=True)
@@ -496,22 +494,7 @@ class HermesRuntimeAdapter:
         payload: MobileNotifyRequest,
         request_id: str,
     ) -> Notification:
-        rejection_reason = _notification_rejection_reason(payload)
-        if rejection_reason:
-            self.store.append_audit_event(
-                event_type="notification_rejected",
-                actor_type="hermes",
-                actor_id=payload.agent_id,
-                node_id=self.settings.node_id,
-                agent_id=payload.agent_id,
-                session_id=payload.session_id,
-                request_id=request_id,
-                payload_redacted={"category": payload.category, "reason": rejection_reason},
-            )
-            raise HTTPException(
-                status.HTTP_422_UNPROCESSABLE_CONTENT,
-                "notification body is not safe",
-            )
+        composed = compose_notification(payload)
         notification = self.store.create_notification(
             {
                 "node_id": self.settings.node_id,
@@ -520,8 +503,10 @@ class HermesRuntimeAdapter:
                 "action_id": payload.action_id,
                 "category": payload.category,
                 "urgency": payload.urgency,
-                "title_safe": payload.title,
-                "body_safe": payload.body,
+                "title_safe": composed.title,
+                "body_safe": composed.body,
+                "composition_mode": composed.mode,
+                "unsafe_input_detected": composed.unsafe_input_detected,
                 "dedupe_key": payload.dedupe_key,
                 "state": "queued",
             }
@@ -535,7 +520,15 @@ class HermesRuntimeAdapter:
             session_id=payload.session_id,
             notification_id=notification["notification_id"],
             request_id=request_id,
-            payload_redacted={"category": payload.category, "urgency": payload.urgency},
+            payload_redacted={
+                "category": payload.category,
+                "urgency": payload.urgency,
+                "composition_mode": composed.mode,
+                "template": composed.template,
+                "unsafe_input_detected": composed.unsafe_input_detected,
+                "unsafe_reasons": composed.unsafe_reasons,
+                "safe_fields": composed.safe_fields,
+            },
         )
         self.store.create_event(
             node_id=self.settings.node_id,
@@ -546,6 +539,7 @@ class HermesRuntimeAdapter:
                 "notification_id": notification["notification_id"],
                 "category": payload.category,
                 "urgency": payload.urgency,
+                "composition_mode": composed.mode,
             },
         )
         return Notification.model_validate(notification)
@@ -944,16 +938,6 @@ class HermesRuntimeAdapter:
             return self.store.get_agent(node_id, agent_id)
         except KeyError:
             return {}
-
-
-def _notification_rejection_reason(payload: MobileNotifyRequest) -> str | None:
-    if len(payload.title) > MAX_NOTIFICATION_TITLE_CHARS:
-        return "title_too_large"
-    if len(payload.body) > MAX_NOTIFICATION_BODY_CHARS:
-        return "body_too_large"
-    if has_secret_text(payload.title, payload.body):
-        return "secret_scan_failed"
-    return None
 
 
 def _approval_options_from_scopes(scopes: list[str]) -> list[str]:

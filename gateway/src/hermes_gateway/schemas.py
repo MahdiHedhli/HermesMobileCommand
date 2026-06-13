@@ -659,6 +659,13 @@ class MobileNotifyRequest(StrictModel):
     action_id: str | None = None
     deep_link: str | None = None
     dedupe_key: str | None = None
+    backend_display_name: str | None = None
+    subject_display_name: str | None = None
+    risk_family: str | None = None
+    clearance_category: str | None = None
+    action_category: str | None = None
+    operation_label: str | None = None
+    pending_count: int | None = Field(default=None, ge=0)
 
 
 class Notification(BaseModel):
@@ -671,6 +678,8 @@ class Notification(BaseModel):
     urgency: NotificationUrgency
     title_safe: str | None = None
     body_safe: str | None = None
+    composition_mode: str | None = None
+    unsafe_input_detected: bool = False
     state: Literal["queued", "dispatched", "rate_limited", "deduped", "failed", "opened"]
     created_at: datetime
 

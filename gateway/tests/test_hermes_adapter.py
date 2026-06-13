@@ -52,7 +52,7 @@ def test_hermes_tool_mobile_notify_creates_notification_audit_and_event(
     )
 
 
-def test_hermes_tool_mobile_notify_rejects_oversized_body(client: TestClient) -> None:
+def test_hermes_tool_mobile_notify_sanitizes_oversized_body(client: TestClient) -> None:
     response = client.post(
         "/v1/hermes/tools/mobile_notify",
         json={
@@ -65,10 +65,12 @@ def test_hermes_tool_mobile_notify_rejects_oversized_body(client: TestClient) ->
         },
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 202
+    assert response.json()["composition_mode"] == "template_sanitized"
+    assert response.json()["unsafe_input_detected"] is True
 
 
-def test_hermes_tool_mobile_notify_rejects_secret_looking_body(client: TestClient) -> None:
+def test_hermes_tool_mobile_notify_sanitizes_secret_looking_body(client: TestClient) -> None:
     response = client.post(
         "/v1/hermes/tools/mobile_notify",
         json={
@@ -81,7 +83,10 @@ def test_hermes_tool_mobile_notify_rejects_secret_looking_body(client: TestClien
         },
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 202
+    assert response.json()["title_safe"] == "Security alert"
+    assert "abc123" not in response.json()["body_safe"]
+    assert response.json()["unsafe_input_detected"] is True
 
 
 def test_hermes_tool_approval_requested_creates_pending_approval_audit_and_event(

@@ -10,6 +10,20 @@ from .ids import new_id
 from .security import content_hash, expires_in, hash_token, now_utc, parse_utc, utc_iso
 
 
+def _ensure_column(
+    db: sqlite3.Connection,
+    table_name: str,
+    column_name: str,
+    column_definition: str,
+) -> None:
+    columns = {
+        row["name"]
+        for row in db.execute(f"PRAGMA table_info({table_name})").fetchall()
+    }
+    if column_name not in columns:
+        db.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_definition}")
+
+
 class SQLiteStore:
     def __init__(self, database_path: str | Path):
         self.database_path = str(database_path)
@@ -166,6 +180,8 @@ class SQLiteStore:
                     urgency TEXT NOT NULL,
                     title_safe TEXT NOT NULL,
                     body_safe TEXT NOT NULL,
+                    composition_mode TEXT,
+                    unsafe_input_detected INTEGER NOT NULL DEFAULT 0,
                     dedupe_key TEXT,
                     state TEXT NOT NULL,
                     created_at TEXT NOT NULL,
@@ -356,6 +372,13 @@ class SQLiteStore:
                     payload_json TEXT NOT NULL
                 );
                 """
+            )
+            _ensure_column(db, "notifications", "composition_mode", "TEXT")
+            _ensure_column(
+                db,
+                "notifications",
+                "unsafe_input_detected",
+                "INTEGER NOT NULL DEFAULT 0",
             )
             self._ensure_column(db, "approval_requests", "decision_scope", "TEXT")
             self._ensure_column(db, "approval_requests", "decision_actor_device_id", "TEXT")
@@ -958,10 +981,10 @@ class SQLiteStore:
                 """
                 INSERT INTO notifications (
                     notification_id, node_id, agent_id, session_id, action_id, category,
-                    urgency, title_safe, body_safe, dedupe_key, state, created_at,
-                    last_attempt_at
+                    urgency, title_safe, body_safe, composition_mode,
+                    unsafe_input_detected, dedupe_key, state, created_at, last_attempt_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     notification_id,
@@ -973,6 +996,8 @@ class SQLiteStore:
                     notification["urgency"],
                     notification["title_safe"],
                     notification["body_safe"],
+                    notification.get("composition_mode"),
+                    1 if notification.get("unsafe_input_detected") else 0,
                     notification.get("dedupe_key"),
                     notification.get("state", "queued"),
                     created_at,
@@ -988,7 +1013,7 @@ class SQLiteStore:
             ).fetchone()
         if row is None:
             raise KeyError(notification_id)
-        return dict(row)
+        return self._notification_from_row(row)
 
     def list_notifications(self, category: str | None = None) -> list[dict[str, Any]]:
         sql = "SELECT * FROM notifications"
@@ -999,7 +1024,14 @@ class SQLiteStore:
         sql += " ORDER BY created_at DESC"
         with self.connect() as db:
             rows = db.execute(sql, args).fetchall()
-        return [dict(row) for row in rows]
+        return [self._notification_from_row(row) for row in rows]
+
+    def _notification_from_row(self, row: sqlite3.Row) -> dict[str, Any]:
+        notification = dict(row)
+        notification["unsafe_input_detected"] = bool(
+            notification.get("unsafe_input_detected")
+        )
+        return notification
 
     def create_tui_session(self, session: dict[str, Any]) -> dict[str, Any]:
         now = utc_iso()

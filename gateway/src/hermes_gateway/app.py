@@ -13,6 +13,7 @@ from .capabilities import require_device_capability, require_runtime_capability
 from .config import Settings
 from .ids import new_id
 from .local_binding import HermesLocalCaller, verify_hermes_local_request
+from .notification_composer import compose_notification
 from .runtime_adapter import (
     HermesRuntimeAdapter,
     RuntimeAdapter,
@@ -82,9 +83,6 @@ from .store import SQLiteStore
 from .tui import LocalPtyManager, validate_tui_frame, validate_tui_request
 
 DEFAULT_PERMISSIONS = ["read_state", "chat", "approve", "intervene"]
-MAX_NOTIFICATION_TITLE_CHARS = 120
-MAX_NOTIFICATION_BODY_CHARS = 800
-
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     resolved_settings = settings or Settings.from_env()
@@ -2164,22 +2162,7 @@ def _create_mobile_notification(
     request: Request,
     payload: MobileNotifyRequest,
 ) -> Notification:
-    rejection_reason = _notification_rejection_reason(payload)
-    if rejection_reason:
-        store.append_audit_event(
-            event_type="notification_rejected",
-            actor_type="hermes",
-            actor_id=payload.agent_id,
-            node_id=settings.node_id,
-            agent_id=payload.agent_id,
-            session_id=payload.session_id,
-            request_id=_request_id(request),
-            payload_redacted={"category": payload.category, "reason": rejection_reason},
-        )
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_CONTENT,
-            "notification body is not safe",
-        )
+    composed = compose_notification(payload)
     notification = store.create_notification(
         {
             "node_id": settings.node_id,
@@ -2188,8 +2171,10 @@ def _create_mobile_notification(
             "action_id": payload.action_id,
             "category": payload.category,
             "urgency": payload.urgency,
-            "title_safe": payload.title,
-            "body_safe": payload.body,
+            "title_safe": composed.title,
+            "body_safe": composed.body,
+            "composition_mode": composed.mode,
+            "unsafe_input_detected": composed.unsafe_input_detected,
             "dedupe_key": payload.dedupe_key,
             "state": "queued",
         }
@@ -2203,7 +2188,15 @@ def _create_mobile_notification(
         session_id=payload.session_id,
         notification_id=notification["notification_id"],
         request_id=_request_id(request),
-        payload_redacted={"category": payload.category, "urgency": payload.urgency},
+        payload_redacted={
+            "category": payload.category,
+            "urgency": payload.urgency,
+            "composition_mode": composed.mode,
+            "template": composed.template,
+            "unsafe_input_detected": composed.unsafe_input_detected,
+            "unsafe_reasons": composed.unsafe_reasons,
+            "safe_fields": composed.safe_fields,
+        },
     )
     store.create_event(
         node_id=settings.node_id,
@@ -2212,21 +2205,12 @@ def _create_mobile_notification(
         event_type="notification.created",
         payload={
             "notification_id": notification["notification_id"],
-            "category": payload.category,
-            "urgency": payload.urgency,
-        },
-    )
+                "category": payload.category,
+                "urgency": payload.urgency,
+                "composition_mode": composed.mode,
+            },
+        )
     return Notification.model_validate(notification)
-
-
-def _notification_rejection_reason(payload: MobileNotifyRequest) -> str | None:
-    if len(payload.title) > MAX_NOTIFICATION_TITLE_CHARS:
-        return "title_too_large"
-    if len(payload.body) > MAX_NOTIFICATION_BODY_CHARS:
-        return "body_too_large"
-    if has_secret_text(payload.title, payload.body):
-        return "secret_scan_failed"
-    return None
 
 
 def _approval_options_from_scopes(scopes: list[str]) -> list[str]:

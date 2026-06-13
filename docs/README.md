@@ -48,6 +48,7 @@ This package turns the Hermes Mobile Control Plane feature specification into an
 - [Operator capabilities mega slice 005](implementation/operator-capabilities-mega-slice-005.md)
 - [Runtime integration 007](implementation/runtime-integration-007.md)
 - [Real Hermes client integration 008](implementation/real-hermes-client-008.md)
+- [Real Hermes desktop discovery 009](implementation/real-hermes-desktop-discovery-009.md)
 - [Runtime integration QA](qa/runtime-integration-qa.md)
 
 ## Feature Specifications

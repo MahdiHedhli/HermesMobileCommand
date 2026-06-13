@@ -106,9 +106,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await tui_manager.close_all()
 
     app = FastAPI(
-        title="Hermes Mobile Control Plane Gateway",
+        title="Agentic Control Tower Gateway",
         version=resolved_settings.gateway_version,
-        description="Self-hosted Hermes Control Gateway skeleton.",
+        description="Self-hosted control tower gateway for agentic backends.",
         lifespan=lifespan,
     )
     app.state.settings = resolved_settings

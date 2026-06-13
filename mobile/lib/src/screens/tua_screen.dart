@@ -152,7 +152,7 @@ class _TuaScreenState extends State<TuaScreen> {
       }
       _gatewaySession = await repository.createSession(
         matched.requestId,
-        initialMessage: 'Opened from Hermes Mobile Control Plane.',
+        initialMessage: 'Opened from Agentic Control Tower.',
       );
       _gatewayMode = true;
     } on Object {

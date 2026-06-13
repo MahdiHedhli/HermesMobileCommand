@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes_mobile_control_plane/src/repositories/mock_alpha_repository.dart';
-import 'package:hermes_mobile_control_plane/src/viewmodels/alpha_viewmodels.dart';
+import 'package:agentic_control_tower/src/repositories/mock_alpha_repository.dart';
+import 'package:agentic_control_tower/src/viewmodels/alpha_viewmodels.dart';
 
 void main() {
   test('more menu exposes functional and planned approval actions', () async {

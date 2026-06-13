@@ -183,7 +183,7 @@ class HermesAppRuntime extends ChangeNotifier {
 
   Future<PairingSessionModel> startPairing() async {
     final session = await PairingRepository(_unsignedApiClient()).startPairing(
-      displayName: 'Hermes Mobile Alpha',
+      displayName: 'ACT Operator Alpha',
     );
     _lastPairing = session;
     _connectionStatus = 'Pairing started';

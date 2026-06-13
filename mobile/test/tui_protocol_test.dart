@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes_mobile_control_plane/src/api/tui_protocol.dart';
+import 'package:agentic_control_tower/src/api/tui_protocol.dart';
 
 void main() {
   test('encodes client input and paste frames', () {

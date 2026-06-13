@@ -1,4 +1,4 @@
-"""Hermes Mobile Control Plane gateway skeleton."""
+"""Agentic Control Tower gateway package."""
 
 __all__ = ["__version__"]
 

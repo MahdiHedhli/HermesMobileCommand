@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes_mobile_control_plane/src/security/secure_key_store.dart';
+import 'package:agentic_control_tower/src/security/secure_key_store.dart';
 
 void main() {
   test('in-memory secure store persists and clears pairing material', () async {

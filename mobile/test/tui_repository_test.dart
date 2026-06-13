@@ -2,10 +2,10 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes_mobile_control_plane/src/api/gateway_api_client.dart';
-import 'package:hermes_mobile_control_plane/src/config/gateway_config.dart';
-import 'package:hermes_mobile_control_plane/src/repositories/tui_repository.dart';
-import 'package:hermes_mobile_control_plane/src/security/device_request_signer.dart';
+import 'package:agentic_control_tower/src/api/gateway_api_client.dart';
+import 'package:agentic_control_tower/src/config/gateway_config.dart';
+import 'package:agentic_control_tower/src/repositories/tui_repository.dart';
+import 'package:agentic_control_tower/src/security/device_request_signer.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 

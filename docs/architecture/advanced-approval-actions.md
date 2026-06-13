@@ -2,7 +2,9 @@
 
 ## Purpose
 
-Advanced approval actions expand Hermes Mobile Control Plane beyond binary approve/deny decisions while preserving fail-closed behavior.
+Advanced approval actions, now framed as clearance responses in ACT product
+language, expand the tower beyond binary grant/deny decisions while preserving
+fail-closed behavior.
 
 The operator should be able to ask for more information, modify the action, partially approve a safer subset, escalate into TUA or TUI, or stop work entirely.
 

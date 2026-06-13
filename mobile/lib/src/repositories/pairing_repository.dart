@@ -39,7 +39,7 @@ class PairingRepository {
         'challenge_response': pairing.pairingToken,
         'device_public_key': devicePublicKey,
         'device': {
-          'device_name': 'Hermes Mobile Alpha',
+          'device_name': 'ACT Operator Alpha',
           'platform': 'ios',
           'app_instance_id': 'hmcp-mobile-alpha',
           'app_version': '0.2.0',

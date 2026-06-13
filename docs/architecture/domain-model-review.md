@@ -4,7 +4,10 @@ Sprint: `HERMES-MCP-PLATFORM-CONSOLIDATION-006`
 
 ## Purpose
 
-Hermes Mobile Control Plane has grown from a mobile safety layer into an early agent operations platform. This review identifies which records are first-class platform concepts, which are supporting value objects, and which should remain implementation details until the product needs them.
+Agentic Control Tower has grown from a Hermes mobile safety layer into a
+backend-neutral control tower. This review identifies which records are
+first-class tower concepts, which are supporting value objects, and which should
+remain implementation details until the product needs them.
 
 ## Summary Recommendation
 

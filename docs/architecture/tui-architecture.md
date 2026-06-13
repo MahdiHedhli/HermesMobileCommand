@@ -2,7 +2,8 @@
 
 ## Purpose
 
-TUI means Text User Interface. In Hermes Mobile Control Plane it is a real mobile terminal subsystem for operator intervention, not a log viewer.
+TUI means Text User Interface. In Agentic Control Tower it is a real mobile
+terminal subsystem for operator intervention, not a log viewer.
 
 The TUI exists so a mobile user can inspect, edit, run, recover, and hand work back to Hermes without needing a laptop.
 

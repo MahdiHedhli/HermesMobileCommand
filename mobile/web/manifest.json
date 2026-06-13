@@ -1,11 +1,11 @@
 {
-    "name": "Hermes Mobile Control Plane",
-    "short_name": "Hermes Control",
+    "name": "Agentic Control Tower",
+    "short_name": "ACT Tower",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#101111",
     "theme_color": "#20D0A0",
-    "description": "Mobile command surface for Hermes Agent installs.",
+    "description": "Operator headset for agentic clearances.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

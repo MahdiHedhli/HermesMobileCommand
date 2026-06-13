@@ -1,11 +1,12 @@
 openapi: 3.1.0
 info:
-  title: Hermes Mobile Control Plane Gateway API
+  title: Agentic Control Tower Gateway API
   version: 0.1.0
   description: >
-    Implementation-ready API contract for Hermes Control Gateway. The API is
-    self-hosted first and intended to run beside each Hermes install. WebSocket
-    event streaming is documented as an HTTP upgrade endpoint with event schemas.
+    Implementation-ready API contract for Agentic Control Tower. The API is
+    self-hosted first and intended to run beside agentic backends. Hermes remains
+    adapter #1, and WebSocket event streaming is documented as an HTTP upgrade
+    endpoint with event schemas.
 servers:
   - url: https://{gateway_host}/v1
     description: Direct gateway over Tailscale, trusted local network, HTTPS, or future relay

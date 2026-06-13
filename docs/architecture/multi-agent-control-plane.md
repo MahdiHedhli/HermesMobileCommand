@@ -15,7 +15,8 @@ The multi-agent control plane lets mobile users operate one or more Hermes nodes
 
 ## Agent Registration
 
-Registration happens between Hermes Agent Runtime and Hermes Control Gateway.
+Registration happens between a backend runtime adapter and the ACT Gateway.
+Hermes remains the first concrete adapter.
 
 ```mermaid
 sequenceDiagram

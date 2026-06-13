@@ -2,12 +2,14 @@
 
 ## Scope
 
-This threat model covers Hermes Mobile Control Plane across:
+This threat model covers Agentic Control Tower across:
 
 - Mobile apps
-- Hermes Control Gateway
-- Hermes Agent Runtime
-- MCP tools
+- ACT Gateway
+- Runtime adapters
+- Agentic backends
+- Hermes adapter #1
+- MCP tools where a backend exposes them
 - Browser subsystem
 - Voice subsystem
 - Push notification framework
@@ -16,15 +18,20 @@ This threat model covers Hermes Mobile Control Plane across:
 
 It assumes self-hosted first, Tailscale first, no required public exposure, and device-key-based mobile trust.
 
+ACT is backend-neutral. A backend is an aircraft requesting clearance; ACT is
+the control tower. ACT does not execute backend actions. It receives translated
+requests from adapters, applies policy, records audit events, and verifies
+operator decisions from paired devices.
+
 ## Security Goals
 
-- Prevent unauthorized access to Hermes nodes.
-- Prevent unauthorized approvals or broadened approval scopes.
+- Prevent unauthorized access to ACT-controlled backends.
+- Prevent unauthorized clearances or broadened clearance scopes.
 - Prevent secrets from leaking through mobile notifications or event streams.
 - Preserve auditability for consequential events.
 - Fail closed for stale, malformed, replayed, or policy-denied approvals.
 - Allow quick revocation of lost or compromised devices.
-- Avoid requiring public exposure for self-hosted Hermes.
+- Avoid requiring public exposure for self-hosted backends.
 
 ## Assets
 
@@ -32,30 +39,34 @@ It assumes self-hosted first, Tailscale first, no required public exposure, and 
 | --- | --- | --- |
 | Device private key | Critical | Never leaves secure device storage |
 | Gateway device registry | Critical | Only trusted local admin/pairing can mutate |
-| Approval requests and decisions | Critical | Tamper-evident, scoped, replay-resistant |
-| Hermes sessions and conversations | High | Accessible only to authorized devices |
-| Tool payloads and outputs | High | Redacted before mobile display when needed |
+| Clearance requests and decisions | Critical | Tamper-evident, scoped, replay-resistant |
+| Backend work state and conversations | High | Accessible only to authorized devices |
+| Consequential action payloads and outputs | High | Redacted before mobile display when needed |
 | Secrets, credentials, tokens | Critical | Never appear in push title/body; redacted in streams |
 | Audit log | High | Append-only, integrity protected, locally recoverable |
 | Push tokens | Medium | Usable only for notification dispatch; revocable |
-| Voice audio/transcripts | High | Tied to session, redacted where applicable |
-| Browser screenshots/session state | High | Only streamed to authorized devices |
-| Tailscale identity/session | High | Not sufficient alone for app-level trust |
+| Voice audio/transcripts | High | Tied to work context, redacted where applicable |
+| Browser screenshots/work state | High | Only streamed to authorized devices |
+| Tailscale identity | High | Not sufficient alone for app-level trust |
 
 ## Actors
 
 | Actor | Description |
 | --- | --- |
-| Owner/operator | Trusted user managing one or more Hermes installs |
+| Owner/operator | Trusted user managing one or more ACT-controlled backends |
 | Registered mobile device | Device trusted by gateway pairing and public key registration |
-| Hermes Control Gateway | Self-hosted gateway enforcing mobile policy |
-| Hermes Agent | Agent runtime requesting tools, approvals, and notifications |
-| MCP tool | Tool execution surface under Hermes/gateway policy |
+| Operator device | Clearance authority for sensitive decisions |
+| ACT Gateway | Self-hosted control tower enforcing policy and audit |
+| Runtime adapter | Translation layer between backend-specific requests and ACT concepts |
+| Agentic backend | Runtime or agent requesting notices, clearances, handoffs, and state updates |
+| Hermes adapter | First concrete RuntimeAdapter implementation |
+| MCP tool | Tool execution surface under backend and gateway policy |
 | Push provider | APNs/FCM; trusted for transport but not confidentiality |
 | Optional relay | Future connectivity broker; not required and not inherently trusted |
 | Local attacker | Has access to LAN/tailnet or a host near the gateway |
 | Remote attacker | No trusted network access but may phish, replay, or target exposed services |
-| Malicious/rogue Hermes instance | Node pretending to be legitimate or sending abusive requests |
+| Malicious/rogue backend | Backend pretending to be legitimate or sending abusive requests |
+| Untrusted agent sharing the gateway host | Future hardening actor: local agent process with host-level reachability to gateway files or sockets |
 | Compromised phone holder | Has access to a registered mobile device |
 
 ## Trust Boundaries
@@ -64,8 +75,8 @@ It assumes self-hosted first, Tailscale first, no required public exposure, and 
 | --- | --- | --- |
 | Mobile device to private network | API calls, WebSocket, voice media | Device theft, token theft, MITM, stale sessions |
 | Private network to gateway | All mobile control traffic | Tailscale credential theft, rogue local client |
-| Gateway to Hermes runtime | Agent events, tool requests, interventions | Rogue agent, malformed events, policy bypass |
-| Gateway to tools/browser | Consequential execution | Destructive actions, credential access, external side effects |
+| Gateway to runtime adapter | Backend events, clearance requests, handoffs | Rogue backend, malformed events, policy bypass |
+| Adapter to backend/tools/browser | Consequential execution outside ACT | Destructive actions, credential access, external side effects |
 | Gateway to local PTY prototype | Mobile TUI streams | Shell escape, privilege misuse, sensitive output exposure |
 | Gateway to push providers | Push requests | Secret leakage, notification spoofing/abuse |
 | Optional relay boundary | Future proxied traffic | Relay compromise, metadata leakage, session hijacking |
@@ -76,11 +87,11 @@ It assumes self-hosted first, Tailscale first, no required public exposure, and 
 - Device registration and revocation endpoints
 - REST API session tokens
 - WebSocket event stream
-- Approval decision endpoint
+- Clearance decision endpoint
 - Emergency intervention endpoint
 - Push token registration
 - `mobile_notify` tool
-- Agent registration and health endpoints
+- Backend and subject registration and health endpoints
 - Browser state and takeover endpoints
 - Development-only local PTY TUI endpoints and WebSocket stream
 - Voice session creation and media transport
@@ -91,9 +102,9 @@ It assumes self-hosted first, Tailscale first, no required public exposure, and 
 
 | Abuse Case | Impact | Mitigations |
 | --- | --- | --- |
-| Attacker approves a destructive shell command | Data loss or compromise | Device-key signatures, approval expiry, action binding, audit, high/critical scope limits |
+| Attacker grants clearance for a destructive shell command | Data loss or compromise | Device-key signatures, clearance expiry, action binding, audit, high/critical scope limits |
 | Agent floods phone with push notifications | Alert fatigue, denial of attention | Rate limits, dedupe, category quotas, policy rejection, audit |
-| Rogue node impersonates a trusted Hermes install | Unauthorized data/control path | Explicit pairing, node fingerprint, device registry, user-visible node identity |
+| Rogue backend impersonates a trusted backend | Unauthorized data/control path | Explicit pairing, node fingerprint, device registry, user-visible backend identity |
 | Secret appears in push body | Credential leakage through OS notification surfaces | Secret scanner, payload minimization, rejection audit |
 | Stale approval is replayed | Unauthorized action after context changed | `approval_id`, `decision_id`, expiry, signed payload hash, idempotency store |
 | Lost phone remains trusted | Unauthorized control | Device revocation, session invalidation, emergency revoke from gateway |
@@ -107,8 +118,8 @@ It assumes self-hosted first, Tailscale first, no required public exposure, and 
 
 | Failure Mode | Expected Behavior |
 | --- | --- |
-| Gateway cannot reach Hermes | Show node degraded; disable actions needing Hermes; keep audit accessible |
-| Mobile app offline during approval | Approval expires or remains pending; Hermes must not proceed without valid approval |
+| Gateway cannot reach backend | Show backend degraded; disable actions needing that backend; keep audit accessible |
+| Mobile app offline during clearance | Clearance expires or remains pending; backend must not proceed without valid clearance |
 | Push provider unavailable | Durable approval remains in queue; dispatch failure audited |
 | Event cursor expired | Mobile fetches current snapshots and resumes from latest cursor |
 | Device key lost | Device must be re-paired; old device identity revoked |
@@ -173,23 +184,44 @@ Residual risk:
 
 - Gateway metadata and exposed unauthenticated health endpoints must remain minimal.
 
-### Rogue Hermes Instance
+### Rogue Or Malicious Backend
 
 Risk:
 
-- Malicious node sends false approvals, abusive notifications, or misleading activity.
+- Malicious backend sends false clearance requests, abusive notifications, or misleading activity.
 
 Mitigations:
 
 - User explicitly pairs each node and sees node fingerprint.
 - Node identity displayed in every action.
 - Notification rate limits and secret filtering apply per node.
-- Approval scope cannot cross nodes.
+- Clearance scope cannot cross nodes.
 - User can quarantine or remove node.
 
 Residual risk:
 
 - A paired rogue node can still send misleading summaries; operator trust in node remains necessary.
+
+### Untrusted Agent Sharing The Gateway Host
+
+Risk:
+
+- A backend or agent process on the same host may be able to reach loopback
+  services, observe local files, or attempt local storage tampering.
+
+Current mitigations:
+
+- Sensitive mobile decisions require paired-device signatures.
+- Runtime-local APIs are loopback/allowlist controlled.
+- Consequential actions should fail closed when policy or audit cannot run.
+- Dangerous development features remain disabled by default.
+
+Later hardening:
+
+- Storage-forgery tests for audit, device registry, and clearance records.
+- Stronger filesystem permissions and process isolation guidance.
+- Separate runtime adapter credentials from mobile device credentials.
+- Optional OS sandboxing or service user split for the gateway.
 
 ### MITM Attempts
 
@@ -201,7 +233,7 @@ Mitigations:
 
 - Tailscale encrypted transport by default.
 - HTTPS for local/relay paths where available.
-- Device-key signatures for approvals and interventions.
+- Device-key signatures for clearances and interventions.
 - Token binding to device ID.
 - Gateway node fingerprint in pairing.
 
@@ -235,8 +267,8 @@ Risk:
 
 Mitigations:
 
-- Approval and decision IDs.
-- Signed decision includes approval ID, action ID, scope, node, agent, session, expiration, and payload hash.
+- Clearance and decision IDs.
+- Signed decision includes clearance/action ID, scope, node, subject, work context, expiration, and payload hash.
 - Idempotency store rejects duplicate decision IDs.
 - Expired approvals fail closed.
 
@@ -253,7 +285,7 @@ Risk:
 Mitigations:
 
 - Device authorization policy.
-- Approval scope enforcement.
+- Clearance scope enforcement.
 - Critical actions require explicit confirmation.
 - Future multi-user role checks.
 - Audit trail for every decision.

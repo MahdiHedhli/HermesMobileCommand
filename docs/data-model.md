@@ -2,7 +2,9 @@
 
 ## Purpose
 
-This data model defines the durable records needed by the Hermes Control Gateway and mobile clients. It is implementation-ready but storage-engine neutral.
+This data model defines the durable records needed by Agentic Control Tower and
+mobile clients. It is implementation-ready but storage-engine neutral. Existing
+Hermes-specific fields remain where they model adapter #1 compatibility.
 
 ## Entity Relationship Diagram
 

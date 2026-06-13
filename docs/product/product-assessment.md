@@ -1,94 +1,93 @@
 # Product Assessment
 
-Sprint: `HERMES-MCP-PLATFORM-CONSOLIDATION-006`
+Sprint lineage: `HERMES-MCP-PLATFORM-CONSOLIDATION-006`, reframed by
+`ACT-002`.
 
 ## 1. What Problem Does This Product Solve?
 
-Hermes can act across tools, browsers, files, terminals, voice, and multi-agent workflows. The missing piece is a trusted mobile control layer that lets the owner notice consequential work, understand what Hermes is trying to do, and intervene without exposing the self-hosted install to the public internet.
+Agentic backends can act across tools, browsers, files, terminals, voice, and
+multi-agent workflows. The missing piece is a trusted control tower that lets
+the operator notice consequential work, understand what a backend is trying to
+do, grant or deny clearance, and audit the outcome without exposing the backend
+to the public internet.
 
-Hermes Mobile Control Plane solves that by providing secure mobile operations for self-hosted Hermes nodes:
+Agentic Control Tower solves that by providing secure operator control for
+self-hosted agentic backends:
 
-- Monitor live agent activity.
-- Receive durable notifications and urgent pushes.
-- Approve, deny, modify, or escalate risky actions.
-- Open assistance, terminal, browser, or voice sessions when human judgment is needed.
-- Manage multiple agents and nodes from a single operator surface.
+- Monitor live backend and agent activity.
+- Receive durable notices and urgent pushes.
+- Grant, deny, modify, or escalate clearance requests.
+- Open handoffs when human judgment is needed.
+- Keep an audit trail of consequential actions.
 
 ## 2. Who Is The Primary User?
 
-The primary user is a technical operator running Hermes in a homelab, laptop, workstation, VPS, or work VM environment.
+The primary user is a technical operator running one or more self-hosted
+agentic backends in a homelab, laptop, workstation, VPS, or work VM.
 
-They are comfortable with Tailscale, local gateways, terminals, and self-hosted services. They want Hermes to be more autonomous, but they do not want autonomy to become invisible or unsafe.
-
-Secondary future users:
-
-- Power users supervising personal agent fleets.
-- Small teams running shared Hermes nodes.
-- Enterprise operators who need auditability, scoped device trust, and policy review.
+They are comfortable with Tailscale, local gateways, terminals, and self-hosted
+services. They want agents to be more autonomous, but they do not want autonomy
+to become invisible or unsafe.
 
 ## 3. What Is The Killer Feature?
 
-The killer feature is signed mobile intervention for consequential agent actions.
+The killer feature is signed mobile clearance for consequential agent actions.
 
-The operator can see what Hermes wants to do, approve it once, deny it, modify the instruction, request more information, open an assistance session, open a terminal, or propose a policy. The phone becomes the safety and intervention console, not just another chat client.
+The operator can see what a backend wants to do, grant clearance once, deny it,
+modify the instruction, request more information, or open a handoff. The phone
+becomes the controller headset, not just another chat client.
 
 ## 4. What Differentiates It?
 
-Differentiators:
-
+- Control-tower model: ACT authorizes, backends execute.
 - Tailscale-first and self-hosted-first by default.
-- No public exposure required for self-hosted Hermes installs.
-- Device-key signatures for sensitive mobile actions.
-- Fail-closed approval engine.
-- Durable notifications and audit trail.
-- Multi-agent control model rather than a single chat window.
-- Operator sessions that span terminal, assistance, browser, and voice.
-- Designed for permissive or semi-autonomous agent operation where safety matters.
+- No public exposure required for self-hosted operation.
+- Device-key signatures for sensitive operator decisions.
+- Fail-closed clearance engine.
+- Durable notices and audit trail.
+- Backend-neutral RuntimeAdapter seam.
+- Hermes retained as adapter #1 instead of being treated as the platform
+  boundary.
 
 ## 5. What Is This Product?
 
-It is primarily a mobile control plane.
+ACT is an agentic control tower.
 
-It is also becoming an agent operations platform, but the center of gravity should remain mobile operator intervention until beta. Calling it only a companion app undersells the security, approval, audit, and multi-agent control-plane work.
-
-Current identity:
-
-- Hermes Mobile Control Plane
-
-Long-term identity:
-
-- Hermes Command, if the product becomes broader than mobile.
-- Hermes Operator, if the product centers on human-agent supervision.
-- Hermes Mobile Control Plane should remain the project name through beta because it is precise and aligned with the current scope.
+It is not just a Hermes companion app, not just a mobile control plane, and not
+yet a broad fleet operations platform. The product center is operator clearance
+and audit for consequential backend actions.
 
 ## 6. Long-Term Naming Recommendation
 
-Keep `Hermes Mobile Control Plane` for the repository, docs, and beta planning.
+Use:
 
-Use `Hermes Command` as the short product label in the app if the UI needs a tighter title. The current app already presents "Hermes Command," which fits the operator-console tone without forcing a repository rename.
+- Full name: Agentic Control Tower
+- Short name: ACT
+- CLI binary: `tower`
+- Package/distribution: `agentic-control-tower`
+- Repository target: `AgenticControlTower`
 
-Avoid:
-
-- Hermes Chat Mobile
-- Hermes Companion
-- Hermes Wingman fork naming
-
-Those names pull the product toward chat or GUI replacement, while the product has become an intervention and operations layer.
+Hermes-specific adapter code should continue to say Hermes where it is actually
+describing Hermes.
 
 ## 7. Next Three Highest-Leverage Investments
 
-1. Native signed approval flow.
+1. Hardware-backed mobile signing and key lifecycle hardening.
 
-   Prove pairing, secure key storage, signed approve/deny, and gateway connection on iOS and Android. This turns the product from a web-demo control plane into a real mobile app.
+   Prove key generation, storage, rotation, revocation, signed grant/deny, and
+   gateway connection on native iOS and Android.
 
-2. OperatorSession and CapabilityGrant consolidation.
+2. Allowlisted, secret-safe notification composition.
 
-   Make TUI, TUA, browser assistance, and voice legible as intervention modes while preserving mode-specific safety checks. Promote grants into explicit audited policy.
+   Make notices useful without leaking secrets through OS notification surfaces.
 
-3. Real Hermes runtime handoff.
+3. Real Hermes runtime clearance.
 
-   Wire the gateway deeply enough that Hermes can request approvals, block, receive decisions, use returned assistance summaries, and reflect real mission state in the mobile app.
+   Wire the Hermes adapter deeply enough that a real Hermes action can request
+   clearance, block, receive a signed mobile decision, and resume or stop.
 
 ## Final Assessment
 
-Hermes Mobile Control Plane is worth continuing as a real project. The product has a clear reason to exist: safe mobile supervision for self-hosted autonomous agents. Its strongest future is not "chat with Hermes from a phone." Its strongest future is "operate Hermes safely when it is powerful enough to need supervision."
+Agentic Control Tower is worth continuing because powerful agentic backends need
+a control tower, not only another chat surface. The next proof point is narrow
+and concrete: one real Hermes action blocked on one real phone clearance.

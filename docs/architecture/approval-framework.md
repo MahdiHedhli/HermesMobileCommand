@@ -1,8 +1,16 @@
-# Approval Framework
+# Clearance Framework
 
 ## Purpose
 
-The approval framework turns consequential Hermes actions into explicit, scoped, auditable mobile decisions. The framework must fail closed, prevent stale or replayed approvals, and make emergency controls available when the operator needs to stop active work.
+The clearance framework turns consequential backend actions into explicit,
+scoped, auditable mobile decisions. ACT uses "clearance" as the product and
+protocol metaphor: the control tower grants or denies clearance, while the
+aircraft/backends execute the action.
+
+Many existing API schemas and database tables still use `approval` for
+compatibility with the pre-ACT implementation. Those names are implementation
+compatibility terms, not a change in semantics. Hermes-specific adapter code may
+also still say Hermes where it is adapting Hermes runtime behavior.
 
 ## Risk Levels
 

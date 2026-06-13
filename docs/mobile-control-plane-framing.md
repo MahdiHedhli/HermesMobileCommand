@@ -1,6 +1,16 @@
-# Hermes Mobile Control Plane Framing
+# Agentic Control Tower Framing
 
-Hermes Mobile Control Plane is not just "Hermes chat on mobile." Hermes already supports web and browser control, memory, skills, subagents, voice mode, and multiple messaging platforms. The mobile product should wrap the existing agent surfaces while adding the missing safety and control layer.
+Agentic Control Tower is not just "chat with an agent on mobile." It is the
+control tower for agentic actions: grant, deny, audit.
+
+Hermes already supports web and browser control, memory, skills, subagents,
+voice mode, and multiple messaging platforms. Hermes remains adapter #1, but
+ACT should wrap backend-specific agent surfaces while adding the missing
+clearance, safety, and audit layer.
+
+A control tower does not fly the planes. ACT does not execute backend actions.
+It grants or denies clearances, sequences traffic, keeps the log, tracks state,
+and enforces procedure.
 
 The killer feature is:
 
@@ -110,12 +120,13 @@ Suggested phases:
 
 ## Architecture Direction
 
-Use the mobile app as a thin native client and add a small Hermes Control Gateway beside each Hermes install.
+Use the mobile app as a thin native client and add a small ACT Gateway beside
+each backend. Hermes remains the first backend adapter.
 
 ```text
 Mobile App
   -> Tailscale / HTTPS / Relay
-  -> Hermes Control Gateway
+  -> ACT Gateway
   -> Hermes Agent + tools + browser + shell + MCP
 ```
 

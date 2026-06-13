@@ -1,20 +1,31 @@
-# Hermes Mobile Control Plane Architecture Package
+# Agentic Control Tower Documentation
 
-Sprint: `HERMES-MCP-ARCHITECTURE-FOUNDATION-001`
+Agentic Control Tower (ACT) is the control tower for agentic actions. It grants
+clearances, denies clearances, sequences work, tracks state, and keeps the
+audit log. Backends and agents remain the aircraft; ACT does not fly them or
+execute their actions.
 
-This package turns the Hermes Mobile Control Plane feature specification into an implementation-ready engineering foundation.
+Hermes is adapter #1. Hermes-specific implementation and adoption documents are
+retained where they describe real Hermes integration, but the generic runtime
+boundary is the backend-neutral `RuntimeAdapter` seam.
+
+## Start Here
+
+- [Product assessment](product/product-assessment.md)
+- [System architecture](architecture/system-architecture.md)
+- [Threat model](security/threat-model.md)
+- [API contract](api/openapi.yaml)
+- [Roadmap](roadmap-next.md)
+- [Parking lot](parking-lot.md)
 
 ## Core Documents
 
 - [Feature specification](../specs/001-hermes-mobile-command/spec.md)
 - [Product framing](mobile-control-plane-framing.md)
-- [Product assessment](product/product-assessment.md)
-- [System architecture](architecture/system-architecture.md)
 - [Service boundaries](architecture/service-boundaries.md)
 - [Domain model review](architecture/domain-model-review.md)
 - [Operator session review](architecture/operator-session-review.md)
 - [Technical debt review](architecture/technical-debt-review.md)
-- [Threat model](security/threat-model.md)
 - [Authentication and authorization](security/auth-authorization.md)
 - [Runtime integration security review](security/runtime-integration-review.md)
 - [Approval framework](architecture/approval-framework.md)
@@ -26,15 +37,29 @@ This package turns the Hermes Mobile Control Plane feature specification into an
 - [TUI architecture](architecture/tui-architecture.md)
 - [TUA architecture](architecture/tua-architecture.md)
 - [Voice architecture](architecture/voice-architecture.md)
-- [API contract](api/openapi.yaml)
 - [Data model](data-model.md)
 - [Mobile UX architecture](mobile-ux-architecture.md)
 - [UX consistency review](ux/ux-consistency-review.md)
 - [Approval experience review](ux/approval-experience-review.md)
-- [Build roadmap](roadmap.md)
-- [Platform roadmap](roadmap-next.md)
+- [Historical build roadmap](roadmap.md)
 - [Beta readiness assessment](release/beta-readiness.md)
 - [Demo gallery](demo/demo-gallery.md)
+
+## Runtime Adapter
+
+The RuntimeAdapter seam translates backend-specific requests into ACT concepts:
+
+- work state
+- notices
+- clearance requests
+- clearance decisions
+- operator handoffs
+- return-of-control summaries
+
+Hermes-specific adapter code may still use Hermes mission, session, and tool
+language internally because that is the backend it adapts. Generic tower
+interfaces should use ACT language: tower, backend, subject, adapter, operator,
+clearance, handoff, and audit.
 
 ## Implementation Slices
 
@@ -53,7 +78,7 @@ This package turns the Hermes Mobile Control Plane feature specification into an
 
 ## Feature Specifications
 
-- [Spec 001: Hermes Mobile Control Plane](../specs/001-hermes-mobile-command/spec.md)
+- [Spec 001: Hermes-origin control plane spec](../specs/001-hermes-mobile-command/spec.md)
 - [Spec 002: TUI, TUA, Teams, and Advanced Approval UX](../specs/002-tui-tua-ux/spec.md)
 
 ## Adoption Audits
@@ -83,11 +108,10 @@ This package turns the Hermes Mobile Control Plane feature specification into an
 
 ## Team Boundaries
 
-- Hermes-side gateway team: system architecture, API contract, approval framework, data model, threat model.
-- Mobile backend services team: gateway service boundaries, auth, events, push, audit, inventory, voice coordinator.
-- iOS team: mobile UX architecture, API contract, auth design, push framework, voice phases.
-- Android team: same mobile contracts with Android secure storage and notification behavior.
+- Gateway/runtime adapter team: system architecture, API contract, clearance
+  framework, data model, threat model.
+- Mobile app teams: mobile UX architecture, API contract, auth design, push
+  framework, voice phases.
+- Approval/clearance team: approval framework, auth design, data model, ADRs.
 - Push team: push framework, threat model, audit and rate-limit requirements.
-- Approval/intervention team: approval framework, auth design, data model, ADRs.
-- Voice team: voice architecture, API voice endpoints, roadmap phase 6.
-- Multi-agent team: inventory schema, event stream, dashboard and grouping requirements.
+- Hermes adapter team: Hermes-specific runtime integration and desktop discovery.

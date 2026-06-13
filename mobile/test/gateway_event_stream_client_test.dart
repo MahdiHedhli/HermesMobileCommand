@@ -1,8 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes_mobile_control_plane/src/api/gateway_event_stream_client.dart';
-import 'package:hermes_mobile_control_plane/src/config/gateway_config.dart';
+import 'package:agentic_control_tower/src/api/gateway_event_stream_client.dart';
+import 'package:agentic_control_tower/src/config/gateway_config.dart';
 
 void main() {
   test('stream uri uses websocket scheme and access token', () {

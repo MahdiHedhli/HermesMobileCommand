@@ -2,6 +2,10 @@
 
 Sprint: `HERMES-MCP-PLATFORM-CONSOLIDATION-006`
 
+Current product identity: Agentic Control Tower (ACT). Hermes remains adapter
+#1 and is still the real backend integration path that must prove the next beta
+gate.
+
 Ratings:
 
 - Ready: Suitable for beta scope with expected polish and monitoring.
@@ -27,13 +31,13 @@ Ratings:
 | Mobile | iPad | Needs Work | UI needs split-layout validation and native target testing. |
 | Mobile | Android | Needs Work | Android SDK is missing on this host. |
 | Mobile | Secure storage | Needs Work | Abstraction exists; native storage must be validated on iOS/Android. |
-| Operator Experience | Approvals | Ready | Signed approve/deny and advanced responses are implemented. UX grouping needs polish. |
+| Operator Experience | Clearances | Ready | Signed grant/deny and advanced responses are implemented. UX grouping needs polish. |
 | Operator Experience | TUA | Needs Work | Backend and UI are present, but mission context and lifecycle consistency need cleanup. |
 | Operator Experience | TUI | Needs Work | Prototype is functional in dev mode only. |
 | Operator Experience | Browser Assistance | Needs Work | Thin note/return-control model works; no live browser stream/control yet. |
 | Operator Experience | Voice | Needs Work | Text-backed MVP works; no native audio or streaming. |
 | Hermes Integration | Notification flow | Ready | Hermes adapter creates durable notification, event, and audit records. |
-| Hermes Integration | Approval flow | Ready | Hermes adapter creates pending approvals and mobile can resolve them. |
+| Hermes Integration | Clearance flow | Ready | Hermes adapter creates pending clearances through compatibility approval records and mobile can resolve them. |
 | Hermes Integration | Assistance flow | Needs Work | TUA/browser assistance exist, but real Hermes runtime handoff is still thin. |
 | Fleet Operations | Multi-agent inventory | Needs Work | Agent/node listing exists; fleet operations and durable mission management need more depth. |
 

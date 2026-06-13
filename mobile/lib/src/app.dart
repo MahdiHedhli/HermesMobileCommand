@@ -17,7 +17,7 @@ class HermesMobileApp extends StatelessWidget {
     return HermesRuntimeScope(
       runtime: runtime,
       child: MaterialApp(
-        title: 'Hermes Control',
+        title: 'Agentic Control Tower',
         theme: hermesTheme(),
         initialRoute: HermesRoutes.dashboard,
         routes: HermesRoutes.routes(runtime),

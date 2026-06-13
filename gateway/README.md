@@ -1,6 +1,6 @@
-# Hermes Mobile Gateway
+# Agentic Control Tower Gateway
 
-First executable vertical slice for Hermes Mobile Control Plane.
+Self-hosted gateway for Agentic Control Tower.
 
 This service is intentionally self-hosted and local-first:
 
@@ -10,8 +10,8 @@ This service is intentionally self-hosted and local-first:
 - Device public-key registration model
 - WebSocket event stream with persisted cursor backfill
 - `mobile_notify` endpoint with durable notification and audit records
-- Fail-closed approval decision skeleton
-- Hermes tool adapter with loopback-first binding controls
+- Fail-closed clearance decision skeleton
+- RuntimeAdapter seam with Hermes as adapter #1
 - Development-only TUI PTY prototype, disabled by default
 
 Run locally:
@@ -30,7 +30,7 @@ uv run --project gateway ruff check
 The default bind should remain local or private-network only. Do not expose this
 gateway on the public internet.
 
-Hermes-local tool calls should use loopback by default:
+Hermes-local adapter calls should use loopback by default:
 
 ```python
 from hermes_gateway.hermes_adapter import HermesToolAdapter
@@ -38,7 +38,7 @@ from hermes_gateway.hermes_adapter import HermesToolAdapter
 adapter = HermesToolAdapter(gateway_base_url="http://127.0.0.1:8787/v1")
 ```
 
-If Hermes and the gateway are intentionally split across private infrastructure,
+If Hermes and the tower gateway are intentionally split across private infrastructure,
 set `HERMES_ALLOWED_HERMES_CALLERS` or `HERMES_GATEWAY_ALLOWED_HERMES_CALLERS`
 to exact allowed caller addresses.
 

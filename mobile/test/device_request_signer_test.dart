@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:hermes_mobile_control_plane/src/security/device_request_signer.dart';
+import 'package:agentic_control_tower/src/security/device_request_signer.dart';
 
 void main() {
   test('canonical request matches gateway format', () {

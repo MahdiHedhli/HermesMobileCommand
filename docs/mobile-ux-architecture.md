@@ -1,5 +1,10 @@
 # Mobile UX Architecture
 
+Agentic Control Tower mobile UX is the operator headset for the control tower:
+it surfaces clearances, notices, handoffs, live state, and audit context. Hermes
+remains the first backend adapter, but the UX should not assume Hermes is the
+platform boundary.
+
 ## Purpose
 
 This document defines the mobile app's screen inventory, navigation model, and state contracts. It intentionally avoids UI polish, branding, and visual design details.

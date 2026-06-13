@@ -2,7 +2,10 @@
 
 ## Purpose
 
-Voice support should extend Hermes Mobile Control Plane after core monitoring, chat, approvals, and intervention are reliable. The architecture must support push-to-talk MVP first, then half-duplex and full-duplex modes, while preserving approval safety.
+Voice support should extend Agentic Control Tower after core monitoring, chat,
+clearances, and intervention are reliable. The architecture must support
+push-to-talk MVP first, then half-duplex and full-duplex modes, while preserving
+clearance safety.
 
 ## Modes
 

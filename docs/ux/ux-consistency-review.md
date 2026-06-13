@@ -52,7 +52,7 @@ Recommendations:
 
 Preferred terms:
 
-- Product: Hermes Mobile Control Plane
+- Product: Agentic Control Tower
 - Operator-facing actor: Agent
 - Work context: Mission
 - Human intervention container: Operator Session

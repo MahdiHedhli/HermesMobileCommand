@@ -60,7 +60,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return ScreenShell(
-      title: 'Hermes Command',
+      title: 'ACT Tower',
       selectedRoute: HermesRoutes.home,
       body: FutureBuilder<HomeAlphaSnapshot>(
         future: _snapshot,

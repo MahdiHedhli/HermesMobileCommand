@@ -1,5 +1,5 @@
-name: hermes_mobile_control_plane
-description: Native mobile shell for Hermes Mobile Control Plane.
+name: agentic_control_tower
+description: Native operator headset for Agentic Control Tower.
 publish_to: "none"
 version: 0.1.0+1
 

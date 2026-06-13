@@ -4,7 +4,10 @@
 
 This design answers how a newly installed mobile app becomes trusted and how trust is maintained, revoked, and extended over time.
 
-Short answer: a new mobile app becomes trusted only through a short-lived local pairing ceremony with a Hermes Control Gateway. During pairing, the app generates a device keypair, proves possession of the pairing challenge, registers its public key with the gateway, and receives node-scoped session credentials.
+Short answer: a new mobile app becomes trusted only through a short-lived local
+pairing ceremony with an ACT Gateway. During pairing, the app generates a
+device keypair, proves possession of the pairing challenge, registers its public
+key with the gateway, and receives node-scoped credentials.
 
 ## Identity Model
 

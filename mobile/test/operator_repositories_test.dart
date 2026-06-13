@@ -107,6 +107,10 @@ class _StaticSigner implements DeviceRequestSigner {
   const _StaticSigner();
 
   @override
+  ClearanceKeyProtection get protection =>
+      ClearanceKeyProtection.developmentExportableEd25519;
+
+  @override
   Future<SignedRequestHeaders> sign({
     required String method,
     required String pathWithQuery,

@@ -192,6 +192,7 @@ class Device(BaseModel):
     node_id: str | None = None
     device_name: str
     platform: Platform
+    clearance_channel: ClearanceChannel = "mobile_signed"
     status: DeviceStatus
     permissions: list[Permission]
     registered_at: datetime
@@ -247,7 +248,7 @@ class Agent(BaseModel):
     active_session_id: str | None = None
     current_tool: str | None = None
     current_target: str | None = None
-    deployment_trust_context: DeploymentTrustContext = "trusted_host"
+    deployment_trust_context: DeploymentTrustContext = "untrusted_host"
     tags: list[str] = Field(default_factory=list)
     capabilities: list[Capability] = Field(default_factory=list)
     last_seen_at: datetime | None = None

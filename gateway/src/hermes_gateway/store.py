@@ -113,7 +113,7 @@ class SQLiteStore:
                     active_session_id TEXT,
                     current_tool TEXT,
                     current_target TEXT,
-                    deployment_trust_context TEXT NOT NULL DEFAULT 'trusted_host',
+                    deployment_trust_context TEXT NOT NULL DEFAULT 'untrusted_host',
                     tags_json TEXT NOT NULL,
                     capabilities_json TEXT NOT NULL,
                     last_seen_at TEXT,
@@ -509,10 +509,10 @@ class SQLiteStore:
                 existing = self.get_agent(agent["node_id"], agent["agent_id"])
                 agent["deployment_trust_context"] = existing.get(
                     "deployment_trust_context",
-                    "trusted_host",
+                    "untrusted_host",
                 )
             except KeyError:
-                agent["deployment_trust_context"] = "trusted_host"
+                agent["deployment_trust_context"] = "untrusted_host"
         with self.connect() as db:
             db.execute(
                 """
@@ -543,7 +543,7 @@ class SQLiteStore:
                     agent.get("active_session_id"),
                     agent.get("current_tool"),
                     agent.get("current_target"),
-                    agent.get("deployment_trust_context", "trusted_host"),
+                    agent.get("deployment_trust_context", "untrusted_host"),
                     json.dumps(agent.get("tags", [])),
                     json.dumps(agent.get("capabilities", [])),
                     agent.get("last_seen_at") or utc_iso(),
@@ -562,6 +562,26 @@ class SQLiteStore:
         agent["tags"] = json.loads(agent.pop("tags_json"))
         agent["capabilities"] = json.loads(agent.pop("capabilities_json"))
         return agent
+
+    def update_agent_trust_context(
+        self,
+        *,
+        node_id: str,
+        agent_id: str,
+        deployment_trust_context: str,
+    ) -> dict[str, Any]:
+        with self.connect() as db:
+            cursor = db.execute(
+                """
+                UPDATE agents
+                SET deployment_trust_context = ?
+                WHERE node_id = ? AND agent_id = ?
+                """,
+                (deployment_trust_context, node_id, agent_id),
+            )
+        if cursor.rowcount == 0:
+            raise KeyError(agent_id)
+        return self.get_agent(node_id, agent_id)
 
     def list_agents(self, node_id: str | None = None) -> list[dict[str, Any]]:
         sql = "SELECT * FROM agents"

@@ -82,10 +82,19 @@ from .schemas import (
     TuiAttachTokenResponse,
     TuiSession,
     TuiSessionControlResponse,
+    UpdateAgentTrustContextRequest,
     VoiceMessage,
     VoiceSession,
 )
-from .security import compare_token, expires_in, has_secret_text, new_token, now_utc, parse_utc
+from .security import (
+    compare_token,
+    content_hash,
+    expires_in,
+    has_secret_text,
+    new_token,
+    now_utc,
+    parse_utc,
+)
 from .signing import VerifiedDevice, verify_signed_request
 from .store import SQLiteStore
 from .tui import LocalPtyManager, validate_tui_frame, validate_tui_request
@@ -228,6 +237,50 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return Agent.model_validate(store.get_agent(node_id, agent_id))
         except KeyError as exc:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "agent not found") from exc
+
+    @app.patch(
+        "/v1/agents/{agent_id}/deployment-trust-context",
+        response_model=Agent,
+    )
+    def update_agent_deployment_trust_context(
+        agent_id: str,
+        node_id: str,
+        payload: UpdateAgentTrustContextRequest,
+        request: Request,
+        device: VerifiedDevice = signed_device_dependency,
+    ) -> Agent:
+        _require_permission(device, "manage_devices")
+        try:
+            existing = store.get_agent(node_id, agent_id)
+            updated = store.update_agent_trust_context(
+                node_id=node_id,
+                agent_id=agent_id,
+                deployment_trust_context=payload.deployment_trust_context,
+            )
+        except KeyError as exc:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "agent not found") from exc
+        store.append_audit_event(
+            event_type="agent_trust_context_updated",
+            actor_type="device",
+            actor_id=device.device_id,
+            node_id=node_id,
+            agent_id=agent_id,
+            request_id=_request_id(request),
+            payload_redacted={
+                "old": existing.get("deployment_trust_context"),
+                "new": payload.deployment_trust_context,
+            },
+        )
+        store.create_event(
+            node_id=node_id,
+            agent_id=agent_id,
+            event_type="agent.trust_context.updated",
+            payload={
+                "agent_id": agent_id,
+                "deployment_trust_context": payload.deployment_trust_context,
+            },
+        )
+        return Agent.model_validate(updated)
 
     @app.get("/v1/sessions")
     def list_sessions(

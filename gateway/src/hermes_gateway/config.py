@@ -44,7 +44,7 @@ class Settings:
     clearance_enabled_channels: tuple[str, ...] = ("mobile_signed",)
     clearance_default_channel: str = "mobile_signed"
     clearance_local_terminal_enabled: bool = False
-    clearance_default_deployment_trust_context: str = "trusted_host"
+    clearance_default_deployment_trust_context: str = "untrusted_host"
     clearance_risk_channel_map: dict[str, tuple[str, ...]] | None = None
 
     @classmethod

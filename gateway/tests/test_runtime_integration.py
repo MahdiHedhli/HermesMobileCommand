@@ -33,7 +33,10 @@ def test_runtime_approval_round_trip_delivers_signed_mobile_decision(
         paired,
         "POST",
         f"/v1/approvals/{approval['approval_id']}/responses",
-        json_body={"decision_type": "approve_session"},
+        json_body={
+            "decision_type": "approve_session",
+            "params_fingerprint": approval["params_fingerprint"],
+        },
     )
     assert decided["decision_type"] == "approve_session"
 
@@ -311,6 +314,7 @@ def _runtime_approval(client: TestClient, *, action_id: str) -> dict:
         json={
             "requested_tool": "shell",
             "risk_level": "high",
+            "risk_family": "destructive",
             "summary": "Run a runtime-created redacted command.",
             "payload_redacted": {"command": "redacted"},
             "agent_id": "agent_runtime",

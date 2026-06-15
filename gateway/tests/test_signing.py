@@ -189,6 +189,7 @@ def create_approval(client: TestClient) -> dict:
             "session_id": "sess_mock",
             "requested_tool": "shell",
             "risk_level": "high",
+            "risk_family": "destructive",
             "summary": "Run a command",
             "full_payload_redacted": {"command": "redacted"},
             "resource_scope": "repo",

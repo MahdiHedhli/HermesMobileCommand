@@ -269,6 +269,7 @@ def _create_approval(client: TestClient) -> dict:
         json={
             "requested_tool": "shell",
             "risk_level": "high",
+            "risk_family": "destructive",
             "summary": "Delete generated build output.",
             "payload_redacted": {"command": "rm -rf ./dist"},
             "agent_id": "agent_mock",

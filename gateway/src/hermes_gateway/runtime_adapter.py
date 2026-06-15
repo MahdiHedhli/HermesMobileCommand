@@ -81,7 +81,7 @@ class RuntimeClearanceRequest:
     action_ref: str | None = None
     node_ref: str | None = None
     risk_category: str | None = None
-    risk_family: str | None = None
+    risk_family: str = "external_effect"
     resource_scope: str | None = None
 
 

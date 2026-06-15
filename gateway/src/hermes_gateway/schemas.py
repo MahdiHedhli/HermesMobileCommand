@@ -312,6 +312,7 @@ class ApprovalRequest(BaseModel):
     risk_level: RiskLevel
     risk_category: str | None = None
     risk_family: RiskFamily = "external_effect"
+    params_fingerprint: str
     summary: str
     full_payload_redacted: dict[str, Any]
     resource_scope: str | None = None
@@ -333,9 +334,8 @@ class CreateApprovalRequest(StrictModel):
     full_payload_redacted: dict[str, Any]
     node_id: str | None = None
     risk_category: str | None = None
-    risk_family: RiskFamily | None = None
-    deployment_trust_context: DeploymentTrustContext | None = None
-    channel_eligibility: dict[str, Any] | None = None
+    risk_family: RiskFamily
+    params_fingerprint: str | None = None
     resource_scope: str | None = None
     options: list[str] = Field(default_factory=lambda: ["approve_once", "deny"])
     expires_at: datetime
@@ -387,8 +387,10 @@ class ApprovalDecisionResponse(BaseModel):
 class LocalTerminalApprovalDecisionRequest(StrictModel):
     decision: Literal["approve", "deny"]
     scope: ApprovalScope = "once"
-    terminal_identity: str
-    signature_verified: bool
+
+
+class UpdateAgentTrustContextRequest(StrictModel):
+    deployment_trust_context: DeploymentTrustContext
 
 
 class InterventionRequest(StrictModel):
@@ -544,6 +546,7 @@ class ApprovalConstraint(BaseModel):
 
 class CreateApprovalResponseRequest(StrictModel):
     decision_type: ApprovalResponseDecisionType
+    params_fingerprint: str | None = None
     user_message: str | None = None
     alternate_directive: str | None = None
     constraints: list[ApprovalConstraint] = Field(default_factory=list)

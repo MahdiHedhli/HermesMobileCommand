@@ -251,6 +251,7 @@ def _runtime_approval(client: TestClient, action_id: str) -> dict[str, Any]:
         {
             "requested_tool": "shell",
             "risk_level": "high",
+            "risk_family": "destructive",
             "summary": "Runtime smoke shell action.",
             "payload_redacted": {"command": "redacted"},
             "agent_id": "agent_runtime_smoke",

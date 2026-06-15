@@ -189,6 +189,7 @@ class HermesRuntimeClient:
         action_id: str | None = None,
         node_id: str | None = None,
         risk_category: str | None = None,
+        risk_family: str = "external_effect",
         resource_scope: str | None = None,
     ) -> JsonObject:
         return self._request(
@@ -206,6 +207,7 @@ class HermesRuntimeClient:
                 "action_id": action_id,
                 "node_id": node_id,
                 "risk_category": risk_category,
+                "risk_family": risk_family,
                 "resource_scope": resource_scope,
             },
         )

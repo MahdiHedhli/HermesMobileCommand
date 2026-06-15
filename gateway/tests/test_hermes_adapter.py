@@ -99,6 +99,7 @@ def test_hermes_tool_approval_requested_creates_pending_approval_audit_and_event
         json={
             "requested_tool": "shell",
             "risk_level": "high",
+            "risk_family": "destructive",
             "summary": "Run a redacted shell command.",
             "payload_redacted": {"command": "rm -rf ./dist"},
             "agent_id": "agent_mock",
@@ -148,6 +149,7 @@ def test_hermes_tool_approval_status_returns_state_and_selected_scope(
         json={
             "requested_tool": "shell",
             "risk_level": "high",
+            "risk_family": "destructive",
             "summary": "Run a redacted shell command.",
             "payload_redacted": {"command": "redacted"},
             "agent_id": "agent_mock",

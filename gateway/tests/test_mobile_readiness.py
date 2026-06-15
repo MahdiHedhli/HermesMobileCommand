@@ -28,6 +28,7 @@ def test_mobile_can_read_inventory_agents_notifications_and_approvals(
         json={
             "requested_tool": "shell",
             "risk_level": "medium",
+            "risk_family": "routine",
             "summary": "Run a redacted shell command.",
             "payload_redacted": {"command": "redacted"},
             "agent_id": "agent_mock",
@@ -100,6 +101,7 @@ def test_signed_deny_still_works_for_hermes_created_approval(client: TestClient)
         json={
             "requested_tool": "shell",
             "risk_level": "medium",
+            "risk_family": "routine",
             "summary": "Run a redacted shell command.",
             "payload_redacted": {"command": "redacted"},
             "agent_id": "agent_mock",
@@ -128,6 +130,7 @@ def test_websocket_receives_hermes_created_events(client: TestClient) -> None:
         json={
             "requested_tool": "shell",
             "risk_level": "critical",
+            "risk_family": "safety_critical",
             "summary": "Run a redacted shell command.",
             "payload_redacted": {"command": "redacted"},
             "agent_id": "agent_mock",

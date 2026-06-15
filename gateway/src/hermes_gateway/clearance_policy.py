@@ -176,7 +176,7 @@ def risk_family_from_request(
         return "external_effect"
     if risk_level == "medium":
         return "routine"
-    return "read_only"
+    return "external_effect"
 
 
 def deployment_trust_context_for_agent(

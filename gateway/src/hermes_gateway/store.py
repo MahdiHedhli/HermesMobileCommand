@@ -159,6 +159,7 @@ class SQLiteStore:
                     risk_level TEXT NOT NULL,
                     risk_category TEXT,
                     risk_family TEXT NOT NULL DEFAULT 'external_effect',
+                    params_fingerprint TEXT,
                     summary TEXT NOT NULL,
                     full_payload_redacted_json TEXT NOT NULL,
                     payload_hash TEXT NOT NULL,
@@ -409,6 +410,7 @@ class SQLiteStore:
                 "risk_family",
                 "TEXT NOT NULL DEFAULT 'external_effect'",
             )
+            _ensure_column(db, "approval_requests", "params_fingerprint", "TEXT")
             self._ensure_column(db, "approval_requests", "decision_scope", "TEXT")
             self._ensure_column(db, "approval_requests", "decision_actor_device_id", "TEXT")
             self._ensure_column(

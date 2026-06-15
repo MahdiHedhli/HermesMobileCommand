@@ -764,8 +764,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             risk_level=payload.risk_level,
             risk_category=payload.risk_category,
             risk_family=payload.risk_family,
-            deployment_trust_context=payload.deployment_trust_context,
-            channel_eligibility=payload.channel_eligibility,
             summary=payload.summary,
             full_payload_redacted=payload.payload_redacted,
             resource_scope=payload.resource_scope,
@@ -835,6 +833,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             device=device,
             approval_id=approval_id,
         )
+        if payload.signed_payload.get("params_fingerprint") != store.get_approval(
+            approval_id
+        ).get("params_fingerprint"):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "params fingerprint mismatch")
         state = "approved" if payload.decision == "approve" else "denied"
         return _transition_approval(
             store=store,
@@ -1810,6 +1812,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             agent_id=approval["agent_id"],
         )
         policy_proposal_id = None
+        if payload.decision_type in {"approve_once", "approve_session", "approve_agent"}:
+            if payload.params_fingerprint != approval.get("params_fingerprint"):
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    "params fingerprint mismatch",
+                )
         if payload.decision_type == "propose_policy":
             if payload.confirmation_phrase != "PROPOSE POLICY":
                 raise HTTPException(
@@ -2215,6 +2223,9 @@ def _create_approval_request(
 ) -> ApprovalRequest:
     node_id = payload.node_id or settings.node_id
     approval_id = new_id("appr")
+    params_fingerprint = payload.params_fingerprint or content_hash(
+        payload.full_payload_redacted
+    )
     approval = store.create_approval(
         {
             "approval_id": approval_id,
@@ -2230,6 +2241,7 @@ def _create_approval_request(
                 risk_category=payload.risk_category,
                 risk_level=payload.risk_level,
             ),
+            "params_fingerprint": params_fingerprint,
             "summary": payload.summary,
             "full_payload_redacted": payload.full_payload_redacted,
             "resource_scope": payload.resource_scope,
@@ -2238,22 +2250,6 @@ def _create_approval_request(
             "expires_at": payload.expires_at.isoformat(),
         }
     )
-    if payload.deployment_trust_context or payload.channel_eligibility:
-        store.append_audit_event(
-            event_type="clearance_request_policy_override_ignored",
-            actor_type="hermes",
-            actor_id=payload.agent_id,
-            node_id=node_id,
-            agent_id=payload.agent_id,
-            session_id=payload.session_id,
-            approval_id=approval_id,
-            request_id=_request_id(request),
-            payload_redacted={
-                "attempted_deployment_trust_context": payload.deployment_trust_context,
-                "attempted_channel_eligibility": bool(payload.channel_eligibility),
-                "reason": "tower_owned_channel_policy",
-            },
-        )
     store.append_audit_event(
         event_type="approval_requested",
         actor_type="hermes",

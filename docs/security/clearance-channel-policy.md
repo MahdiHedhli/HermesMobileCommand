@@ -9,7 +9,8 @@ which channel is sufficient for a risk family.
 - `mobile_signed`: default and recommended. A paired operator phone signs the
   decision out-of-band from the backend host.
 - `local_terminal`: opt-out local render surface. It must route through ACT and
-  be signature verified by the terminal path. The terminal is not the authority.
+  use server-verified Ed25519 signatures from a registered terminal principal.
+  The terminal is not the authority.
 
 When both channels are enabled, risk-tier rules still apply. Both never means
 either channel may clear every action.
@@ -42,9 +43,10 @@ registered aircraft/agent:
 - `untrusted_host`
 - `adversarial_host`
 
-Backends cannot supply or override this context. If a clearance request includes
-`deployment_trust_context` or `channel_eligibility`, ACT ignores it and audits
-`clearance_request_policy_override_ignored`.
+Backends cannot supply or override this context. External clearance request
+schemas reject `deployment_trust_context` and `channel_eligibility` with `422`.
+Any remaining internal path that encounters those fields must ignore them and
+audit the override attempt as defense-in-depth.
 
 This prevents a compromised co-resident backend from declaring itself trusted
 and re-enabling the local-terminal channel.
@@ -53,14 +55,17 @@ and re-enabling the local-terminal channel.
 
 Every clearance decision evaluates:
 
-- channel used
+- channel derived from the authenticated principal's enrolled class
 - risk family
 - eligible channels
 - tower-configured deployment trust context
 - device or local-terminal identity
 
-Rejected channel decisions create `clearance_channel_rejected` audit events and
-do not change approval state.
+Channel eligibility is enforced only for authority-granting transitions. Deny,
+expire, and cancel transitions are authority-reducing and may be submitted from
+any authenticated channel, while still auditing the actual channel and risk
+metadata. Rejected grant attempts create `clearance_channel_rejected` audit
+events and do not change approval state.
 
 Successful decisions store channel metadata in approval `decision_metadata` and
 the `approval_decision` audit payload.
@@ -71,3 +76,8 @@ ACT-003 still accepts the backend-supplied risk-family label for routing. This
 is explicit technical debt. A later capability registry should pin risk family
 per known backend capability so a dishonest or compromised backend cannot label
 a high-risk action as routine.
+
+ACT-003.1 removes route/client assertion of the clearance channel, but does not
+provide hardware attestation that an enrolled `mobile_signed` key was generated
+inside Secure Enclave or Android Keystore. The enrolled channel class is still
+an enrollment-time assertion until native device attestation is validated.

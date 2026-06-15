@@ -84,11 +84,14 @@ def test_mobile_notify_sanitizes_secret_like_payload(client: TestClient) -> None
     payload = audit_events[0]["payload_redacted"]
     assert payload["unsafe_input_detected"] is True
     assert "secret_marker_detected" in payload["unsafe_reasons"]
+    assert "abc123" not in str(payload)
+    assert "token=abc123" not in str(payload)
 
 
 def test_mobile_notify_rejects_raw_preview_echo_with_high_entropy_backstop(
     client: TestClient,
 ) -> None:
+    paired = pair_device(client)
     response = client.post(
         "/v1/notifications/mobile_notify",
         json={
@@ -109,3 +112,14 @@ def test_mobile_notify_rejects_raw_preview_echo_with_high_entropy_backstop(
     assert "AKIA" not in notification["body_safe"]
     assert "live form submission" in notification["body_safe"]
     assert notification["unsafe_input_detected"] is True
+    audit = signed_request(
+        client,
+        "GET",
+        "/v1/audit/events?event_type=notification_queued",
+        private_key=paired["private_key"],
+        device_id=paired["device"]["device_id"],
+    )
+    assert audit.status_code == 200
+    payload = audit.json()["audit_events"][0]["payload_redacted"]
+    assert "AKIAIOSFODNN7EXAMPLEsecretpayload0987654321" not in str(payload)
+    assert "high_entropy_text_detected" in payload["unsafe_reasons"]

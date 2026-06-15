@@ -148,7 +148,10 @@ def _resolve_pending_approvals(
                 paired,
                 "POST",
                 f"/v1/approvals/{approval_id}/responses",
-                {"decision_type": "approve_session"},
+                {
+                    "decision_type": "approve_session",
+                    "params_fingerprint": approval["params_fingerprint"],
+                },
             )
             handled.add(action_id)
         elif action_id == "act_demo_modified":

@@ -69,6 +69,23 @@ Local-terminal is disabled for untrusted and adversarial hosts even when both
 channels are configured. Decisions through ineligible channels are rejected,
 audited, and leave the clearance pending.
 
+ACT-003.1 corrected the authority-core binding:
+
+- the clearance channel is derived from the authenticated principal's enrolled
+  `clearance_channel`, not the URL route
+- local-terminal decisions require canonical Ed25519 device request signatures
+  from a registered `local_terminal` principal
+- client-supplied `signature_verified` and `terminal_identity` body fields were
+  removed
+- channel eligibility is enforced only for grant transitions; deny, expire, and
+  cancel remain available from authenticated local terminal paths
+- new aircraft default to `untrusted_host`
+- operator devices with `manage_devices` permission can set per-aircraft
+  deployment trust context; loopback/runtime callers cannot
+- missing `risk_family` is rejected on request contracts
+- approval decisions bind the tower-computed `params_fingerprint` over the
+  redacted action payload
+
 ## Open Item
 
 The backend-provided risk family is currently trusted for routing. The next

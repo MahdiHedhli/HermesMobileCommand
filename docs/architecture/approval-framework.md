@@ -42,8 +42,12 @@ Default risk-family channel map:
 
 `local_terminal` is disabled for `untrusted_host` and `adversarial_host`
 aircraft even for low-risk families. Deployment trust context is configured at
-the tower per registered aircraft/agent and is ignored if present in a
-clearance request.
+the tower per registered aircraft/agent and external clearance requests that
+try to provide it are rejected.
+
+Channel eligibility is enforced only for authority-granting transitions.
+Authority-reducing transitions such as deny, expire, and cancel are accepted
+from any authenticated channel and still audit the actual channel used.
 
 Every clearance decision audits the channel, risk family, eligible channels,
 deployment trust context, actor identity, and eligibility result.

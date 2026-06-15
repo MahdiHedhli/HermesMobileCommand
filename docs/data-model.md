@@ -98,7 +98,7 @@ Represents a Hermes agent registered under one node.
 | `active_session_id` | string | no | Current session |
 | `current_tool` | string | no | Current tool name |
 | `current_target` | string | no | Current target/resource |
-| `deployment_trust_context` | enum | yes | Tower-owned `trusted_host`, `untrusted_host`, or `adversarial_host`; never aircraft-supplied |
+| `deployment_trust_context` | enum | yes | Tower-owned `trusted_host`, `untrusted_host`, or `adversarial_host`; defaults to `untrusted_host`; never aircraft-supplied |
 | `last_seen_at` | datetime | yes | Health timestamp |
 
 ### Team
@@ -248,6 +248,7 @@ Runtime-projected work context that ties agent state, approvals, notifications, 
 | `full_payload_redacted` | object | yes | Redacted payload |
 | `payload_hash` | string | yes | Hash of canonical original payload |
 | `resource_scope` | string | yes | Files, repo, URL, account, or other scope |
+| `params_fingerprint` | string | yes | Tower-computed fingerprint over `full_payload_redacted`; signed decisions must echo it |
 | `state` | enum | yes | `pending`, `approved`, `denied`, `expired`, `cancelled` |
 | `options` | enum array | yes | Allowed decisions |
 | `requested_at` | datetime | yes | Request time |

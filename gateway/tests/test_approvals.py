@@ -71,6 +71,7 @@ def test_scoped_approval_decision_records_session_scope(client: TestClient) -> N
             approval_id=approval["approval_id"],
             decision="approve",
             scope="session",
+            params_fingerprint=approval["params_fingerprint"],
         ),
     )
 
@@ -104,12 +105,37 @@ def test_scoped_approval_decision_records_agent_scope(client: TestClient) -> Non
             approval_id=approval["approval_id"],
             decision="approve",
             scope="agent",
+            params_fingerprint=approval["params_fingerprint"],
         ),
     )
 
     assert response.status_code == 200
     assert response.json()["state"] == "approved"
     assert response.json()["applied_scope"] == "agent"
+
+
+def test_params_fingerprint_is_returned_and_bound_to_decision(client: TestClient) -> None:
+    paired = pair_device(client)
+    approval = create_approval(client, action_id="act_params_bound")
+
+    response = signed_request(
+        client,
+        "POST",
+        f"/v1/approvals/{approval['approval_id']}/decisions",
+        private_key=paired["private_key"],
+        device_id=paired["device"]["device_id"],
+        json_body=decision_body(
+            approval_id=approval["approval_id"],
+            decision="approve",
+            scope="once",
+            params_fingerprint="substituted-params",
+        ),
+    )
+
+    assert approval["params_fingerprint"]
+    assert response.status_code == 400
+    assert response.json()["detail"] == "params fingerprint mismatch"
+    assert client.app.state.store.get_approval(approval["approval_id"])["state"] == "pending"
 
 
 def test_expire_approval(client: TestClient) -> None:
@@ -217,6 +243,7 @@ def create_approval(
             "session_id": "sess_mock",
             "requested_tool": "shell",
             "risk_level": "high",
+            "risk_family": "destructive",
             "summary": "Run a command",
             "full_payload_redacted": {"command": "redacted"},
             "resource_scope": "repo",
@@ -227,7 +254,13 @@ def create_approval(
     return response.json()
 
 
-def decision_body(*, approval_id: str, decision: str, scope: str) -> dict:
+def decision_body(
+    *,
+    approval_id: str,
+    decision: str,
+    scope: str,
+    params_fingerprint: str,
+) -> dict:
     decision_id = f"dec_{approval_id}_{scope}"
     return {
         "decision_id": decision_id,
@@ -238,6 +271,7 @@ def decision_body(*, approval_id: str, decision: str, scope: str) -> dict:
             "decision": decision,
             "scope": scope,
             "decision_id": decision_id,
+            "params_fingerprint": params_fingerprint,
         },
         "signature": "hmcp-device-request-signature",
     }

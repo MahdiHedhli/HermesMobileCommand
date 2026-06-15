@@ -341,6 +341,42 @@ paths:
               schema:
                 $ref: "#/components/schemas/Agent"
 
+  /agents/{agent_id}/deployment-trust-context:
+    patch:
+      tags: [inventory]
+      summary: Update tower-owned deployment trust context for an aircraft
+      description: >
+        Operator-only signed endpoint. The aircraft/backend cannot set this
+        value through runtime or loopback request paths.
+      parameters:
+        - $ref: "#/components/parameters/AgentId"
+        - $ref: "#/components/parameters/HMCPDeviceIdHeader"
+        - $ref: "#/components/parameters/HMCPTimestampHeader"
+        - $ref: "#/components/parameters/HMCPNonceHeader"
+        - $ref: "#/components/parameters/HMCPSignatureHeader"
+        - name: node_id
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAgentTrustContextRequest"
+      responses:
+        "200":
+          description: Agent trust context updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Agent"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /teams:
     get:
       tags: [teams]
@@ -815,7 +851,8 @@ paths:
       description: >
         Signed mobile endpoint for advanced responses. `modified` and
         `needs_info` keep the approval pending; `approve_once`,
-        `approve_session`, `approve_agent`, and `deny` resolve it. `propose_policy`
+        `approve_session`, `approve_agent`, and `deny` resolve it. Granting
+        responses must include the approval `params_fingerprint`. `propose_policy`
         creates a proposal only and never activates a permanent allow policy.
       parameters:
         - $ref: "#/components/parameters/ApprovalId"
@@ -2220,30 +2257,35 @@ components:
         device_name:
           type: string
         platform:
-          enum: [ios, android]
+          enum: [ios, android, local_terminal]
         app_instance_id:
           type: string
         app_version:
           type: string
         push_token:
           type: string
+        clearance_channel:
+          $ref: "#/components/schemas/ClearanceChannel"
+          description: Enrollment-time principal channel class. It cannot be changed per request.
 
     Device:
       type: object
-      required: [device_id, device_name, platform, status, permissions, registered_at]
+      required: [device_id, device_name, platform, status, permissions, clearance_channel, registered_at]
       properties:
         device_id:
           type: string
         device_name:
           type: string
         platform:
-          enum: [ios, android]
+          enum: [ios, android, local_terminal]
         status:
           enum: [active, revoked, lost, rotating, disabled]
         permissions:
           type: array
           items:
             $ref: "#/components/schemas/Permission"
+        clearance_channel:
+          $ref: "#/components/schemas/ClearanceChannel"
         registered_at:
           type: string
           format: date-time
@@ -2625,6 +2667,8 @@ components:
         - session_id
         - requested_tool
         - risk_level
+        - risk_family
+        - params_fingerprint
         - summary
         - full_payload_redacted
         - state
@@ -2649,6 +2693,9 @@ components:
           type: string
         risk_family:
           $ref: "#/components/schemas/RiskFamily"
+        params_fingerprint:
+          type: string
+          description: Tower-computed fingerprint over the redacted action payload; signed approval decisions must echo it.
         summary:
           type: string
         full_payload_redacted:
@@ -2682,6 +2729,7 @@ components:
         - session_id
         - requested_tool
         - risk_level
+        - risk_family
         - summary
         - full_payload_redacted
         - expires_at
@@ -2702,13 +2750,9 @@ components:
           type: string
         risk_family:
           $ref: "#/components/schemas/RiskFamily"
-        deployment_trust_context:
-          $ref: "#/components/schemas/DeploymentTrustContext"
-          description: Ignored if supplied by a backend; tower configuration is authoritative.
-        channel_eligibility:
-          type: object
-          additionalProperties: true
-          description: Ignored if supplied by a backend; tower policy owns channel eligibility.
+        params_fingerprint:
+          type: string
+          description: Optional caller-provided redacted-payload fingerprint; ACT computes it when omitted.
         summary:
           type: string
         full_payload_redacted:
@@ -2734,6 +2778,7 @@ components:
         - agent_id
         - session_id
         - expires_in_seconds
+        - risk_family
       properties:
         requested_tool:
           type: string
@@ -2764,13 +2809,6 @@ components:
           type: string
         risk_family:
           $ref: "#/components/schemas/RiskFamily"
-        deployment_trust_context:
-          $ref: "#/components/schemas/DeploymentTrustContext"
-          description: Ignored if supplied by a backend; tower configuration is authoritative.
-        channel_eligibility:
-          type: object
-          additionalProperties: true
-          description: Ignored if supplied by a backend; tower policy owns channel eligibility.
         resource_scope:
           type: string
 
@@ -2818,16 +2856,23 @@ components:
 
     LocalTerminalApprovalDecisionRequest:
       type: object
-      required: [decision, terminal_identity, signature_verified]
+      required: [decision]
       properties:
         decision:
           enum: [approve, deny]
         scope:
           $ref: "#/components/schemas/ApprovalScope"
-        terminal_identity:
-          type: string
-        signature_verified:
-          type: boolean
+      description: >
+        Requires canonical Ed25519 device request headers from a registered
+        `local_terminal` principal; the body does not carry identity or
+        signature verification assertions.
+
+    UpdateAgentTrustContextRequest:
+      type: object
+      required: [deployment_trust_context]
+      properties:
+        deployment_trust_context:
+          $ref: "#/components/schemas/DeploymentTrustContext"
 
     ApprovalDecisionResponse:
       type: object
@@ -2873,6 +2918,9 @@ components:
       properties:
         decision_type:
           $ref: "#/components/schemas/ApprovalResponseDecisionType"
+        params_fingerprint:
+          type: string
+          description: Required when `decision_type` grants approval.
         user_message:
           type: string
         alternate_directive:

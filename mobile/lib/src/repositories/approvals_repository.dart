@@ -51,15 +51,17 @@ class ApprovalsRepository {
     String approvalId, {
     required String decision,
     required String scope,
-  }) {
+  }) async {
+    final approval = await getApproval(approvalId);
     final decisionId = 'dec_${DateTime.now().microsecondsSinceEpoch}';
     final signedPayload = {
       'approval_id': approvalId,
       'decision': decision,
       'scope': scope,
       'decision_id': decisionId,
+      'params_fingerprint': approval.paramsFingerprint,
     };
-    return apiClient.postJson(
+    return await apiClient.postJson(
       '/approvals/$approvalId/decisions',
       body: {
         'decision_id': decisionId,

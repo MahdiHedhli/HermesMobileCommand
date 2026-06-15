@@ -148,10 +148,17 @@ self-declare `trusted_host`, a compromised co-resident agent with shell access
 could re-enable the local channel and unravel the protection against the
 `untrusted agent sharing the gateway host` actor.
 
-ACT audits channel and risk family on every issued clearance and audits rejected
-channel attempts with `clearance_channel_rejected`. Requests attempting to set
-`deployment_trust_context` or `channel_eligibility` are ignored and audited as
-`clearance_request_policy_override_ignored`.
+ACT derives the channel from the authenticated principal's enrolled class and
+audits channel and risk family on every issued clearance. Grant attempts through
+ineligible channels are rejected with `clearance_channel_rejected`. External
+request schemas reject attempts to set `deployment_trust_context` or
+`channel_eligibility`; any internal fallback path that encounters those fields
+must ignore and audit them as defense-in-depth.
+
+ACT-003.1 does not cryptographically attest hardware key origin. Without a real
+Secure Enclave or Android Keystore attestation flow, the enrolled channel class
+remains an enrollment-time assertion. This removes per-call route assertion, but
+does not yet prove that a `mobile_signed` key is hardware-backed.
 
 Known limitation for ACT-003: ACT currently trusts the backend-supplied
 `risk_family` label for routing. This is acceptable only as a named interim

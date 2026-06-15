@@ -123,6 +123,7 @@ class ApprovalRequestModel {
     required this.sessionId,
     required this.requestedTool,
     required this.riskLevel,
+    required this.paramsFingerprint,
     required this.summary,
     required this.fullPayloadRedacted,
     required this.state,
@@ -138,6 +139,7 @@ class ApprovalRequestModel {
   final String sessionId;
   final String requestedTool;
   final String riskLevel;
+  final String paramsFingerprint;
   final String summary;
   final Map<String, dynamic> fullPayloadRedacted;
   final String state;
@@ -154,6 +156,7 @@ class ApprovalRequestModel {
       sessionId: json['session_id'] as String,
       requestedTool: json['requested_tool'] as String,
       riskLevel: json['risk_level'] as String,
+      paramsFingerprint: json['params_fingerprint'] as String? ?? '',
       summary: json['summary'] as String,
       fullPayloadRedacted:
           Map<String, dynamic>.from(json['full_payload_redacted'] as Map),

@@ -3,15 +3,18 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.testclient import TestClient
 
-from conftest import pair_device, signed_request
+from conftest import b64url, pair_device, signed_request
 from hermes_gateway.app import create_app
 from hermes_gateway.config import Settings
 
 
 def test_low_risk_action_clears_from_local_terminal_when_enabled(tmp_path: Path) -> None:
     with _policy_client(tmp_path, local_enabled=True) as client:
+        _set_agent_trust(client, "trusted_host")
         approval = _create_approval(client, risk_family="read_only", risk_level="low")
 
         response = _local_decision(client, approval["approval_id"], decision="approve")
@@ -43,6 +46,7 @@ def test_low_risk_action_clears_from_mobile(tmp_path: Path) -> None:
 
 def test_high_risk_action_rejects_local_terminal_in_both_mode(tmp_path: Path) -> None:
     with _policy_client(tmp_path, local_enabled=True) as client:
+        _set_agent_trust(client, "trusted_host")
         approval = _create_approval(
             client,
             risk_family="external_effect",
@@ -116,6 +120,7 @@ def test_mobile_still_clears_for_untrusted_host(tmp_path: Path) -> None:
 
 def test_rejected_channel_is_audited_without_marking_approved(tmp_path: Path) -> None:
     with _policy_client(tmp_path, local_enabled=True) as client:
+        _set_agent_trust(client, "trusted_host")
         approval = _create_approval(client, risk_family="irreversible", risk_level="critical")
 
         response = _local_decision(client, approval["approval_id"], decision="approve")
@@ -129,6 +134,7 @@ def test_rejected_channel_is_audited_without_marking_approved(tmp_path: Path) ->
 
 def test_every_issued_clearance_records_channel_and_risk_family(tmp_path: Path) -> None:
     with _policy_client(tmp_path, local_enabled=True) as client:
+        _set_agent_trust(client, "trusted_host")
         approval = _create_approval(client, risk_family="routine", risk_level="low")
 
         response = _local_decision(client, approval["approval_id"], decision="deny")
@@ -153,17 +159,13 @@ def test_both_mode_cannot_start_without_risk_tier_map(tmp_path: Path) -> None:
 
 def test_aircraft_cannot_override_channel_rules(tmp_path: Path) -> None:
     with _policy_client(tmp_path, local_enabled=True) as client:
-        approval = _create_approval(
-            client,
-            risk_family="destructive",
-            risk_level="high",
-            channel_eligibility={"destructive": ["local_terminal"]},
+        response = client.post(
+            "/v1/approvals",
+            json=_approval_payload(risk_family="destructive", risk_level="high")
+            | {"channel_eligibility": {"destructive": ["local_terminal"]}},
         )
 
-        response = _local_decision(client, approval["approval_id"], decision="approve")
-
-        assert response.status_code == 403
-        assert response.json()["detail"] == "channel_not_eligible_for_risk_family"
+        assert response.status_code == 422
 
 
 def test_deployment_trust_context_is_tower_configured_not_request_supplied(
@@ -171,39 +173,102 @@ def test_deployment_trust_context_is_tower_configured_not_request_supplied(
 ) -> None:
     with _policy_client(tmp_path, local_enabled=True) as client:
         _set_agent_trust(client, "untrusted_host")
-        approval = _create_approval(
-            client,
-            risk_family="read_only",
-            risk_level="low",
-            deployment_trust_context="trusted_host",
+        response = client.post(
+            "/v1/approvals",
+            json=_approval_payload(risk_family="read_only", risk_level="low")
+            | {"deployment_trust_context": "trusted_host"},
         )
 
-        response = _local_decision(client, approval["approval_id"], decision="approve")
-
-        assert response.status_code == 403
-        payload = _audit_payloads(client, "clearance_channel_rejected")[0]
-        assert payload["deployment_trust_context"] == "untrusted_host"
+        assert response.status_code == 422
 
 
-def test_request_policy_override_attempt_is_ignored_and_audited(tmp_path: Path) -> None:
+def test_request_policy_override_attempt_is_rejected(tmp_path: Path) -> None:
     with _policy_client(tmp_path, local_enabled=True) as client:
         response = client.post(
             "/v1/approvals",
-            json=_approval_payload(
-                risk_family="read_only",
-                risk_level="low",
-                deployment_trust_context="adversarial_host",
-                channel_eligibility={"read_only": ["local_terminal"]},
-            ),
+            json=_approval_payload(risk_family="read_only", risk_level="low")
+            | {
+                "deployment_trust_context": "adversarial_host",
+                "channel_eligibility": {"read_only": ["local_terminal"]},
+            },
         )
 
-        assert response.status_code == 201
-        payload = _audit_payloads(
+        assert response.status_code == 422
+
+
+def test_request_without_risk_family_rejected(tmp_path: Path) -> None:
+    with _policy_client(tmp_path, local_enabled=True) as client:
+        payload = _approval_payload(risk_family="read_only", risk_level="low")
+        payload.pop("risk_family")
+
+        response = client.post("/v1/approvals", json=payload)
+
+        assert response.status_code == 422
+
+
+def test_local_terminal_requires_registered_signed_principal(tmp_path: Path) -> None:
+    with _policy_client(tmp_path, local_enabled=True) as client:
+        approval = _create_approval(client, risk_family="read_only", risk_level="low")
+        unknown_key = Ed25519PrivateKey.generate()
+
+        response = signed_request(
             client,
-            "clearance_request_policy_override_ignored",
-        )[0]
-        assert payload["attempted_deployment_trust_context"] == "adversarial_host"
-        assert payload["attempted_channel_eligibility"] is True
+            "POST",
+            f"/v1/local-terminal/approvals/{approval['approval_id']}/decisions",
+            private_key=unknown_key,
+            device_id="dev_unregistered_terminal",
+            json_body={"decision": "approve", "scope": "once"},
+        )
+
+        assert response.status_code == 401
+        assert response.json()["detail"] == "unknown device"
+
+
+def test_operator_setter_changes_aircraft_trust_context_and_audits(
+    tmp_path: Path,
+) -> None:
+    with _policy_client(tmp_path, local_enabled=True) as client:
+        _set_agent_trust(client, "untrusted_host")
+        operator = pair_device(client, requested_permissions=["read_state", "manage_devices"])
+
+        response = signed_request(
+            client,
+            "PATCH",
+            "/v1/agents/agent_policy/deployment-trust-context?node_id=node_policy",
+            private_key=operator["private_key"],
+            device_id=operator["device"]["device_id"],
+            json_body={"deployment_trust_context": "trusted_host"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["deployment_trust_context"] == "trusted_host"
+        payload = _audit_payloads(client, "agent_trust_context_updated")[0]
+        assert payload == {"old": "untrusted_host", "new": "trusted_host"}
+
+
+def test_aircraft_and_loopback_caller_cannot_set_trust_context(tmp_path: Path) -> None:
+    with _policy_client(tmp_path, local_enabled=True) as client:
+        _set_agent_trust(client, "untrusted_host")
+        no_permission = pair_device(client, requested_permissions=["read_state", "approve"])
+
+        unsigned = client.patch(
+            "/v1/agents/agent_policy/deployment-trust-context?node_id=node_policy",
+            json={"deployment_trust_context": "trusted_host"},
+        )
+        signed_without_permission = signed_request(
+            client,
+            "PATCH",
+            "/v1/agents/agent_policy/deployment-trust-context?node_id=node_policy",
+            private_key=no_permission["private_key"],
+            device_id=no_permission["device"]["device_id"],
+            json_body={"deployment_trust_context": "trusted_host"},
+        )
+
+        assert unsigned.status_code == 401
+        assert signed_without_permission.status_code == 403
+        assert client.app.state.store.get_agent("node_policy", "agent_policy")[
+            "deployment_trust_context"
+        ] == "untrusted_host"
 
 
 def _policy_client(tmp_path: Path, *, local_enabled: bool) -> TestClient:
@@ -240,16 +305,12 @@ def _create_approval(
     *,
     risk_family: str,
     risk_level: str,
-    deployment_trust_context: str | None = None,
-    channel_eligibility: dict | None = None,
 ) -> dict:
     response = client.post(
         "/v1/approvals",
         json=_approval_payload(
             risk_family=risk_family,
             risk_level=risk_level,
-            deployment_trust_context=deployment_trust_context,
-            channel_eligibility=channel_eligibility,
         ),
     )
     assert response.status_code == 201
@@ -260,10 +321,8 @@ def _approval_payload(
     *,
     risk_family: str,
     risk_level: str,
-    deployment_trust_context: str | None = None,
-    channel_eligibility: dict | None = None,
 ) -> dict:
-    payload = {
+    return {
         "action_id": f"act_{risk_family}",
         "agent_id": "agent_policy",
         "session_id": "work_policy",
@@ -274,23 +333,40 @@ def _approval_payload(
         "full_payload_redacted": {"operation": "redacted"},
         "expires_at": "2099-01-01T00:00:00Z",
     }
-    if deployment_trust_context:
-        payload["deployment_trust_context"] = deployment_trust_context
-    if channel_eligibility:
-        payload["channel_eligibility"] = channel_eligibility
-    return payload
 
 
 def _local_decision(client: TestClient, approval_id: str, *, decision: str) -> object:
-    return client.post(
+    terminal = _terminal_principal(client)
+    return signed_request(
+        client,
+        "POST",
         f"/v1/local-terminal/approvals/{approval_id}/decisions",
-        json={
+        private_key=terminal["private_key"],
+        device_id=terminal["device"]["device_id"],
+        json_body={
             "decision": decision,
             "scope": "once",
-            "terminal_identity": "terminal_operator",
-            "signature_verified": True,
         },
     )
+
+
+def _terminal_principal(client: TestClient) -> dict:
+    private_key = Ed25519PrivateKey.generate()
+    public_key = private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    )
+    device = client.app.state.store.create_device(
+        node_id="node_policy",
+        device_name="Terminal",
+        platform="local_terminal",
+        app_instance_id=f"terminal-{id(private_key)}",
+        app_version="0.1.0",
+        device_public_key=b64url(public_key),
+        permissions=["read_state", "approve"],
+        clearance_channel="local_terminal",
+    )
+    return {"device": device, "private_key": private_key}
 
 
 def _set_agent_trust(client: TestClient, trust_context: str) -> None:

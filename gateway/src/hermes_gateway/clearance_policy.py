@@ -206,17 +206,11 @@ def enforce_clearance_channel(
     actor_id: str,
     request_id: str,
 ) -> ChannelPolicyDecision:
-    policy = ClearanceChannelPolicy.from_settings(settings)
-    deployment_trust_context = deployment_trust_context_for_agent(
+    decision = evaluate_clearance_channel(
         store=store,
         settings=settings,
-        node_id=approval["node_id"],
-        agent_id=approval["agent_id"],
-    )
-    decision = policy.evaluate(
+        approval=approval,
         channel=channel,
-        risk_family=approval.get("risk_family") or "external_effect",
-        deployment_trust_context=deployment_trust_context,
     )
     if not decision.allowed:
         store.append_audit_event(
@@ -232,6 +226,27 @@ def enforce_clearance_channel(
         )
         raise HTTPException(status.HTTP_403_FORBIDDEN, decision.reason)
     return decision
+
+
+def evaluate_clearance_channel(
+    *,
+    store: SQLiteStore,
+    settings: Settings,
+    approval: dict,
+    channel: str,
+) -> ChannelPolicyDecision:
+    policy = ClearanceChannelPolicy.from_settings(settings)
+    deployment_trust_context = deployment_trust_context_for_agent(
+        store=store,
+        settings=settings,
+        node_id=approval["node_id"],
+        agent_id=approval["agent_id"],
+    )
+    return policy.evaluate(
+        channel=channel,
+        risk_family=approval.get("risk_family") or "external_effect",
+        deployment_trust_context=deployment_trust_context,
+    )
 
 
 def decision_metadata(decision: ChannelPolicyDecision) -> dict[str, object]:

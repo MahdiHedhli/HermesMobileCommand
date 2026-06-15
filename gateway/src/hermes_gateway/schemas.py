@@ -15,7 +15,7 @@ Permission = Literal[
     "tui",
     "browser_assist",
 ]
-Platform = Literal["ios", "android"]
+Platform = Literal["ios", "android", "local_terminal"]
 DeviceStatus = Literal["active", "revoked", "lost", "rotating", "disabled"]
 Environment = Literal["homelab", "laptop", "cloud", "workstation", "vps", "work_vm", "custom"]
 AgentStatus = Literal[
@@ -184,6 +184,7 @@ class DeviceRegistration(StrictModel):
     app_instance_id: str
     app_version: str | None = None
     push_token: str | None = None
+    clearance_channel: ClearanceChannel = "mobile_signed"
 
 
 class Device(BaseModel):
@@ -351,9 +352,7 @@ class HermesApprovalRequestedRequest(StrictModel):
     action_id: str | None = None
     node_id: str | None = None
     risk_category: str | None = None
-    risk_family: RiskFamily | None = None
-    deployment_trust_context: DeploymentTrustContext | None = None
-    channel_eligibility: dict[str, Any] | None = None
+    risk_family: RiskFamily
     resource_scope: str | None = None
 
 

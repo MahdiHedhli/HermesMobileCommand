@@ -29,6 +29,7 @@ class VerifiedDevice:
     device_id: str
     node_id: str
     permissions: list[str]
+    clearance_channel: str = "mobile_signed"
 
 
 def canonical_request(
@@ -172,6 +173,7 @@ async def verify_signed_request(
         device_id=device["device_id"],
         node_id=device["node_id"],
         permissions=device["permissions"],
+        clearance_channel=device.get("clearance_channel", "mobile_signed"),
     )
 
 

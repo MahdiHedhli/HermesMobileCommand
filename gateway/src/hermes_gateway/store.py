@@ -78,6 +78,7 @@ class SQLiteStore:
                     app_instance_id TEXT NOT NULL,
                     app_version TEXT,
                     device_public_key TEXT NOT NULL,
+                    clearance_channel TEXT NOT NULL DEFAULT 'mobile_signed',
                     status TEXT NOT NULL,
                     permissions_json TEXT NOT NULL,
                     registered_at TEXT NOT NULL,
@@ -386,7 +387,21 @@ class SQLiteStore:
                 db,
                 "agents",
                 "deployment_trust_context",
-                "TEXT NOT NULL DEFAULT 'trusted_host'",
+                "TEXT NOT NULL DEFAULT 'untrusted_host'",
+            )
+            db.execute(
+                """
+                UPDATE agents
+                SET deployment_trust_context = 'untrusted_host'
+                WHERE deployment_trust_context IS NULL
+                   OR deployment_trust_context = ''
+                """
+            )
+            _ensure_column(
+                db,
+                "devices",
+                "clearance_channel",
+                "TEXT NOT NULL DEFAULT 'mobile_signed'",
             )
             _ensure_column(
                 db,
@@ -770,6 +785,7 @@ class SQLiteStore:
         app_version: str | None,
         device_public_key: str,
         permissions: list[str],
+        clearance_channel: str = "mobile_signed",
     ) -> dict[str, Any]:
         device_id = new_id("dev")
         registered_at = utc_iso()
@@ -778,10 +794,10 @@ class SQLiteStore:
                 """
                 INSERT INTO devices (
                     device_id, user_id, node_id, device_name, platform, app_instance_id,
-                    app_version, device_public_key, status, permissions_json,
+                    app_version, device_public_key, clearance_channel, status, permissions_json,
                     registered_at, last_seen_at
                 )
-                VALUES (?, 'owner', ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
+                VALUES (?, 'owner', ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
                 """,
                 (
                     device_id,
@@ -791,6 +807,7 @@ class SQLiteStore:
                     app_instance_id,
                     app_version,
                     device_public_key,
+                    clearance_channel,
                     json.dumps(permissions),
                     registered_at,
                     registered_at,
@@ -908,10 +925,11 @@ class SQLiteStore:
                 """
                 INSERT INTO approval_requests (
                     approval_id, action_id, node_id, agent_id, session_id, requested_tool,
-                    risk_level, risk_category, risk_family, summary, full_payload_redacted_json,
-                    payload_hash, resource_scope, state, options_json, requested_at, expires_at
+                    risk_level, risk_category, risk_family, params_fingerprint, summary,
+                    full_payload_redacted_json, payload_hash, resource_scope, state,
+                    options_json, requested_at, expires_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     approval["approval_id"],
@@ -923,6 +941,7 @@ class SQLiteStore:
                     approval["risk_level"],
                     approval.get("risk_category"),
                     approval.get("risk_family", "external_effect"),
+                    approval.get("params_fingerprint") or content_hash(payload),
                     approval["summary"],
                     json.dumps(payload),
                     approval.get("payload_hash") or content_hash(payload),

@@ -14,6 +14,7 @@ from .clearance_policy import (
     ClearanceChannelPolicy,
     decision_metadata,
     enforce_clearance_channel,
+    evaluate_clearance_channel,
     risk_family_from_request,
 )
 from .config import Settings
@@ -581,6 +582,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app_version=payload.device.app_version,
             device_public_key=payload.device_public_key,
             permissions=permissions,
+            clearance_channel=payload.device.clearance_channel,
         )
         access_token = new_token()
         refresh_token = new_token()
@@ -787,9 +789,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             approval_id=approval_id,
             target_state=state,
             request_id=_request_id(request),
-            actor_device_id=device.device_id,
-            actor_type="device",
-            channel="mobile_signed",
+            principal=device,
             decision=payload.decision,
             scope=payload.scope,
         )
@@ -813,9 +813,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             approval_id=approval_id,
             target_state="approved",
             request_id=_request_id(request),
-            actor_device_id=device.device_id,
-            actor_type="device",
-            channel="mobile_signed",
+            principal=device,
             decision="approve",
             scope="once",
         )
@@ -839,9 +837,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             approval_id=approval_id,
             target_state="denied",
             request_id=_request_id(request),
-            actor_device_id=device.device_id,
-            actor_type="device",
-            channel="mobile_signed",
+            principal=device,
             decision="deny",
             scope="once",
         )
@@ -865,9 +861,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             approval_id=approval_id,
             target_state="expired",
             request_id=_request_id(request),
-            actor_device_id=device.device_id,
-            actor_type="device",
-            channel="mobile_signed",
+            principal=device,
             decision=None,
             scope=None,
         )
@@ -891,9 +885,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             approval_id=approval_id,
             target_state="cancelled",
             request_id=_request_id(request),
-            actor_device_id=device.device_id,
-            actor_type="device",
-            channel="mobile_signed",
+            principal=device,
             decision=None,
             scope=None,
         )
@@ -906,28 +898,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         approval_id: str,
         payload: LocalTerminalApprovalDecisionRequest,
         request: Request,
+        device: VerifiedDevice = signed_device_dependency,
         _caller: HermesLocalCaller = hermes_local_dependency,
     ) -> ApprovalDecisionResponse:
-        if not payload.signature_verified:
+        if device.clearance_channel != "local_terminal":
             approval = _get_approval_or_404(store, approval_id)
-            store.append_audit_event(
-                event_type="clearance_channel_rejected",
-                actor_type="device",
-                actor_id=payload.terminal_identity,
-                node_id=approval["node_id"],
-                agent_id=approval["agent_id"],
-                session_id=approval["session_id"],
-                approval_id=approval_id,
+            _audit_channel_auth_failure(
+                store=store,
                 request_id=_request_id(request),
-                payload_redacted={
-                    "channel": "local_terminal",
-                    "reason": "local_terminal_signature_not_verified",
-                },
+                approval=approval,
+                actor_id=device.device_id,
+                channel=device.clearance_channel,
+                reason="principal_not_local_terminal",
             )
-            raise HTTPException(
-                status.HTTP_401_UNAUTHORIZED,
-                "local terminal signature not verified",
-            )
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "principal is not local terminal")
         target_state = "approved" if payload.decision == "approve" else "denied"
         return _transition_approval(
             store=store,
@@ -935,9 +919,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             approval_id=approval_id,
             target_state=target_state,
             request_id=_request_id(request),
-            actor_device_id=payload.terminal_identity,
-            actor_type="device",
-            channel="local_terminal",
+            principal=device,
             decision=payload.decision,
             scope=payload.scope,
         )
@@ -1815,9 +1797,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 approval_id=approval_id,
                 target_state=transition[0],
                 request_id=_request_id(request),
-                actor_device_id=device.device_id,
-                actor_type="device",
-                channel="mobile_signed",
+                principal=device,
                 decision=transition[1],
                 scope=transition[2],
             )
@@ -2366,9 +2346,7 @@ def _transition_approval(
     approval_id: str,
     target_state: str,
     request_id: str,
-    actor_device_id: str,
-    actor_type: str,
-    channel: str,
+    principal: VerifiedDevice,
     decision: str | None,
     scope: str | None,
 ) -> ApprovalDecisionResponse:
@@ -2380,15 +2358,24 @@ def _transition_approval(
     if approval["state"] != "pending":
         raise HTTPException(status.HTTP_409_CONFLICT, "approval is not pending")
 
-    channel_decision = enforce_clearance_channel(
-        store=store,
-        settings=settings,
-        approval=approval,
-        channel=channel,
-        actor_type=actor_type,
-        actor_id=actor_device_id,
-        request_id=request_id,
-    )
+    channel = principal.clearance_channel
+    if target_state == "approved":
+        channel_decision = enforce_clearance_channel(
+            store=store,
+            settings=settings,
+            approval=approval,
+            channel=channel,
+            actor_type="device",
+            actor_id=principal.device_id,
+            request_id=request_id,
+        )
+    else:
+        channel_decision = evaluate_clearance_channel(
+            store=store,
+            settings=settings,
+            approval=approval,
+            channel=channel,
+        )
 
     if target_state in {"approved", "denied"} and parse_utc(approval["expires_at"]) <= now_utc():
         store.resolve_approval(
@@ -2420,7 +2407,7 @@ def _transition_approval(
         approval_id,
         target_state,
         decision_scope=scope,
-        decision_actor_device_id=actor_device_id,
+        decision_actor_device_id=principal.device_id,
         decision_metadata={
             "decision": decision,
             "state": target_state,
@@ -2435,8 +2422,8 @@ def _transition_approval(
     }[target_state]
     store.append_audit_event(
         event_type=event_type,
-        actor_type=actor_type,
-        actor_id=actor_device_id,
+        actor_type="device",
+        actor_id=principal.device_id,
         node_id=approval["node_id"],
         agent_id=approval["agent_id"],
         session_id=approval["session_id"],
@@ -2460,6 +2447,33 @@ def _transition_approval(
         approval_id=approval_id,
         state=target_state,  # type: ignore[arg-type]
         applied_scope=scope,  # type: ignore[arg-type]
+    )
+
+
+def _audit_channel_auth_failure(
+    *,
+    store: SQLiteStore,
+    request_id: str,
+    approval: dict[str, Any],
+    actor_id: str,
+    channel: str,
+    reason: str,
+) -> None:
+    store.append_audit_event(
+        event_type="clearance_channel_rejected",
+        actor_type="device",
+        actor_id=actor_id,
+        node_id=approval["node_id"],
+        agent_id=approval["agent_id"],
+        session_id=approval["session_id"],
+        approval_id=approval["approval_id"],
+        request_id=request_id,
+        payload_redacted={
+            "channel": channel,
+            "risk_family": approval.get("risk_family"),
+            "reason": reason,
+            "eligibility_result": "rejected",
+        },
     )
 
 

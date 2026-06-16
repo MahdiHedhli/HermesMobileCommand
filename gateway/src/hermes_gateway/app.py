@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import timedelta
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect, status
@@ -21,6 +20,7 @@ from .config import Settings
 from .ids import new_id
 from .local_binding import HermesLocalCaller, verify_hermes_local_request
 from .notification_composer import compose_notification
+from .routers.identity import register_identity_routes
 from .routers.observability import register_observability_routes
 from .runtime_adapter import (
     HermesRuntimeAdapter,
@@ -42,22 +42,17 @@ from .schemas import (
     AssistanceMessage,
     AssistanceRequest,
     AssistanceSession,
-    AuthTokenSet,
     BrowserAssistanceEventRequest,
     BrowserAssistanceSession,
-    CompletePairingRequest,
-    CompletePairingResponse,
     CreateApprovalRequest,
     CreateApprovalResponseRequest,
     CreateAssistanceMessageRequest,
     CreateAssistanceRequest,
     CreateAssistanceSessionRequest,
     CreateBrowserAssistanceSessionRequest,
-    CreatePairingSessionRequest,
     CreateTuiSessionRequest,
     CreateVoiceMessageRequest,
     CreateVoiceSessionRequest,
-    Device,
     GatewayHealth,
     HermesApprovalRequestedRequest,
     InterventionRequest,
@@ -69,8 +64,6 @@ from .schemas import (
     Node,
     NodeRegistration,
     Notification,
-    PairingSession,
-    RefreshTokenRequest,
     ReturnControlRequest,
     RuntimeApprovalResult,
     RuntimeBrowserAssistanceResult,
@@ -86,15 +79,7 @@ from .schemas import (
     VoiceMessage,
     VoiceSession,
 )
-from .security import (
-    compare_token,
-    content_hash,
-    expires_in,
-    has_secret_text,
-    new_token,
-    now_utc,
-    parse_utc,
-)
+from .security import content_hash, expires_in, has_secret_text, new_token, now_utc, parse_utc
 from .signing import VerifiedDevice, verify_signed_request
 from .store import SQLiteStore
 from .tui import LocalPtyManager, validate_tui_frame, validate_tui_request
@@ -558,201 +543,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> RuntimeVoiceResult:
         return runtime_adapter.check_handoff("voice_prompt", session_id).raw
 
-    @app.post(
-        "/v1/pairing/start",
-        response_model=PairingSession,
-        status_code=status.HTTP_201_CREATED,
+    register_identity_routes(
+        app=app,
+        store=store,
+        settings=resolved_settings,
+        signed_device_dependency=signed_device_dependency,
+        default_permissions=DEFAULT_PERMISSIONS,
+        request_id=_request_id,
+        expire_pairing_if_needed=_expire_pairing_if_needed,
     )
-    @app.post(
-        "/v1/pairing/sessions", response_model=PairingSession, status_code=status.HTTP_201_CREATED
-    )
-    def start_pairing(payload: CreatePairingSessionRequest, request: Request) -> PairingSession:
-        ttl_seconds = (
-            payload.ttl_seconds
-            if payload.ttl_seconds is not None
-            else resolved_settings.pairing_ttl_seconds
-        )
-        pairing_token = new_token()
-        pairing = store.create_pairing_session(
-            node_id=resolved_settings.node_id,
-            node_fingerprint=resolved_settings.node_fingerprint,
-            display_name=payload.display_name,
-            requested_permissions=payload.requested_permissions,
-            clearance_channel=payload.clearance_channel,
-            pairing_token=pairing_token,
-            challenge=new_token(),
-            ttl_seconds=ttl_seconds,
-        )
-        store.append_audit_event(
-            event_type="pairing_started",
-            actor_type="gateway",
-            actor_id="gateway",
-            node_id=resolved_settings.node_id,
-            request_id=_request_id(request),
-            payload_redacted={
-                "pairing_id": pairing["pairing_id"],
-                "clearance_channel": pairing["clearance_channel"],
-            },
-        )
-        return PairingSession.model_validate(pairing)
-
-    @app.get("/v1/pairing/sessions/{pairing_id}", response_model=PairingSession)
-    def get_pairing(pairing_id: str) -> PairingSession:
-        try:
-            pairing = store.get_pairing_session(pairing_id)
-        except KeyError as exc:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "pairing session not found") from exc
-        return PairingSession.model_validate(_expire_pairing_if_needed(store, pairing))
-
-    @app.post("/v1/pairing/complete", response_model=CompletePairingResponse)
-    def complete_pairing(
-        payload: CompletePairingRequest, request: Request
-    ) -> CompletePairingResponse:
-        try:
-            pairing = store.get_pairing_session(payload.pairing_id, include_token=True)
-        except KeyError as exc:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid pairing token") from exc
-
-        pairing = _expire_pairing_if_needed(store, pairing)
-        if pairing["status"] != "pending":
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                f"pairing session is {pairing['status']}",
-            )
-        if not compare_token(payload.challenge_response, pairing["pairing_token_hash"]):
-            store.append_audit_event(
-                event_type="pairing_rejected",
-                actor_type="gateway",
-                actor_id="gateway",
-                node_id=pairing["node_id"],
-                request_id=_request_id(request),
-                payload_redacted={"pairing_id": pairing["pairing_id"], "reason": "invalid_token"},
-            )
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid pairing token")
-
-        permissions = pairing["requested_permissions"] or DEFAULT_PERMISSIONS
-        if (
-            payload.device.clearance_channel is not None
-            and payload.device.clearance_channel != pairing["clearance_channel"]
-        ):
-            store.append_audit_event(
-                event_type="pairing_rejected",
-                actor_type="gateway",
-                actor_id="gateway",
-                node_id=pairing["node_id"],
-                request_id=_request_id(request),
-                payload_redacted={
-                    "pairing_id": pairing["pairing_id"],
-                    "reason": "device_clearance_channel_conflict",
-                    "session_clearance_channel": pairing["clearance_channel"],
-                    "device_clearance_channel": payload.device.clearance_channel,
-                },
-            )
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "device clearance channel mismatch")
-        device = store.create_device(
-            node_id=pairing["node_id"],
-            device_name=payload.device.device_name,
-            platform=payload.device.platform,
-            app_instance_id=payload.device.app_instance_id,
-            app_version=payload.device.app_version,
-            device_public_key=payload.device_public_key,
-            permissions=permissions,
-            clearance_channel=pairing["clearance_channel"],
-        )
-        access_token = new_token()
-        refresh_token = new_token()
-        store.create_auth_token(
-            token=access_token,
-            token_type="access",
-            device_id=device["device_id"],
-            ttl_seconds=15 * 60,
-        )
-        store.create_auth_token(
-            token=refresh_token,
-            token_type="refresh",
-            device_id=device["device_id"],
-            ttl_seconds=30 * 24 * 60 * 60,
-        )
-        store.set_pairing_status(pairing["pairing_id"], "completed")
-        store.append_audit_event(
-            event_type="device_registered",
-            actor_type="device",
-            actor_id=device["device_id"],
-            node_id=pairing["node_id"],
-            request_id=_request_id(request),
-            payload_redacted={
-                "pairing_id": pairing["pairing_id"],
-                "platform": payload.device.platform,
-                "permissions": permissions,
-            },
-        )
-        store.create_event(
-            node_id=pairing["node_id"],
-            event_type="system.health",
-            payload={"status": "healthy", "reason": "device_registered"},
-        )
-        return CompletePairingResponse(
-            node=Node.model_validate(store.get_node(pairing["node_id"])),
-            device=Device.model_validate(device),
-            tokens=AuthTokenSet(
-                access_token=access_token,
-                refresh_token=refresh_token,
-                expires_at=now_utc() + timedelta(minutes=15),
-            ),
-        )
-
-    @app.post("/v1/auth/token/refresh", response_model=AuthTokenSet)
-    def refresh_token(
-        payload: RefreshTokenRequest,
-        signed_device: VerifiedDevice = signed_device_dependency,
-    ) -> AuthTokenSet:
-        device = store.verify_refresh_token(payload.refresh_token)
-        if device is None:
-            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid refresh token")
-        if device["device_id"] != signed_device.device_id:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "refresh token device mismatch")
-        access_token = new_token()
-        refresh_token_value = new_token()
-        store.create_auth_token(
-            token=access_token,
-            token_type="access",
-            device_id=device["device_id"],
-            ttl_seconds=15 * 60,
-        )
-        store.create_auth_token(
-            token=refresh_token_value,
-            token_type="refresh",
-            device_id=device["device_id"],
-            ttl_seconds=30 * 24 * 60 * 60,
-        )
-        return AuthTokenSet(
-            access_token=access_token,
-            refresh_token=refresh_token_value,
-            expires_at=expires_in(15 * 60),
-        )
-
-    @app.get("/v1/devices")
-    def list_devices(
-        _device: VerifiedDevice = signed_device_dependency,
-    ) -> dict[str, list[Device]]:
-        return {"devices": [Device.model_validate(device) for device in store.list_devices()]}
-
-    @app.delete("/v1/devices/{device_id}", status_code=status.HTTP_204_NO_CONTENT)
-    def revoke_device(
-        device_id: str,
-        request: Request,
-        device: VerifiedDevice = signed_device_dependency,
-    ) -> None:
-        if not store.revoke_device(device_id):
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "device not found")
-        store.append_audit_event(
-            event_type="device_revoked",
-            actor_type="device",
-            actor_id=device.device_id,
-            node_id=resolved_settings.node_id,
-            request_id=_request_id(request),
-            payload_redacted={"device_id": device_id},
-        )
 
     @app.post("/v1/approvals", response_model=ApprovalRequest, status_code=status.HTTP_201_CREATED)
     def create_approval(

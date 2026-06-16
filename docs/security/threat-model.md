@@ -160,6 +160,11 @@ Secure Enclave or Android Keystore attestation flow, the enrolled channel class
 remains an enrollment-time assertion. This removes per-call route assertion, but
 does not yet prove that a `mobile_signed` key is hardware-backed.
 
+ACT-003.1.1 moves class selection to operator-mediated pairing initiation and
+defaults unspecified principals to `local_terminal`. Device-supplied class
+conflicts during completion are rejected and audited. Existing explicit device
+classes are preserved.
+
 Known limitation for ACT-003: ACT currently trusts the backend-supplied
 `risk_family` label for routing. This is acceptable only as a named interim
 state. A later capability registry should validate or pin risk family per known

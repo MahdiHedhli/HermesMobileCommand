@@ -2175,6 +2175,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Permission"
+        clearance_channel:
+          $ref: "#/components/schemas/ClearanceChannel"
+          default: local_terminal
+          description: Operator-pinned principal channel class for the pairing session.
         ttl_seconds:
           type: integer
           minimum: -1
@@ -2183,7 +2187,7 @@ components:
 
     PairingSession:
       type: object
-      required: [pairing_id, challenge, status, node_id, node_fingerprint, expires_at]
+      required: [pairing_id, challenge, status, node_id, node_fingerprint, clearance_channel, expires_at]
       properties:
         pairing_id:
           type: string
@@ -2198,6 +2202,8 @@ components:
           type: string
         node_fingerprint:
           type: string
+        clearance_channel:
+          $ref: "#/components/schemas/ClearanceChannel"
         expires_at:
           type: string
           format: date-time
@@ -2266,7 +2272,7 @@ components:
           type: string
         clearance_channel:
           $ref: "#/components/schemas/ClearanceChannel"
-          description: Enrollment-time principal channel class. It cannot be changed per request.
+          description: Legacy compatibility echo only. If supplied and it conflicts with the pairing session class, completion is rejected.
 
     Device:
       type: object
@@ -2286,6 +2292,7 @@ components:
             $ref: "#/components/schemas/Permission"
         clearance_channel:
           $ref: "#/components/schemas/ClearanceChannel"
+          description: Enrolled principal channel class pinned by the pairing session.
         registered_at:
           type: string
           format: date-time

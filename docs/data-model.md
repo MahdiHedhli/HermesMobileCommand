@@ -130,7 +130,8 @@ Links an agent to a Team while preserving node/source identity.
 
 ### Device
 
-Represents a trusted mobile app installation.
+Represents a registered clearance principal such as a mobile app installation
+or local-terminal principal.
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
@@ -138,8 +139,9 @@ Represents a trusted mobile app installation.
 | `user_id` | string | yes | Owner/operator |
 | `node_id` | string | yes | Trust is node-scoped in MVP |
 | `device_name` | string | yes | User-facing label |
-| `platform` | enum | yes | `ios`, `android` |
+| `platform` | enum | yes | `ios`, `android`, `local_terminal` |
 | `device_public_key` | string | yes | Verifies approvals/interventions |
+| `clearance_channel` | enum | yes | Operator-pinned `mobile_signed` or `local_terminal`; defaults to `local_terminal` when unspecified |
 | `status` | enum | yes | `active`, `revoked`, `lost`, `rotating`, `disabled` |
 | `permissions` | enum array | yes | `read_state`, `chat`, `approve`, `intervene`, `manage_devices`, `voice`, `tui`, `browser_assist` |
 | `registered_at` | datetime | yes | Pairing time |

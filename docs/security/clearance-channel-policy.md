@@ -81,3 +81,8 @@ ACT-003.1 removes route/client assertion of the clearance channel, but does not
 provide hardware attestation that an enrolled `mobile_signed` key was generated
 inside Secure Enclave or Android Keystore. The enrolled channel class is still
 an enrollment-time assertion until native device attestation is validated.
+
+ACT-003.1.1 pins that enrollment-time class on the operator-created pairing
+session. The completing device cannot choose or upgrade its own channel class.
+Unspecified principal creation defaults to `local_terminal`; existing explicit
+device rows are preserved.

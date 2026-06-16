@@ -228,6 +228,7 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                     agent_id TEXT NOT NULL,
                     session_id TEXT NOT NULL,
                     approval_id TEXT,
+                    risk_family TEXT NOT NULL DEFAULT 'external_effect',
                     reason TEXT NOT NULL,
                     state TEXT NOT NULL,
                     context_redacted_json TEXT NOT NULL,
@@ -265,6 +266,7 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                     agent_id TEXT NOT NULL,
                     session_id TEXT NOT NULL,
                     approval_id TEXT,
+                    risk_family TEXT NOT NULL DEFAULT 'external_effect',
                     reason TEXT NOT NULL,
                     state TEXT NOT NULL,
                     context_redacted_json TEXT NOT NULL,
@@ -306,6 +308,7 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                     created_by_device_id TEXT NOT NULL,
                     mode TEXT NOT NULL,
                     state TEXT NOT NULL,
+                    risk_family TEXT NOT NULL DEFAULT 'external_effect',
                     created_at TEXT NOT NULL,
                     closed_at TEXT
                 );
@@ -440,6 +443,24 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                 "tui_sessions",
                 "output_retention_enabled",
                 "INTEGER NOT NULL DEFAULT 0",
+            )
+            self._ensure_column(
+                db,
+                "assistance_requests",
+                "risk_family",
+                "TEXT NOT NULL DEFAULT 'external_effect'",
+            )
+            self._ensure_column(
+                db,
+                "browser_assistance_sessions",
+                "risk_family",
+                "TEXT NOT NULL DEFAULT 'external_effect'",
+            )
+            self._ensure_column(
+                db,
+                "voice_sessions",
+                "risk_family",
+                "TEXT NOT NULL DEFAULT 'external_effect'",
             )
 
     def _ensure_column(
@@ -1075,10 +1096,10 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
             db.execute(
                 """
                 INSERT INTO assistance_requests (
-                    request_id, node_id, agent_id, session_id, approval_id, reason,
+                    request_id, node_id, agent_id, session_id, approval_id, risk_family, reason,
                     state, context_redacted_json, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     request_id,
@@ -1086,6 +1107,7 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                     request["agent_id"],
                     request["session_id"],
                     request.get("approval_id"),
+                    request.get("risk_family") or "external_effect",
                     request["reason"],
                     request.get("state", "requested"),
                     json.dumps(request.get("context_redacted", {})),
@@ -1269,10 +1291,10 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                 """
                 INSERT INTO browser_assistance_sessions (
                     browser_session_id, node_id, agent_id, session_id, approval_id,
-                    reason, state, context_redacted_json, user_action_notes_json,
+                    risk_family, reason, state, context_redacted_json, user_action_notes_json,
                     return_summary, created_at, updated_at, returned_at, closed_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session_id,
@@ -1280,6 +1302,7 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                     session["agent_id"],
                     session["session_id"],
                     session.get("approval_id"),
+                    session.get("risk_family") or "external_effect",
                     session["reason"],
                     session.get("state", "requested"),
                     json.dumps(session.get("context_redacted", {})),
@@ -1448,9 +1471,9 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                 """
                 INSERT INTO voice_sessions (
                     voice_session_id, node_id, agent_id, session_id, created_by_device_id,
-                    mode, state, created_at, closed_at
+                    mode, state, risk_family, created_at, closed_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session_id,
@@ -1460,6 +1483,7 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                     session["created_by_device_id"],
                     session["mode"],
                     session.get("state", "active"),
+                    session.get("risk_family") or "external_effect",
                     session.get("created_at") or utc_iso(),
                     session.get("closed_at"),
                 ),

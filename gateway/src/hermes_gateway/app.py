@@ -464,6 +464,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 reason=payload.reason,
                 node_ref=payload.node_id,
                 clearance_ref=payload.approval_id,
+                risk_family=payload.risk_family,
                 context_redacted=payload.context_redacted,
             ),
             request_id=_request_id(request),
@@ -496,6 +497,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 reason=payload.reason,
                 node_ref=payload.node_id,
                 clearance_ref=payload.approval_id,
+                risk_family=payload.risk_family,
                 context_redacted=payload.context_redacted,
             ),
             request_id=_request_id(request),
@@ -529,6 +531,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 work_ref=payload.session_id,
                 reason="Runtime requested a voice prompt.",
                 node_ref=payload.node_id,
+                risk_family=payload.risk_family,
                 context_redacted=payload.context_redacted,
                 mode=payload.mode,
             ),
@@ -1053,6 +1056,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "agent_id": payload.agent_id,
                 "session_id": payload.session_id,
                 "approval_id": payload.approval_id,
+                "risk_family": payload.risk_family,
                 "reason": payload.reason,
                 "state": "requested",
                 "context_redacted": payload.context_redacted,
@@ -1344,6 +1348,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "agent_id": payload.agent_id,
                 "session_id": payload.session_id,
                 "approval_id": payload.approval_id,
+                "risk_family": payload.risk_family,
                 "reason": payload.reason,
                 "state": "requested",
                 "context_redacted": payload.context_redacted,
@@ -1701,6 +1706,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "created_by_device_id": device.device_id,
                 "mode": payload.mode,
                 "state": "active",
+                "risk_family": payload.risk_family,
             }
         )
         store.append_audit_event(
@@ -1722,7 +1728,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "state": session["state"],
                 "owner_device_id": device.device_id,
                 "capability_requirements": ["voice"],
-                "context": {"hermes_session_id": payload.session_id, "mode": payload.mode},
+                "context": {
+                    "hermes_session_id": payload.session_id,
+                    "mode": payload.mode,
+                    "risk_family": payload.risk_family,
+                },
             }
         )
         store.create_event(

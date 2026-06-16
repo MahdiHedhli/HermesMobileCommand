@@ -459,6 +459,7 @@ class CreateAssistanceRequest(StrictModel):
     reason: str
     node_id: str | None = None
     approval_id: str | None = None
+    risk_family: RiskFamily = "external_effect"
     context_redacted: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -470,6 +471,7 @@ class AssistanceRequest(BaseModel):
     reason: str
     state: AssistanceState
     approval_id: str | None = None
+    risk_family: RiskFamily = "external_effect"
     context_redacted: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
@@ -518,6 +520,7 @@ class CreateBrowserAssistanceSessionRequest(StrictModel):
     reason: str
     node_id: str | None = None
     approval_id: str | None = None
+    risk_family: RiskFamily = "external_effect"
     context_redacted: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -528,6 +531,7 @@ class BrowserAssistanceSession(BaseModel):
     session_id: str
     reason: str
     state: BrowserAssistanceState
+    risk_family: RiskFamily = "external_effect"
     context_redacted: dict[str, Any] = Field(default_factory=dict)
     user_action_notes: list[str] = Field(default_factory=list)
     return_summary: str | None = None
@@ -640,6 +644,7 @@ class RuntimeCreateVoiceSessionRequest(StrictModel):
     session_id: str | None = None
     node_id: str | None = None
     mode: Literal["push_to_talk", "text_fallback"] = "text_fallback"
+    risk_family: RiskFamily = "external_effect"
     context_redacted: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -652,6 +657,7 @@ class CreateVoiceSessionRequest(StrictModel):
     agent_id: str = "agent_mock"
     session_id: str | None = None
     mode: Literal["push_to_talk", "text_fallback"] = "text_fallback"
+    risk_family: RiskFamily = "external_effect"
 
 
 class VoiceSession(BaseModel):
@@ -662,6 +668,7 @@ class VoiceSession(BaseModel):
     created_by_device_id: str
     mode: str
     state: VoiceSessionState
+    risk_family: RiskFamily = "external_effect"
     created_at: datetime
     closed_at: datetime | None = None
     messages: list[VoiceMessage] = Field(default_factory=list)

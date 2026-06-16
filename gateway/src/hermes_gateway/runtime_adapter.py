@@ -112,6 +112,7 @@ class RuntimeHandoffRequest:
     reason: str
     node_ref: str | None = None
     clearance_ref: str | None = None
+    risk_family: str = "external_effect"
     context_redacted: dict[str, Any] | None = None
     mode: str | None = None
 
@@ -315,6 +316,7 @@ class HermesRuntimeAdapter:
                     reason=handoff.reason,
                     node_id=handoff.node_ref,
                     approval_id=handoff.clearance_ref,
+                    risk_family=handoff.risk_family,
                     context_redacted=context_redacted,
                 ),
                 request_id=request_id,
@@ -333,6 +335,7 @@ class HermesRuntimeAdapter:
                     reason=handoff.reason,
                     node_id=handoff.node_ref,
                     approval_id=handoff.clearance_ref,
+                    risk_family=handoff.risk_family,
                     context_redacted=context_redacted,
                 ),
                 request_id=request_id,
@@ -350,6 +353,7 @@ class HermesRuntimeAdapter:
                     session_id=handoff.work_ref,
                     mode=handoff.mode or "text_fallback",
                     node_id=handoff.node_ref,
+                    risk_family=handoff.risk_family,
                     context_redacted=context_redacted,
                 ),
                 request_id=request_id,
@@ -725,6 +729,7 @@ class HermesRuntimeAdapter:
                 "agent_id": payload.agent_id,
                 "session_id": payload.session_id,
                 "approval_id": payload.approval_id,
+                "risk_family": payload.risk_family,
                 "reason": payload.reason,
                 "state": "requested",
                 "context_redacted": payload.context_redacted,
@@ -792,6 +797,7 @@ class HermesRuntimeAdapter:
                 "agent_id": payload.agent_id,
                 "session_id": payload.session_id,
                 "approval_id": payload.approval_id,
+                "risk_family": payload.risk_family,
                 "reason": payload.reason,
                 "state": "requested",
                 "context_redacted": payload.context_redacted,
@@ -871,6 +877,7 @@ class HermesRuntimeAdapter:
                 "created_by_device_id": f"runtime:{actor_id}",
                 "mode": payload.mode,
                 "state": "active",
+                "risk_family": payload.risk_family,
             }
         )
         self.store.create_operator_session(
@@ -881,7 +888,7 @@ class HermesRuntimeAdapter:
                 "mission_id": _mission_id_from_context(payload.context_redacted),
                 "state": "active",
                 "capability_requirements": ["voice"],
-                "context": payload.context_redacted,
+                "context": payload.context_redacted | {"risk_family": payload.risk_family},
             }
         )
         self.store.append_audit_event(

@@ -3383,6 +3383,10 @@ components:
           type: string
         approval_id:
           type: string
+        risk_family:
+          type: string
+          enum: [observe, read_only, routine, external_effect, destructive, credential_or_secret, safety_critical, irreversible]
+          default: external_effect
         reason:
           type: string
         context_redacted:
@@ -3403,6 +3407,10 @@ components:
           type: string
         approval_id:
           type: string
+        risk_family:
+          type: string
+          enum: [observe, read_only, routine, external_effect, destructive, credential_or_secret, safety_critical, irreversible]
+          default: external_effect
         reason:
           type: string
         state:
@@ -3523,6 +3531,10 @@ components:
           type: string
         approval_id:
           type: string
+        risk_family:
+          type: string
+          enum: [observe, read_only, routine, external_effect, destructive, credential_or_secret, safety_critical, irreversible]
+          default: external_effect
         reason:
           type: string
         context_redacted:
@@ -3543,6 +3555,10 @@ components:
           type: string
         reason:
           type: string
+        risk_family:
+          type: string
+          enum: [observe, read_only, routine, external_effect, destructive, credential_or_secret, safety_critical, irreversible]
+          default: external_effect
         state:
           enum: [requested, active, user_controlling, returned_to_agent, closed, failed]
         context_redacted:
@@ -3584,6 +3600,10 @@ components:
           type: string
         mode:
           enum: [push_to_talk, text_fallback]
+        risk_family:
+          type: string
+          enum: [observe, read_only, routine, external_effect, destructive, credential_or_secret, safety_critical, irreversible]
+          default: external_effect
 
     VoiceSession:
       type: object
@@ -3603,6 +3623,10 @@ components:
           type: string
         state:
           enum: [active, closed]
+        risk_family:
+          type: string
+          enum: [observe, read_only, routine, external_effect, destructive, credential_or_secret, safety_critical, irreversible]
+          default: external_effect
         created_at:
           type: string
           format: date-time
@@ -3747,6 +3771,10 @@ components:
           type: string
         mode:
           enum: [push_to_talk, text_fallback]
+        risk_family:
+          type: string
+          enum: [observe, read_only, routine, external_effect, destructive, credential_or_secret, safety_critical, irreversible]
+          default: external_effect
         context_redacted:
           type: object
           additionalProperties: true

@@ -127,6 +127,7 @@ def run_demo_agent(
         agent_id=agent_id,
         session_id=session_id,
         reason="Need the operator to choose the safest demo path.",
+        risk_family="read_only",
         context_redacted={"mission_id": mission_id, "source": "demo_runtime_agent"},
         timeout_seconds=timeout_seconds,
     )
@@ -146,6 +147,7 @@ def run_demo_agent(
         agent_id=agent_id,
         session_id=session_id,
         reason="Operator should inspect the demo browser context and return control.",
+        risk_family="read_only",
         context_redacted={"mission_id": mission_id, "url": "https://example.invalid/demo"},
         timeout_seconds=timeout_seconds,
     )
@@ -153,6 +155,7 @@ def run_demo_agent(
     voice = client.request_voice(
         agent_id=agent_id,
         session_id=session_id,
+        risk_family="read_only",
         context_redacted={"mission_id": mission_id, "prompt": "Confirm mission completion."},
         timeout_seconds=timeout_seconds,
     )

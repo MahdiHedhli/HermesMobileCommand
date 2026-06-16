@@ -107,6 +107,7 @@ def main() -> int:
                     "session_id": "sess_runtime_smoke",
                     "approval_id": modified_approval["approval_id"],
                     "reason": "Operator guidance needed.",
+                    "risk_family": "read_only",
                     "context_redacted": {"mission_id": "mission_runtime_smoke"},
                 },
                 expected_status=201,
@@ -145,6 +146,7 @@ def main() -> int:
                     "session_id": "sess_runtime_smoke",
                     "approval_id": modified_approval["approval_id"],
                     "reason": "Browser context requires human review.",
+                    "risk_family": "read_only",
                     "context_redacted": {
                         "mission_id": "mission_runtime_smoke",
                         "url": "https://example.invalid/review",
@@ -187,6 +189,7 @@ def main() -> int:
                     "agent_id": "agent_runtime_smoke",
                     "session_id": "sess_runtime_smoke",
                     "mode": "text_fallback",
+                    "risk_family": "read_only",
                     "context_redacted": {"mission_id": "mission_runtime_smoke"},
                 },
                 expected_status=201,

@@ -852,6 +852,20 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                 ),
             )
 
+    def update_approval_decision_metadata(
+        self,
+        approval_id: str,
+        metadata: dict[str, Any],
+    ) -> dict[str, Any]:
+        approval = self.get_approval(approval_id)
+        merged = (approval.get("decision_metadata") or {}) | metadata
+        with self.connect() as db:
+            db.execute(
+                "UPDATE approval_requests SET decision_metadata_json = ? WHERE approval_id = ?",
+                (json.dumps(merged), approval_id),
+            )
+        return self.get_approval(approval_id)
+
     def _approval_from_row(self, row: sqlite3.Row) -> dict[str, Any]:
         approval = dict(row)
         approval["full_payload_redacted"] = json.loads(

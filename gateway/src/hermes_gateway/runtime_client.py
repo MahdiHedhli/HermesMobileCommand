@@ -282,6 +282,7 @@ class HermesRuntimeClient:
         reason: str,
         node_id: str | None = None,
         approval_id: str | None = None,
+        risk_family: str = "external_effect",
         context_redacted: JsonObject | None = None,
         timeout_seconds: float = 300.0,
     ) -> AssistanceResult:
@@ -294,6 +295,7 @@ class HermesRuntimeClient:
                 "reason": reason,
                 "node_id": node_id,
                 "approval_id": approval_id,
+                "risk_family": risk_family,
                 "context_redacted": context_redacted or {},
             },
         )
@@ -339,6 +341,7 @@ class HermesRuntimeClient:
         reason: str,
         node_id: str | None = None,
         approval_id: str | None = None,
+        risk_family: str = "external_effect",
         context_redacted: JsonObject | None = None,
         timeout_seconds: float = 300.0,
     ) -> BrowserAssistanceResult:
@@ -351,6 +354,7 @@ class HermesRuntimeClient:
                 "reason": reason,
                 "node_id": node_id,
                 "approval_id": approval_id,
+                "risk_family": risk_family,
                 "context_redacted": context_redacted or {},
             },
         )
@@ -395,6 +399,7 @@ class HermesRuntimeClient:
         agent_id: str,
         session_id: str | None = None,
         node_id: str | None = None,
+        risk_family: str = "external_effect",
         context_redacted: JsonObject | None = None,
         timeout_seconds: float = 300.0,
     ) -> VoiceInteractionResult:
@@ -406,6 +411,7 @@ class HermesRuntimeClient:
                 "session_id": session_id,
                 "node_id": node_id,
                 "mode": "text_fallback",
+                "risk_family": risk_family,
                 "context_redacted": context_redacted or {},
             },
         )

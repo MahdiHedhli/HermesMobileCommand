@@ -101,6 +101,7 @@ def test_runtime_tua_handoff_returns_messages_and_summary(client: TestClient) ->
             "agent_id": "agent_runtime",
             "session_id": "sess_runtime",
             "reason": "Need user guidance.",
+            "risk_family": "read_only",
             "context_redacted": {"mission_id": "mission_runtime"},
         },
     )
@@ -149,6 +150,7 @@ def test_runtime_browser_assistance_handoff_returns_summary(
             "agent_id": "agent_runtime",
             "session_id": "sess_runtime",
             "reason": "Browser submit needs review.",
+            "risk_family": "read_only",
             "context_redacted": {
                 "mission_id": "mission_runtime",
                 "url": "https://example.invalid/review",
@@ -193,6 +195,7 @@ def test_runtime_voice_handoff_receives_text_backed_message(
             "agent_id": "agent_runtime",
             "session_id": "sess_runtime",
             "mode": "text_fallback",
+            "risk_family": "read_only",
             "context_redacted": {"mission_id": "mission_runtime"},
         },
     )

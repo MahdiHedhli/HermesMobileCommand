@@ -89,6 +89,7 @@ def main() -> int:
                     "session_id": "sess_mock",
                     "approval_id": approval["approval_id"],
                     "reason": "Operator clarification needed.",
+                    "risk_family": "read_only",
                     "context_redacted": {"source": "operator_smoke"},
                 },
             )
@@ -124,6 +125,7 @@ def main() -> int:
                     "session_id": "sess_mock",
                     "approval_id": approval["approval_id"],
                     "reason": "Browser context needs human review.",
+                    "risk_family": "read_only",
                     "context_redacted": {"url": "https://example.invalid/review"},
                 },
             )
@@ -160,6 +162,7 @@ def main() -> int:
                     "agent_id": "agent_mock",
                     "session_id": "sess_mock",
                     "mode": "text_fallback",
+                    "risk_family": "read_only",
                 },
             )
             _signed_json(

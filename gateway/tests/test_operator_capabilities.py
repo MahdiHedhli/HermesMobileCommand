@@ -89,6 +89,7 @@ def test_browser_assistance_session_return_and_audit(client: TestClient) -> None
             "agent_id": "agent_mock",
             "session_id": "sess_mock",
             "reason": "Browser submit needs human review.",
+            "risk_family": "read_only",
             "context_redacted": {"url": "https://example.invalid/form"},
         },
     )
@@ -219,6 +220,7 @@ def test_voice_session_message_and_close(client: TestClient) -> None:
             "agent_id": "agent_mock",
             "session_id": "sess_mock",
             "mode": "text_fallback",
+            "risk_family": "read_only",
         },
     )
     assert create_response.status_code == 201
@@ -259,6 +261,7 @@ def _tua_request_payload() -> dict:
         "agent_id": "agent_mock",
         "session_id": "sess_mock",
         "reason": "Agent needs operator assistance.",
+        "risk_family": "read_only",
         "context_redacted": {"tool": "shell"},
     }
 

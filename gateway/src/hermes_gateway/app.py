@@ -17,6 +17,7 @@ from .clearance_policy import (
     risk_family_from_request,
 )
 from .config import Settings
+from .handoff import engage_handoff as _engage_handoff
 from .ids import new_id
 from .local_binding import HermesLocalCaller, verify_hermes_local_request
 from .notification_composer import compose_notification
@@ -1127,15 +1128,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             node_id=assistance_request["node_id"],
             agent_id=assistance_request["agent_id"],
         )
-        session = store.create_assistance_session(
-            {
-                "request_id": request_id,
-                "node_id": assistance_request["node_id"],
-                "agent_id": assistance_request["agent_id"],
-                "session_id": assistance_request["session_id"],
-                "state": "active",
-                "created_by_device_id": device.device_id,
-            }
+        session = _engage_handoff(
+            store=store,
+            settings=resolved_settings,
+            handoff_kind="operator_guidance",
+            handoff_ref=request_id,
+            node_id=assistance_request["node_id"],
+            agent_id=assistance_request["agent_id"],
+            work_ref=assistance_request["session_id"],
+            risk_family=assistance_request["risk_family"],
+            clearance_ref=assistance_request.get("approval_id"),
+            request_id=_request_id(request),
+            actor_type="device",
+            actor_id=device.device_id,
+            engage=lambda: store.create_assistance_session(
+                {
+                    "request_id": request_id,
+                    "node_id": assistance_request["node_id"],
+                    "agent_id": assistance_request["agent_id"],
+                    "session_id": assistance_request["session_id"],
+                    "state": "active",
+                    "created_by_device_id": device.device_id,
+                }
+            ),
         )
         if payload.initial_message:
             store.create_assistance_message(
@@ -1433,7 +1448,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             node_id=session["node_id"],
             agent_id=session["agent_id"],
         )
-        updated = store.add_browser_assistance_note(session_id, payload.note)
+        updated = _engage_handoff(
+            store=store,
+            settings=resolved_settings,
+            handoff_kind="browser_review",
+            handoff_ref=session_id,
+            node_id=session["node_id"],
+            agent_id=session["agent_id"],
+            work_ref=session["session_id"],
+            risk_family=session["risk_family"],
+            clearance_ref=session.get("approval_id"),
+            request_id=_request_id(request),
+            actor_type="device",
+            actor_id=device.device_id,
+            engage=lambda: store.add_browser_assistance_note(session_id, payload.note),
+        )
         store.append_audit_event(
             event_type="browser_assistance_event_recorded",
             actor_type="device",
@@ -1698,16 +1727,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             request_id=_request_id(request),
             agent_id=payload.agent_id,
         )
-        session = store.create_voice_session(
-            {
-                "node_id": resolved_settings.node_id,
-                "agent_id": payload.agent_id,
-                "session_id": payload.session_id,
-                "created_by_device_id": device.device_id,
-                "mode": payload.mode,
-                "state": "active",
-                "risk_family": payload.risk_family,
-            }
+        session = _engage_handoff(
+            store=store,
+            settings=resolved_settings,
+            handoff_kind="voice_prompt",
+            handoff_ref="new",
+            node_id=resolved_settings.node_id,
+            agent_id=payload.agent_id,
+            work_ref=payload.session_id,
+            risk_family=payload.risk_family,
+            clearance_ref=None,
+            request_id=_request_id(request),
+            actor_type="device",
+            actor_id=device.device_id,
+            engage=lambda: store.create_voice_session(
+                {
+                    "node_id": resolved_settings.node_id,
+                    "agent_id": payload.agent_id,
+                    "session_id": payload.session_id,
+                    "created_by_device_id": device.device_id,
+                    "mode": payload.mode,
+                    "state": "active",
+                    "risk_family": payload.risk_family,
+                }
+            ),
         )
         store.append_audit_event(
             event_type="voice_session_created",

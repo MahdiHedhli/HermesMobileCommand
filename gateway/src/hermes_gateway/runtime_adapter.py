@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 from .capabilities import require_runtime_capability
 from .clearance_policy import risk_family_from_request
 from .config import Settings
+from .handoff import engage_handoff as _engage_handoff
 from .ids import new_id
 from .notification_composer import compose_notification
 from .schemas import (
@@ -869,16 +870,30 @@ class HermesRuntimeAdapter:
             node_id=node_id,
             agent_id=payload.agent_id,
         )
-        session = self.store.create_voice_session(
-            {
-                "node_id": node_id,
-                "agent_id": payload.agent_id,
-                "session_id": payload.session_id,
-                "created_by_device_id": f"runtime:{actor_id}",
-                "mode": payload.mode,
-                "state": "active",
-                "risk_family": payload.risk_family,
-            }
+        session = _engage_handoff(
+            store=self.store,
+            settings=self.settings,
+            handoff_kind="voice_prompt",
+            handoff_ref="new",
+            node_id=node_id,
+            agent_id=payload.agent_id,
+            work_ref=payload.session_id,
+            risk_family=payload.risk_family,
+            clearance_ref=None,
+            request_id=request_id,
+            actor_type="hermes",
+            actor_id=actor_id,
+            engage=lambda: self.store.create_voice_session(
+                {
+                    "node_id": node_id,
+                    "agent_id": payload.agent_id,
+                    "session_id": payload.session_id,
+                    "created_by_device_id": f"runtime:{actor_id}",
+                    "mode": payload.mode,
+                    "state": "active",
+                    "risk_family": payload.risk_family,
+                }
+            ),
         )
         self.store.create_operator_session(
             {

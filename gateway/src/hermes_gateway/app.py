@@ -21,6 +21,7 @@ from .config import Settings
 from .ids import new_id
 from .local_binding import HermesLocalCaller, verify_hermes_local_request
 from .notification_composer import compose_notification
+from .routers.observability import register_observability_routes
 from .runtime_adapter import (
     HermesRuntimeAdapter,
     RuntimeAdapter,
@@ -68,7 +69,6 @@ from .schemas import (
     Node,
     NodeRegistration,
     Notification,
-    OperatorSession,
     PairingSession,
     RefreshTokenRequest,
     ReturnControlRequest,
@@ -1001,77 +1001,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             scope=payload.scope,
         )
 
-    @app.post(
-        "/v1/notifications/mobile_notify",
-        response_model=Notification,
-        status_code=status.HTTP_202_ACCEPTED,
+    register_observability_routes(
+        app=app,
+        store=store,
+        settings=resolved_settings,
+        signed_device_dependency=signed_device_dependency,
+        hermes_local_dependency=hermes_local_dependency,
+        create_mobile_notification=_create_mobile_notification,
+        request_id=_request_id,
+        websocket_token=_websocket_token,
     )
-    def mobile_notify(
-        payload: MobileNotifyRequest,
-        request: Request,
-        _caller: HermesLocalCaller = hermes_local_dependency,
-    ) -> Notification:
-        return _create_mobile_notification(
-            store=store,
-            settings=resolved_settings,
-            request=request,
-            payload=payload,
-        )
-
-    @app.post(
-        "/v1/hermes/tools/mobile_notify",
-        response_model=Notification,
-        status_code=status.HTTP_202_ACCEPTED,
-    )
-    def hermes_mobile_notify(
-        payload: MobileNotifyRequest,
-        request: Request,
-        _caller: HermesLocalCaller = hermes_local_dependency,
-    ) -> Notification:
-        return _create_mobile_notification(
-            store=store,
-            settings=resolved_settings,
-            request=request,
-            payload=payload,
-        )
-
-    @app.get("/v1/notifications")
-    def list_notifications(
-        category: str | None = None,
-        _device: VerifiedDevice = signed_device_dependency,
-    ) -> dict[str, list[Notification]]:
-        return {
-            "notifications": [
-                Notification.model_validate(notification)
-                for notification in store.list_notifications(category=category)
-            ]
-        }
-
-    @app.get("/v1/audit/events")
-    def list_audit_events(
-        event_type: str | None = None,
-        limit: int = 100,
-        _device: VerifiedDevice = signed_device_dependency,
-    ) -> dict[str, list[dict[str, Any]]]:
-        return {"audit_events": store.list_audit_events(event_type=event_type, limit=limit)}
-
-    @app.get("/v1/operator-sessions")
-    def list_operator_sessions(
-        session_type: str | None = None,
-        state: str | None = None,
-        agent_id: str | None = None,
-        _device: VerifiedDevice = signed_device_dependency,
-    ) -> dict[str, list[OperatorSession]]:
-        return {
-            "operator_sessions": [
-                OperatorSession.model_validate(session)
-                for session in store.list_operator_sessions(
-                    session_type=session_type,
-                    state=state,
-                    agent_id=agent_id,
-                )
-            ]
-        }
 
     @app.post("/v1/sessions/{session_id}/interventions", response_model=InterventionResponse)
     def intervention_placeholder(
@@ -2100,56 +2039,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             owner_device_id=device.device_id,
         )
         return VoiceSession.model_validate(updated)
-
-    @app.get("/v1/events")
-    def list_events(
-        after: str | None = None,
-        limit: int = 500,
-        _device: VerifiedDevice = signed_device_dependency,
-    ) -> dict[str, Any]:
-        events = store.list_events_after(after=after, limit=limit)
-        return {"events": events, "next_cursor": events[-1]["cursor"] if events else after}
-
-    @app.websocket("/v1/events/stream")
-    async def event_stream(websocket: WebSocket) -> None:
-        token = _websocket_token(websocket)
-        if not token or store.verify_access_token(token) is None:
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            return
-        after = websocket.query_params.get("after")
-        heartbeat = store.create_event(
-            node_id=resolved_settings.node_id,
-            event_type="system.health",
-            payload={"status": "healthy", "reason": "websocket_connected"},
-        )
-        await websocket.accept()
-        events = store.list_events_after(after=after)
-        if not events:
-            events = [heartbeat]
-        try:
-            for event in events:
-                await websocket.send_json(event)
-            while True:
-                try:
-                    message = await asyncio.wait_for(websocket.receive_text(), timeout=30)
-                except TimeoutError:
-                    event = store.create_event(
-                        node_id=resolved_settings.node_id,
-                        event_type="system.health",
-                        payload={"status": "healthy", "reason": "heartbeat"},
-                    )
-                    await websocket.send_json(event)
-                    continue
-                if message == "ping":
-                    await websocket.send_json(
-                        store.create_event(
-                            node_id=resolved_settings.node_id,
-                            event_type="system.health",
-                            payload={"status": "healthy", "reason": "pong"},
-                        )
-                    )
-        except WebSocketDisconnect:
-            return
 
     @app.websocket("/v1/tui/sessions/{session_id}/stream")
     async def tui_stream(websocket: WebSocket, session_id: str) -> None:

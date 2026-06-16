@@ -64,6 +64,7 @@ class SQLiteStore:
                     node_fingerprint TEXT NOT NULL,
                     display_name TEXT NOT NULL,
                     requested_permissions_json TEXT NOT NULL,
+                    clearance_channel TEXT NOT NULL DEFAULT 'local_terminal',
                     expires_at TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     completed_at TEXT
@@ -78,7 +79,7 @@ class SQLiteStore:
                     app_instance_id TEXT NOT NULL,
                     app_version TEXT,
                     device_public_key TEXT NOT NULL,
-                    clearance_channel TEXT NOT NULL DEFAULT 'mobile_signed',
+                    clearance_channel TEXT NOT NULL DEFAULT 'local_terminal',
                     status TEXT NOT NULL,
                     permissions_json TEXT NOT NULL,
                     registered_at TEXT NOT NULL,
@@ -402,7 +403,13 @@ class SQLiteStore:
                 db,
                 "devices",
                 "clearance_channel",
-                "TEXT NOT NULL DEFAULT 'mobile_signed'",
+                "TEXT NOT NULL DEFAULT 'local_terminal'",
+            )
+            _ensure_column(
+                db,
+                "pairing_sessions",
+                "clearance_channel",
+                "TEXT NOT NULL DEFAULT 'local_terminal'",
             )
             _ensure_column(
                 db,
@@ -742,6 +749,7 @@ class SQLiteStore:
         node_fingerprint: str,
         display_name: str,
         requested_permissions: list[str],
+        clearance_channel: str,
         pairing_token: str,
         challenge: str,
         ttl_seconds: int,
@@ -754,9 +762,9 @@ class SQLiteStore:
                 INSERT INTO pairing_sessions (
                     pairing_id, pairing_token_hash, challenge, status, node_id,
                     node_fingerprint, display_name, requested_permissions_json,
-                    expires_at, created_at
+                    clearance_channel, expires_at, created_at
                 )
-                VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     pairing_id,
@@ -766,6 +774,7 @@ class SQLiteStore:
                     node_fingerprint,
                     display_name,
                     json.dumps(requested_permissions),
+                    clearance_channel,
                     expires_at,
                     utc_iso(),
                 ),
@@ -807,7 +816,7 @@ class SQLiteStore:
         app_version: str | None,
         device_public_key: str,
         permissions: list[str],
-        clearance_channel: str = "mobile_signed",
+        clearance_channel: str = "local_terminal",
     ) -> dict[str, Any]:
         device_id = new_id("dev")
         registered_at = utc_iso()

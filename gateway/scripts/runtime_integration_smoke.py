@@ -282,6 +282,7 @@ def _pair_device(client: TestClient) -> dict[str, Any]:
                 "browser_assist",
                 "voice",
             ],
+            "clearance_channel": "mobile_signed",
         },
         expected_status=201,
     )

@@ -34,7 +34,11 @@ def client(tmp_path: Path) -> Generator[TestClient]:
         yield test_client
 
 
-def pair_device(client: TestClient, requested_permissions: list[str] | None = None) -> dict:
+def pair_device(
+    client: TestClient,
+    requested_permissions: list[str] | None = None,
+    clearance_channel: str = "mobile_signed",
+) -> dict:
     private_key = Ed25519PrivateKey.generate()
     public_key = private_key.public_key().public_bytes(
         encoding=serialization.Encoding.Raw,
@@ -46,6 +50,7 @@ def pair_device(client: TestClient, requested_permissions: list[str] | None = No
             "display_name": "Test Phone",
             "requested_permissions": requested_permissions
             or ["read_state", "approve", "intervene"],
+            "clearance_channel": clearance_channel,
         },
     )
     assert start.status_code == 201

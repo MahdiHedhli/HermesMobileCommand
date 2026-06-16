@@ -578,6 +578,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             node_fingerprint=resolved_settings.node_fingerprint,
             display_name=payload.display_name,
             requested_permissions=payload.requested_permissions,
+            clearance_channel=payload.clearance_channel,
             pairing_token=pairing_token,
             challenge=new_token(),
             ttl_seconds=ttl_seconds,
@@ -588,7 +589,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             actor_id="gateway",
             node_id=resolved_settings.node_id,
             request_id=_request_id(request),
-            payload_redacted={"pairing_id": pairing["pairing_id"]},
+            payload_redacted={
+                "pairing_id": pairing["pairing_id"],
+                "clearance_channel": pairing["clearance_channel"],
+            },
         )
         return PairingSession.model_validate(pairing)
 
@@ -627,6 +631,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid pairing token")
 
         permissions = pairing["requested_permissions"] or DEFAULT_PERMISSIONS
+        if (
+            payload.device.clearance_channel is not None
+            and payload.device.clearance_channel != pairing["clearance_channel"]
+        ):
+            store.append_audit_event(
+                event_type="pairing_rejected",
+                actor_type="gateway",
+                actor_id="gateway",
+                node_id=pairing["node_id"],
+                request_id=_request_id(request),
+                payload_redacted={
+                    "pairing_id": pairing["pairing_id"],
+                    "reason": "device_clearance_channel_conflict",
+                    "session_clearance_channel": pairing["clearance_channel"],
+                    "device_clearance_channel": payload.device.clearance_channel,
+                },
+            )
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "device clearance channel mismatch")
         device = store.create_device(
             node_id=pairing["node_id"],
             device_name=payload.device.device_name,
@@ -635,7 +657,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app_version=payload.device.app_version,
             device_public_key=payload.device_public_key,
             permissions=permissions,
-            clearance_channel=payload.device.clearance_channel,
+            clearance_channel=pairing["clearance_channel"],
         )
         access_token = new_token()
         refresh_token = new_token()

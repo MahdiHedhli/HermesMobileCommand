@@ -353,6 +353,7 @@ def _pair_device(base_url: str) -> dict[str, Any]:
                 "browser_assist",
                 "voice",
             ],
+            "clearance_channel": "mobile_signed",
         },
     )
     complete = _post_json(

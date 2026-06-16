@@ -184,7 +184,7 @@ class DeviceRegistration(StrictModel):
     app_instance_id: str
     app_version: str | None = None
     push_token: str | None = None
-    clearance_channel: ClearanceChannel = "mobile_signed"
+    clearance_channel: ClearanceChannel | None = None
 
 
 class Device(BaseModel):
@@ -202,6 +202,7 @@ class Device(BaseModel):
 class CreatePairingSessionRequest(StrictModel):
     display_name: str
     requested_permissions: list[Permission] = Field(default_factory=list)
+    clearance_channel: ClearanceChannel = "local_terminal"
     ttl_seconds: int | None = Field(default=None, ge=-1, le=3600)
 
 
@@ -212,6 +213,7 @@ class PairingSession(BaseModel):
     status: Literal["pending", "completed", "expired", "cancelled"]
     node_id: str
     node_fingerprint: str
+    clearance_channel: ClearanceChannel = "local_terminal"
     expires_at: datetime
 
 

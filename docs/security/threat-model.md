@@ -110,7 +110,7 @@ operator decisions from paired devices.
 | Lost phone remains trusted | Unauthorized control | Device revocation, session invalidation, emergency revoke from gateway |
 | Tailscale identity stolen | Network reachability to gateway | App-level device identity, session token binding, gateway authorization |
 | Browser takeover abused | Session hijack or data exposure | Capability gating, active session confirmation, audit, read-only default |
-| Local PTY prototype abused | Direct shell access to the gateway host | Disabled by default, signed session creation, access-token stream, command allowlist, working directory root, max sessions, idle timeout, metadata-only audit |
+| Local PTY prototype abused | Direct shell access to the gateway host | Disabled by default, signed session creation, access-token stream, command allowlist, working directory root, max sessions, idle timeout, metadata-only audit; see [TUI command surface](tui-command-surface.md) |
 | Voice command misheard as approval | Unsafe action | Confirmation phrase, touch fallback, high/critical touch requirement |
 | Optional relay observes sensitive payloads | Confidentiality loss | No relay required, future app-layer encryption, minimal relay storage |
 
@@ -265,6 +265,10 @@ Risk:
 
 - A backend or agent process on the same host may be able to reach loopback
   services, observe local files, or attempt local storage tampering.
+- If local TUI PTY is enabled, a shell in the TUI command allowlist such as
+  `/bin/sh` gives any authorized TUI session arbitrary command execution under
+  the gateway process permissions. The TUI `risk_level` label is not enforced by
+  the clearance channel policy.
 
 Current mitigations:
 
@@ -272,6 +276,10 @@ Current mitigations:
 - Runtime-local APIs are loopback/allowlist controlled.
 - Consequential actions should fail closed when policy or audit cannot run.
 - Dangerous development features remain disabled by default.
+- Local TUI PTY remains an accepted deployment assumption: operators must not
+  allowlist shells or consequential commands they would otherwise require
+  mobile-gated clearance for, and should narrow the default TUI allowlist before
+  enabling PTY on a shared or untrusted host.
 
 Later hardening:
 
@@ -279,6 +287,8 @@ Later hardening:
 - Stronger filesystem permissions and process isolation guidance.
 - Separate runtime adapter credentials from mobile device credentials.
 - Optional OS sandboxing or service user split for the gateway.
+- ACT-006 should bind high-risk TUI execution to channel policy or a consumed
+  clearance before TUI is promoted beyond default-disabled prototype use.
 
 ### MITM Attempts
 

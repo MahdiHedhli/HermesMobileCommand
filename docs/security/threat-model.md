@@ -265,10 +265,11 @@ Risk:
 
 - A backend or agent process on the same host may be able to reach loopback
   services, observe local files, or attempt local storage tampering.
-- If local TUI PTY is enabled, a shell in the TUI command allowlist such as
-  `/bin/sh` gives any authorized TUI session arbitrary command execution under
-  the gateway process permissions. The TUI `risk_level` label is not enforced by
-  the clearance channel policy.
+- If local TUI PTY is enabled and the operator explicitly opts into shell
+  commands, a shell in the TUI command allowlist such as `/bin/sh` gives any
+  authorized TUI session arbitrary command execution under the gateway process
+  permissions. The TUI `risk_level` label is display-only; authorization uses
+  ACT's tower-owned command `risk_family`.
 
 Current mitigations:
 
@@ -276,10 +277,10 @@ Current mitigations:
 - Runtime-local APIs are loopback/allowlist controlled.
 - Consequential actions should fail closed when policy or audit cannot run.
 - Dangerous development features remain disabled by default.
-- Local TUI PTY remains an accepted deployment assumption: operators must not
-  allowlist shells or consequential commands they would otherwise require
-  mobile-gated clearance for, and should narrow the default TUI allowlist before
-  enabling PTY on a shared or untrusted host.
+- High-risk TUI command starts require a bound clearance that has already passed
+  channel eligibility; low-risk TUI commands remain capability-gated.
+- Shell commands in the TUI allowlist are refused unless
+  `HERMES_TUI_ALLOW_SHELL_COMMANDS=1` is set.
 
 Later hardening:
 
@@ -287,8 +288,8 @@ Later hardening:
 - Stronger filesystem permissions and process isolation guidance.
 - Separate runtime adapter credentials from mobile device credentials.
 - Optional OS sandboxing or service user split for the gateway.
-- ACT-006 should bind high-risk TUI execution to channel policy or a consumed
-  clearance before TUI is promoted beyond default-disabled prototype use.
+- Harden local PTY execution with process isolation or a session broker before
+  TUI is promoted beyond default-disabled prototype use.
 
 ### MITM Attempts
 

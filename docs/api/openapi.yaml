@@ -3748,6 +3748,9 @@ components:
           type: string
         risk_level:
           $ref: '#/components/schemas/RiskLevel'
+        approval_id:
+          type: string
+          nullable: true
     TuiSession:
       type: object
       required:
@@ -3797,6 +3800,8 @@ components:
           type: array
           items:
             type: string
+        risk_family:
+          $ref: '#/components/schemas/RiskFamily'
     TuiAttachTokenResponse:
       type: object
       required:

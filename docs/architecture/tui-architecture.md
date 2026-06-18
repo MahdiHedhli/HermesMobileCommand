@@ -191,6 +191,12 @@ The first local PTY runner is development-only:
 
 - Disabled unless `HERMES_TUI_ENABLE_LOCAL_PTY=1`.
 - Requires an explicit command allowlist.
+- Refuses shell commands in the allowlist unless
+  `HERMES_TUI_ALLOW_SHELL_COMMANDS=1` is set.
+- Derives effective TUI `risk_family` from the tower-owned command risk map.
+- Treats unmapped commands and shells as `external_effect`.
+- Requires a bound, channel-tiered, unconsumed clearance before high-risk TUI
+  commands start. Low-risk TUI commands remain capability-gated.
 - Enforces an allowed working directory root.
 - Limits concurrent sessions.
 - Applies idle timeout cleanup.

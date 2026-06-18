@@ -78,6 +78,7 @@ clearance, handoff, and audit.
 - [Real Hermes desktop discovery 009](implementation/real-hermes-desktop-discovery-009.md)
 - [ACT-003 security hardening](implementation/act-003-security-hardening.md)
 - [ACT-003.1 authority-core hardening](implementation/act-003-1-authority-core-hardening.md)
+- [ACT-003.2 canonical clearance contract](implementation/act-003-2-canonical-clearance-contract.md)
 - [Runtime integration QA](qa/runtime-integration-qa.md)
 
 ## Feature Specifications

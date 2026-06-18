@@ -165,11 +165,18 @@ defaults unspecified principals to `local_terminal`. Device-supplied class
 conflicts during completion are rejected and audited. Existing explicit device
 classes are preserved.
 
-Known limitation for ACT-003: ACT currently trusts the backend-supplied
-`risk_family` label for routing. This is acceptable only as a named interim
-state. A later capability registry should validate or pin risk family per known
-backend capability so a dishonest aircraft cannot label a high-risk action as
-routine.
+ACT-007 reduces aircraft control over risk labels by introducing a tower-owned
+capability registry. For known capabilities, the operator-approved pin is
+authoritative and the aircraft-supplied `risk_family` must match exactly or the
+clearance is rejected and escalated. Unknown capabilities resolve to
+`external_effect` by default, making them mobile-mandatory through channel
+policy; agents may opt into hard rejection until classified.
+
+Honest remaining limit: the registry pins risk per known capability, but the
+aircraft still asserts which capability it is invoking. This converts "trust the
+aircraft's risk label" into "trust the aircraft's capability claim." A later
+capability-manifest or typed payload validation system should verify that the
+claimed capability matches the requested action.
 
 ## Failure Modes
 

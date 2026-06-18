@@ -49,5 +49,6 @@ devices.
 
 ## Remaining Risk
 
-The backend-provided `risk_family` label is still trusted for routing. A future
-capability registry should pin risk family per known backend capability.
+ACT-007 added a capability registry that pins risk family per known backend
+capability. The remaining risk is narrower: ACT still trusts the backend to
+identify which capability it is invoking.

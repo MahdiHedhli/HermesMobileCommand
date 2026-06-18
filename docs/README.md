@@ -79,6 +79,7 @@ clearance, handoff, and audit.
 - [ACT-003 security hardening](implementation/act-003-security-hardening.md)
 - [ACT-003.1 authority-core hardening](implementation/act-003-1-authority-core-hardening.md)
 - [ACT-003.2 canonical clearance contract](implementation/act-003-2-canonical-clearance-contract.md)
+- [ACT-007 capability registry](implementation/act-007-capability-registry.md)
 - [Runtime integration QA](qa/runtime-integration-qa.md)
 
 ## Feature Specifications

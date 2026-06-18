@@ -44,6 +44,7 @@ erDiagram
   DEVICE ||--o{ CAPABILITY_GRANT : receives
   AGENT ||--o{ CAPABILITY_GRANT : receives
   NODE ||--o{ CAPABILITY_GRANT : receives
+  AGENT ||--o{ CAPABILITY_RISK_REGISTRY : pins
   DEVICE ||--o{ PUSH_TOKEN : registers
   APPROVAL_REQUEST ||--o{ AUDIT_EVENT : audits
   NOTIFICATION ||--o{ AUDIT_EVENT : audits
@@ -99,6 +100,7 @@ Represents a Hermes agent registered under one node.
 | `current_tool` | string | no | Current tool name |
 | `current_target` | string | no | Current target/resource |
 | `deployment_trust_context` | enum | yes | Tower-owned `trusted_host`, `untrusted_host`, or `adversarial_host`; defaults to `untrusted_host`; never aircraft-supplied |
+| `require_classified_capabilities` | boolean | yes | If true, unknown capabilities are rejected until operator-approved in the registry |
 | `last_seen_at` | datetime | yes | Health timestamp |
 
 ### Team
@@ -163,6 +165,25 @@ Centralized capability authorization record used by device and runtime checks.
 | `reason` | string | no | Redacted reason |
 | `created_at` | datetime | yes | Creation time |
 | `expires_at` | datetime | no | Optional expiry |
+
+### CapabilityRiskRegistry
+
+Tower-owned risk classification for backend capabilities.
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `entry_id` | string | yes | Stable registry entry ID |
+| `node_id` | string | yes | Node scope |
+| `agent_id` | string | yes | Agent scope |
+| `aircraft` | string | yes | Tower-derived principal, formatted as `node_id:agent_id` |
+| `capability` | string | yes | Capability identifier proposed by the aircraft and approved by operator |
+| `risk_family` | enum | yes | Tower-approved risk family |
+| `status` | enum | yes | `pending` or `approved` |
+| `version` | integer | yes | Monotonic per `(node_id, agent_id, capability)` |
+| `proposed_at` | datetime | yes | Proposal time |
+| `proposed_by` | string | yes | Derived aircraft principal |
+| `approved_by` | string | no | Operator device ID |
+| `approved_at` | datetime | no | Approval time |
 
 ### PushToken
 
@@ -510,6 +531,7 @@ Thin browser assistance handoff record. It carries context, operator notes, and 
 | Conversation | 90 days default, configurable | Redaction policy applies |
 | Message | 90 days default, configurable | Avoid retaining sensitive raw tool output by default |
 | CapabilityGrant | Until revoked plus 1 year | Needed for safety and authorization review |
+| CapabilityRiskRegistry | Until superseded plus 1 year | Needed to prove tower-owned risk classification history |
 | ApprovalRequest | 1 year minimum | Safety-critical auditability |
 | ApprovalDecision | 1 year minimum | Needed for forensic review |
 | ApprovalResponse | 1 year minimum | Needed for advanced approval auditability |

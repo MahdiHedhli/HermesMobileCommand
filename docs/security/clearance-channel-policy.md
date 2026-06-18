@@ -70,12 +70,16 @@ events and do not change approval state.
 Successful decisions store channel metadata in approval `decision_metadata` and
 the `approval_decision` audit payload.
 
-## Known Limitation
+## Capability Risk Pins
 
-ACT-003 still accepts the backend-supplied risk-family label for routing. This
-is explicit technical debt. A later capability registry should pin risk family
-per known backend capability so a dishonest or compromised backend cannot label
-a high-risk action as routine.
+ACT-007 adds a tower-owned capability registry. For known capabilities,
+operator-approved risk pins are authoritative and request `risk_family` must
+match the pin. Unknown capabilities fail closed to `external_effect`, or hard
+reject when the agent is configured with `require_classified_capabilities`.
+
+Remaining limitation: ACT still trusts the aircraft to identify which capability
+it is invoking. The registry prevents risk under-labeling for known
+capabilities, but does not yet prove the action matches the claimed capability.
 
 ACT-003.1 removes route/client assertion of the clearance channel, but does not
 provide hardware attestation that an enrolled `mobile_signed` key was generated

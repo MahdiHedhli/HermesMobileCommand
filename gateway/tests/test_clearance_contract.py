@@ -192,12 +192,52 @@ def test_extensions_round_trip_are_fingerprint_covered_and_act_opaque(
     )
 
 
+def test_params_fingerprint_and_requester_identity_are_tower_authoritative(
+    client: TestClient,
+) -> None:
+    paired = pair_device(client)
+    approval = _runtime_approval(
+        client,
+        audit_correlation_id="akvm-self-assertion",
+        supplied_params_fingerprint="aircraft-supplied-wrong-fingerprint",
+        aircraft="self-declared-aircraft",
+        requested_by="self-declared-requester",
+    )
+
+    expected_fingerprint = build_params_fingerprint(
+        payload_redacted=approval["full_payload_redacted"],
+        extensions=approval["extensions"],
+    )
+    assert approval["params_fingerprint"] == expected_fingerprint
+    assert approval["params_fingerprint"] != "aircraft-supplied-wrong-fingerprint"
+    assert approval["aircraft"] == "runtime:local"
+    assert approval["requested_by"] == "runtime:local"
+
+    audit = signed_request(
+        client,
+        "GET",
+        "/v1/audit/events?event_type=approval_requested",
+        private_key=paired["private_key"],
+        device_id=paired["device"]["device_id"],
+    )
+    assert audit.status_code == 200
+    audit_text = audit.text
+    assert "ignored_self_declared_fields" in audit_text
+    assert "aircraft" in audit_text
+    assert "requested_by" in audit_text
+    assert "params_fingerprint" in audit_text
+    assert "self-declared-aircraft" not in audit_text
+
+
 def _runtime_approval(
     client: TestClient,
     *,
     operator_message: str | None = None,
     audit_correlation_id: str | None = None,
     extensions: dict[str, dict] | None = None,
+    supplied_params_fingerprint: str | None = None,
+    aircraft: str | None = None,
+    requested_by: str | None = None,
 ) -> dict:
     payload = {
         "requested_tool": "shell",
@@ -222,6 +262,12 @@ def _runtime_approval(
         payload["operator_message"] = operator_message
     if audit_correlation_id is not None:
         payload["audit_correlation_id"] = audit_correlation_id
+    if supplied_params_fingerprint is not None:
+        payload["params_fingerprint"] = supplied_params_fingerprint
+    if aircraft is not None:
+        payload["aircraft"] = aircraft
+    if requested_by is not None:
+        payload["requested_by"] = requested_by
     response = client.post("/v1/runtime/approvals", json=payload)
     assert response.status_code == 201
     return response.json()

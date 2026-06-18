@@ -383,6 +383,103 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /capability-registry/proposals:
+    post:
+      tags:
+      - approvals
+      summary: Propose capability risk pins
+      description: Runtime-local endpoint. Proposals are pending and have no authority until an operator approves them.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CapabilityRiskProposalRequest'
+      responses:
+        '201':
+          description: Capability risk proposals stored
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - entries
+                properties:
+                  entries:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CapabilityRiskRegistryEntry'
+  /capability-registry:
+    get:
+      tags:
+      - approvals
+      summary: List capability risk registry entries
+      description: Operator-only signed endpoint requiring `manage_capabilities`.
+      parameters:
+      - $ref: '#/components/parameters/HMCPDeviceIdHeader'
+      - $ref: '#/components/parameters/HMCPTimestampHeader'
+      - $ref: '#/components/parameters/HMCPNonceHeader'
+      - $ref: '#/components/parameters/HMCPSignatureHeader'
+      - name: node_id
+        in: query
+        schema:
+          type: string
+      - name: agent_id
+        in: query
+        schema:
+          type: string
+      - name: status_filter
+        in: query
+        schema:
+          enum:
+          - pending
+          - approved
+      responses:
+        '200':
+          description: Capability risk registry entries
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - entries
+                properties:
+                  entries:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CapabilityRiskRegistryEntry'
+  /capability-registry/{entry_id}/decision:
+    post:
+      tags:
+      - approvals
+      summary: Approve or reject a pending capability risk pin
+      description: Operator-only signed endpoint requiring `manage_capabilities`; not available to loopback runtime callers.
+      parameters:
+      - name: entry_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - $ref: '#/components/parameters/HMCPDeviceIdHeader'
+      - $ref: '#/components/parameters/HMCPTimestampHeader'
+      - $ref: '#/components/parameters/HMCPNonceHeader'
+      - $ref: '#/components/parameters/HMCPSignatureHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CapabilityRiskDecisionRequest'
+      responses:
+        '200':
+          description: Capability risk decision applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapabilityRiskRegistryEntry'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /teams:
     get:
       tags:
@@ -2563,6 +2660,9 @@ components:
           type: string
         deployment_trust_context:
           $ref: '#/components/schemas/DeploymentTrustContext'
+        require_classified_capabilities:
+          type: boolean
+          default: false
         tags:
           type: array
           items:
@@ -2887,6 +2987,9 @@ components:
           type: string
         requested_tool:
           type: string
+        capability:
+          type: string
+          nullable: true
         risk_level:
           $ref: '#/components/schemas/RiskLevel'
         risk_category:
@@ -2933,6 +3036,7 @@ components:
           type: string
           enum:
           - act.clearance.v1
+          - act.clearance.v2
         short_code:
           type: string
           nullable: true
@@ -2986,6 +3090,9 @@ components:
           type: string
         requested_tool:
           type: string
+        capability:
+          type: string
+          nullable: true
         risk_level:
           $ref: '#/components/schemas/RiskLevel'
         risk_category:
@@ -3079,6 +3186,9 @@ components:
           type: string
         risk_family:
           $ref: '#/components/schemas/RiskFamily'
+        capability:
+          type: string
+          nullable: true
         resource_scope:
           type: string
         operator_message:
@@ -3126,10 +3236,16 @@ components:
         decision_metadata:
           type: object
           additionalProperties: true
+        capability:
+          type: string
+          nullable: true
+        risk_family:
+          $ref: '#/components/schemas/RiskFamily'
         contract_version:
           type: string
           enum:
           - act.clearance.v1
+          - act.clearance.v2
         short_code:
           type: string
           nullable: true
@@ -3160,8 +3276,6 @@ components:
         requested_by:
           type: string
           nullable: true
-        risk_family:
-          $ref: '#/components/schemas/RiskFamily'
         expires_at:
           type: string
           format: date-time
@@ -3366,10 +3480,16 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/ApprovalResponse'
+        capability:
+          type: string
+          nullable: true
+        risk_family:
+          $ref: '#/components/schemas/RiskFamily'
         contract_version:
           type: string
           enum:
           - act.clearance.v1
+          - act.clearance.v2
         short_code:
           type: string
           nullable: true
@@ -3400,8 +3520,6 @@ components:
         requested_by:
           type: string
           nullable: true
-        risk_family:
-          $ref: '#/components/schemas/RiskFamily'
         expires_at:
           type: string
           format: date-time
@@ -4321,6 +4439,85 @@ components:
         expires_at:
           type: string
           format: date-time
+    CapabilityRiskProposalEntry:
+      type: object
+      required:
+      - capability
+      - risk_family
+      properties:
+        capability:
+          type: string
+        risk_family:
+          $ref: '#/components/schemas/RiskFamily'
+    CapabilityRiskProposalRequest:
+      type: object
+      required:
+      - agent_id
+      - entries
+      properties:
+        node_id:
+          type: string
+          nullable: true
+        agent_id:
+          type: string
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/CapabilityRiskProposalEntry'
+    CapabilityRiskDecisionRequest:
+      type: object
+      required:
+      - decision
+      properties:
+        decision:
+          enum:
+          - approve
+          - reject
+    CapabilityRiskRegistryEntry:
+      type: object
+      required:
+      - entry_id
+      - node_id
+      - agent_id
+      - aircraft
+      - capability
+      - risk_family
+      - status
+      - version
+      - proposed_at
+      - proposed_by
+      properties:
+        entry_id:
+          type: string
+        node_id:
+          type: string
+        agent_id:
+          type: string
+        aircraft:
+          type: string
+          description: Tower-derived principal, not aircraft supplied.
+        capability:
+          type: string
+        risk_family:
+          $ref: '#/components/schemas/RiskFamily'
+        status:
+          enum:
+          - pending
+          - approved
+        version:
+          type: integer
+        proposed_at:
+          type: string
+          format: date-time
+        proposed_by:
+          type: string
+        approved_by:
+          type: string
+          nullable: true
+        approved_at:
+          type: string
+          format: date-time
+          nullable: true
     OperatorSession:
       type: object
       required:

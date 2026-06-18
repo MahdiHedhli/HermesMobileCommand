@@ -2,7 +2,7 @@
 
 Status: implemented
 
-ACT now publishes `act.clearance.v1` as the canonical, versioned clearance
+ACT now publishes `act.clearance.v2` as the canonical, versioned clearance
 contract for aircraft mirrors.
 
 Canonical artifacts:
@@ -16,20 +16,24 @@ Canonical artifacts:
 
 - Clearance objects expose `contract_version`, `short_code`, `tower_id`,
   `proof`, `audit_correlation_id`, `operator_message`, `risk_family`,
-  `expires_at`, `params_fingerprint`, and `extensions`.
+  `expires_at`, `params_fingerprint`, core `capability`, and `extensions`.
+- v1 AgenticKVM-style requests with `extensions.agentickvm.capability` remain
+  accepted. ACT copies that value to core `capability` and audits the
+  compatibility path.
 - Runtime result and Hermes status polling return the same canonical fields as
   the rich approval object.
 - ACT computes `params_fingerprint` server-side from canonical redacted payload
   plus the extensions envelope.
-- ACT derives `aircraft` and `requested_by` from the authenticated local caller
-  path and audits self-declared request values as ignored.
+- ACT derives `aircraft` from the tower principal (`node_id:agent_id`) and
+  audits self-declared request values as ignored.
 - `operator_message` is composed through ACT's notification allowlist path. Raw
   aircraft text is not echoed to the operator response or audit payload.
 - The clearance proof binds `approval_id`, `params_fingerprint`, `short_code`,
   `risk_family`, `expires_at`, `tower_id`, `contract_version`, and
   `extensions_digest`.
 - The `agentickvm` extension namespace round-trips the mirror fields `target`,
-  `provider`, `capability`, `risk_summary`, and `policy_context`.
+  `provider`, `risk_summary`, and `policy_context`. Older mirrors may still
+  include `capability` there for compatibility.
 
 ## What Did Not Change
 
@@ -46,8 +50,8 @@ Aircraft should verify fail-closed:
 
 1. Recompute `params_fingerprint` from its request's redacted payload and
    extensions.
-2. Verify the returned `risk_family`, `short_code`, and `params_fingerprint`
-   match the pending request.
+2. Verify the returned `capability`, `risk_family`, `short_code`, and
+   `params_fingerprint` match the pending request.
 3. Recompute the extensions digest.
 4. Verify the Ed25519 proof using the tower public key for `proof.key_id`.
 5. Treat `tower_unavailable`, `verification_failed`, and `invalid` as
@@ -57,7 +61,7 @@ Aircraft should verify fail-closed:
 
 - AgenticKVM should mirror this published contract instead of its temporary
   local reconstruction.
-- Capability-registry validation is still needed so ACT can validate
-  aircraft-supplied `risk_family` instead of only routing on it.
+- ACT-007 added capability-registry validation so tower-approved risk pins are
+  authoritative for known capabilities.
 - Hardware attestation for clearance-key origin remains a separate native
   device validation item.

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://agentic-control-tower.local/contracts/clearance/act.clearance.v1.schema.json",
+  "$id": "https://agentic-control-tower.local/contracts/clearance/act.clearance.v2.schema.json",
   "title": "Agentic Control Tower Clearance Contract",
   "type": "object",
   "required": [
@@ -8,6 +8,7 @@
     "request_id",
     "state",
     "params_fingerprint",
+    "capability",
     "risk_family",
     "short_code",
     "expires_at",
@@ -16,7 +17,7 @@
   ],
   "properties": {
     "contract_version": {
-      "const": "act.clearance.v1"
+      "const": "act.clearance.v2"
     },
     "request_id": {
       "type": "string",
@@ -47,7 +48,8 @@
       "type": ["string", "null"]
     },
     "capability": {
-      "type": ["string", "null"]
+      "type": "string",
+      "description": "Tower-recognized capability identifier. In v2 this is core; v1 AgenticKVM extension capability remains accepted with deprecation audit."
     },
     "params_fingerprint": {
       "type": "string",

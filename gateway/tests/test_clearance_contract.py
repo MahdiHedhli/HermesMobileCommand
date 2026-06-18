@@ -111,7 +111,8 @@ def test_poll_and_status_shapes_carry_canonical_clearance_fields(
         assert body["operator_message"] == approval["operator_message"]
         assert body["audit_correlation_id"] == "akvm-audit-123"
         assert body["tower_id"] == "node_test"
-        assert body["contract_version"] == "act.clearance.v1"
+        assert body["contract_version"] == "act.clearance.v2"
+        assert body["capability"] == approval["capability"]
         assert body["proof"]["signature"] == approval["proof"]["signature"]
 
 
@@ -210,7 +211,7 @@ def test_params_fingerprint_and_requester_identity_are_tower_authoritative(
     )
     assert approval["params_fingerprint"] == expected_fingerprint
     assert approval["params_fingerprint"] != "aircraft-supplied-wrong-fingerprint"
-    assert approval["aircraft"] == "runtime:local"
+    assert approval["aircraft"] == "node_test:agent_runtime"
     assert approval["requested_by"] == "runtime:local"
 
     audit = signed_request(

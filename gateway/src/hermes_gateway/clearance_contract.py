@@ -16,7 +16,7 @@ from .notification_composer import compose_notification
 from .schemas import MobileNotifyRequest
 from .security import canonical_json, content_hash, now_utc
 
-CONTRACT_VERSION = "act.clearance.v1"
+CONTRACT_VERSION = "act.clearance.v2"
 PROOF_ALGORITHM = "Ed25519"
 PROOF_CANONICALIZATION = "ACT-CLEARANCE-PROOF-V1"
 PROOF_BOUND_FIELDS = [

@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from conftest import pair_device, signed_request
 from hermes_gateway.clearance_contract import (
     ClearanceProofMaterial,
+    build_params_fingerprint,
     extensions_digest,
     proof_material_from_approval,
     tower_public_key_b64,
@@ -144,11 +145,59 @@ def test_operator_message_secret_is_sanitized_and_raw_absent_from_audit(
     assert "token_like_text_detected" in audit_text
 
 
+def test_extensions_round_trip_are_fingerprint_covered_and_act_opaque(
+    client: TestClient,
+) -> None:
+    approval = _runtime_approval(
+        client,
+        extensions={
+            "agentickvm": {
+                "target": "vm-alpha",
+                "provider": "local",
+                "capability": "power-cycle",
+                "risk_summary": "Restart the VM after operator clearance.",
+                "policy_context": {
+                    "requested_channel": "local_terminal",
+                    "deployment_trust_context": "trusted_host",
+                },
+            }
+        },
+    )
+
+    assert approval["extensions"]["agentickvm"]["target"] == "vm-alpha"
+    assert approval["extensions"]["agentickvm"]["policy_context"]["requested_channel"] == (
+        "local_terminal"
+    )
+    assert approval["state"] == "pending"
+
+    expected_fingerprint = build_params_fingerprint(
+        payload_redacted=approval["full_payload_redacted"],
+        extensions=approval["extensions"],
+    )
+    assert approval["params_fingerprint"] == expected_fingerprint
+
+    mutated_extensions = {
+        "agentickvm": approval["extensions"]["agentickvm"] | {"capability": "snapshot-delete"}
+    }
+    assert build_params_fingerprint(
+        payload_redacted=approval["full_payload_redacted"],
+        extensions=mutated_extensions,
+    ) != approval["params_fingerprint"]
+
+    material = proof_material_from_approval(approval)
+    assert not verify_clearance_proof(
+        public_key_b64=tower_public_key_b64(client.app.state.settings),
+        material=replace(material, extensions_digest=extensions_digest(mutated_extensions)),
+        proof=approval["proof"],
+    )
+
+
 def _runtime_approval(
     client: TestClient,
     *,
     operator_message: str | None = None,
     audit_correlation_id: str | None = None,
+    extensions: dict[str, dict] | None = None,
 ) -> dict:
     payload = {
         "requested_tool": "shell",
@@ -159,7 +208,8 @@ def _runtime_approval(
         "agent_id": "agent_runtime",
         "session_id": "sess_runtime",
         "expires_in_seconds": 300,
-        "extensions": {
+        "extensions": extensions
+        or {
             "agentickvm": {
                 "target": "vm-alpha",
                 "provider": "local",

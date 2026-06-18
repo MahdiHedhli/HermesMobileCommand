@@ -813,7 +813,10 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                     full_payload_redacted_json, payload_hash, resource_scope, state,
                     options_json, requested_at, expires_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?
+                )
                 """,
                 (
                     approval["approval_id"],

@@ -84,7 +84,7 @@ from .schemas import (
     VoiceMessage,
     VoiceSession,
 )
-from .security import content_hash, expires_in, has_secret_text, new_token, now_utc, parse_utc
+from .security import expires_in, has_secret_text, new_token, now_utc, parse_utc
 from .signing import VerifiedDevice, verify_signed_request
 from .store import SQLiteStore
 from .tui import LocalPtyManager, validate_tui_frame, validate_tui_request

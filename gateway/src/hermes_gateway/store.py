@@ -214,6 +214,7 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                     command TEXT NOT NULL,
                     working_directory TEXT NOT NULL,
                     risk_level TEXT NOT NULL,
+                    risk_family TEXT NOT NULL DEFAULT 'external_effect',
                     risk_label TEXT NOT NULL DEFAULT 'high-risk terminal',
                     output_retention_enabled INTEGER NOT NULL DEFAULT 0,
                     audit_refs_json TEXT NOT NULL,
@@ -467,6 +468,12 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                 "TEXT NOT NULL DEFAULT '{}'",
             )
             self._ensure_column(db, "approval_requests", "decided_at", "TEXT")
+            self._ensure_column(
+                db,
+                "tui_sessions",
+                "risk_family",
+                "TEXT NOT NULL DEFAULT 'external_effect'",
+            )
             self._ensure_column(
                 db,
                 "tui_sessions",
@@ -1000,10 +1007,11 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                 """
                 INSERT INTO tui_sessions (
                     session_id, agent_id, node_id, user_device_id, state, command,
-                    working_directory, risk_level, risk_label, output_retention_enabled,
+                    working_directory, risk_level, risk_family, risk_label,
+                    output_retention_enabled,
                     audit_refs_json, created_at, last_activity_at, closed_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session["session_id"],
@@ -1014,6 +1022,7 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                     session["command"],
                     session["working_directory"],
                     session["risk_level"],
+                    session.get("risk_family", "external_effect"),
                     session.get("risk_label", "high-risk terminal"),
                     1 if session.get("output_retention_enabled", False) else 0,
                     json.dumps(session.get("audit_refs", [])),

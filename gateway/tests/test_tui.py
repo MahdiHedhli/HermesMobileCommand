@@ -9,7 +9,9 @@ from starlette.websockets import WebSocketDisconnect
 
 from conftest import pair_device, signed_request
 from hermes_gateway.app import create_app
+from hermes_gateway.clearance_contract import build_params_fingerprint
 from hermes_gateway.config import Settings
+from hermes_gateway.security import expires_in
 
 
 @pytest.fixture()
@@ -19,6 +21,27 @@ def tui_client(tmp_path: Path) -> TestClient:
         node_id="node_tui",
         node_display_name="TUI Hermes",
         node_fingerprint="tui-fingerprint",
+        gateway_base_url="http://127.0.0.1:8787/v1",
+        database_path=str(tmp_path / "gateway.sqlite3"),
+        pairing_ttl_seconds=60,
+        tui_enable_local_pty=True,
+        tui_allowed_commands=(command,),
+        tui_default_command=command,
+        tui_allowed_working_directory=str(tmp_path),
+        tui_command_risk_family={command: "read_only"},
+        tui_max_sessions=3,
+    )
+    with TestClient(create_app(settings), client=("127.0.0.1", 50000)) as test_client:
+        yield test_client
+
+
+@pytest.fixture()
+def high_risk_tui_client(tmp_path: Path) -> TestClient:
+    command = _cat_command()
+    settings = Settings(
+        node_id="node_tui_high",
+        node_display_name="TUI Hermes",
+        node_fingerprint="tui-high-fingerprint",
         gateway_base_url="http://127.0.0.1:8787/v1",
         database_path=str(tmp_path / "gateway.sqlite3"),
         pairing_ttl_seconds=60,
@@ -87,6 +110,175 @@ def test_tui_session_creation_when_enabled(tui_client: TestClient) -> None:
     assert session["risk_label"] == "operator terminal - high risk"
     assert session["output_retention_enabled"] is False
     _signed_close_tui(tui_client, paired, session["session_id"])
+
+
+def test_high_risk_tui_start_without_bound_clearance_rejected(
+    high_risk_tui_client: TestClient,
+) -> None:
+    _grant_tui_capability(high_risk_tui_client)
+    paired = _pair_tui_device(high_risk_tui_client)
+
+    response = _signed_create_tui(high_risk_tui_client, paired)
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "missing_clearance"
+
+
+def test_tui_client_risk_level_cannot_downgrade_unmapped_command(
+    high_risk_tui_client: TestClient,
+) -> None:
+    _grant_tui_capability(high_risk_tui_client)
+    paired = _pair_tui_device(high_risk_tui_client)
+
+    response = _signed_create_tui(high_risk_tui_client, paired, risk_level="low")
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "missing_clearance"
+
+
+def test_high_risk_tui_start_rejects_denied_expired_mismatched_and_local_clearance(
+    high_risk_tui_client: TestClient,
+) -> None:
+    _grant_tui_capability(high_risk_tui_client)
+    paired = _pair_tui_operator_device(high_risk_tui_client)
+    command = _cat_command()
+    workdir = high_risk_tui_client.app.state.settings.tui_allowed_working_directory
+
+    cases = [
+        _seed_tui_clearance(
+            high_risk_tui_client,
+            command=command,
+            working_directory=workdir,
+            state="denied",
+        ),
+        _seed_tui_clearance(
+            high_risk_tui_client,
+            command=command,
+            working_directory=workdir,
+            expires_at="2000-01-01T00:00:00Z",
+        ),
+        _seed_tui_clearance(
+            high_risk_tui_client,
+            command=command,
+            working_directory=workdir,
+            payload_working_directory="/tmp/mismatch",
+        ),
+        _seed_tui_clearance(
+            high_risk_tui_client,
+            command=command,
+            working_directory=workdir,
+            channel="local_terminal",
+            eligible_channels=["mobile_signed"],
+        ),
+    ]
+
+    for approval in cases:
+        response = _signed_create_tui(
+            high_risk_tui_client,
+            paired,
+            approval_id=approval["approval_id"],
+            session_context_id="tui",
+        )
+        assert response.status_code == 403
+
+
+def test_high_risk_tui_start_accepts_mobile_clearance_and_consumes_it(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(
+        node_id="node_tui_shell_bound",
+        node_display_name="TUI Hermes",
+        node_fingerprint="tui-shell-bound-fingerprint",
+        gateway_base_url="http://127.0.0.1:8787/v1",
+        database_path=str(tmp_path / "gateway.sqlite3"),
+        pairing_ttl_seconds=60,
+        tui_enable_local_pty=True,
+        tui_allowed_commands=("/bin/sh",),
+        tui_default_command="/bin/sh",
+        tui_allowed_working_directory=str(tmp_path),
+        tui_allow_shell_commands=True,
+    )
+    with TestClient(create_app(settings), client=("127.0.0.1", 50000)) as client:
+        _grant_tui_capability(client)
+        paired = _pair_tui_operator_device(client)
+        approval = _create_and_approve_tui_clearance(
+            client,
+            paired,
+            command="/bin/sh",
+            working_directory=settings.tui_allowed_working_directory,
+        )
+
+        response = _signed_create_tui(
+            client,
+            paired,
+            command="/bin/sh",
+            approval_id=approval["approval_id"],
+            session_context_id="tui",
+        )
+
+        assert response.status_code == 201
+        session = response.json()
+        assert session["risk_family"] == "external_effect"
+        consumed = client.app.state.store.get_approval(approval["approval_id"])
+        assert consumed["decision_metadata"]["tui_consumed_by"] == session["session_id"]
+
+        second = _signed_create_tui(
+            client,
+            paired,
+            command="/bin/sh",
+            approval_id=approval["approval_id"],
+            session_context_id="tui",
+        )
+        assert second.status_code == 403
+        assert second.json()["detail"] == "not_consumed"
+        _signed_close_tui(client, paired, session["session_id"])
+
+
+def test_shell_allowlist_requires_explicit_opt_in(tmp_path: Path) -> None:
+    settings = Settings(
+        node_id="node_tui_shell",
+        node_display_name="TUI Hermes",
+        node_fingerprint="tui-shell-fingerprint",
+        gateway_base_url="http://127.0.0.1:8787/v1",
+        database_path=str(tmp_path / "gateway.sqlite3"),
+        pairing_ttl_seconds=60,
+        tui_enable_local_pty=True,
+        tui_allowed_commands=("/bin/sh",),
+        tui_default_command="/bin/sh",
+        tui_allowed_working_directory=str(tmp_path),
+    )
+    with TestClient(create_app(settings), client=("127.0.0.1", 50000)) as client:
+        _grant_tui_capability(client)
+        paired = _pair_tui_device(client)
+
+        response = _signed_create_tui(client, paired, command="/bin/sh")
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "TUI shell commands require explicit opt-in"
+
+
+def test_shell_allowlist_with_opt_in_still_requires_high_risk_clearance(tmp_path: Path) -> None:
+    settings = Settings(
+        node_id="node_tui_shell_opt",
+        node_display_name="TUI Hermes",
+        node_fingerprint="tui-shell-opt-fingerprint",
+        gateway_base_url="http://127.0.0.1:8787/v1",
+        database_path=str(tmp_path / "gateway.sqlite3"),
+        pairing_ttl_seconds=60,
+        tui_enable_local_pty=True,
+        tui_allowed_commands=("/bin/sh",),
+        tui_default_command="/bin/sh",
+        tui_allowed_working_directory=str(tmp_path),
+        tui_allow_shell_commands=True,
+    )
+    with TestClient(create_app(settings), client=("127.0.0.1", 50000)) as client:
+        _grant_tui_capability(client)
+        paired = _pair_tui_device(client)
+
+        response = _signed_create_tui(client, paired, command="/bin/sh")
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "missing_clearance"
 
 
 def test_tui_command_not_allowlisted_rejected(tui_client: TestClient) -> None:
@@ -224,6 +416,7 @@ def test_tui_expired_attach_token_rejected(tmp_path: Path) -> None:
         tui_allowed_commands=(command,),
         tui_default_command=command,
         tui_allowed_working_directory=str(tmp_path),
+        tui_command_risk_family={command: "read_only"},
         tui_attach_token_ttl_seconds=-1,
     )
     with TestClient(create_app(settings), client=("127.0.0.1", 50000)) as client:
@@ -305,18 +498,28 @@ def _signed_create_tui(
     *,
     command: str | None = None,
     working_directory: str | None = None,
+    risk_level: str | None = None,
+    approval_id: str | None = None,
+    session_context_id: str | None = None,
 ) -> object:
+    body = {
+        "agent_id": "agent_mock",
+        "command": command,
+        "working_directory": working_directory,
+    }
+    if risk_level is not None:
+        body["risk_level"] = risk_level
+    if approval_id is not None:
+        body["approval_id"] = approval_id
+    if session_context_id is not None:
+        body["session_context_id"] = session_context_id
     return signed_request(
         client,
         "POST",
         "/v1/tui/sessions",
         private_key=paired["private_key"],
         device_id=paired["device"]["device_id"],
-        json_body={
-            "agent_id": "agent_mock",
-            "command": command,
-            "working_directory": working_directory,
-        },
+        json_body=body,
     )
 
 
@@ -369,6 +572,10 @@ def _pair_tui_device(client: TestClient) -> dict:
     return pair_device(client, requested_permissions=["read_state", "tui"])
 
 
+def _pair_tui_operator_device(client: TestClient) -> dict:
+    return pair_device(client, requested_permissions=["read_state", "tui", "approve"])
+
+
 def _grant_tui_capability(client: TestClient) -> None:
     store = client.app.state.store
     settings = client.app.state.settings
@@ -378,3 +585,86 @@ def _grant_tui_capability(client: TestClient) -> None:
         {"name": "tui", "status": "available"},
     ]
     store.upsert_agent({**agent, "capabilities": capabilities})
+
+
+def _create_and_approve_tui_clearance(
+    client: TestClient,
+    paired: dict,
+    *,
+    command: str,
+    working_directory: str,
+) -> dict:
+    approval = _seed_tui_clearance(
+        client,
+        command=command,
+        working_directory=working_directory,
+        state="pending",
+        decision_metadata={},
+    )
+    response = signed_request(
+        client,
+        "POST",
+        f"/v1/approvals/{approval['approval_id']}/approve_once",
+        private_key=paired["private_key"],
+        device_id=paired["device"]["device_id"],
+    )
+    assert response.status_code == 200, response.text
+    return client.app.state.store.get_approval(approval["approval_id"])
+
+
+def _seed_tui_clearance(
+    client: TestClient,
+    *,
+    command: str,
+    working_directory: str,
+    payload_working_directory: str | None = None,
+    state: str = "approved",
+    channel: str = "mobile_signed",
+    eligible_channels: list[str] | None = None,
+    expires_at: str | None = None,
+    decision_metadata: dict | None = None,
+) -> dict:
+    payload = {
+        "command": command,
+        "working_directory": payload_working_directory
+        or str(Path(working_directory).expanduser().resolve()),
+    }
+    metadata = decision_metadata
+    if metadata is None:
+        metadata = {
+            "channel": channel,
+            "risk_family": "external_effect",
+            "eligibility_result": "allowed",
+            "eligible_channels": eligible_channels or ["mobile_signed"],
+        }
+    approval = {
+        "approval_id": f"appr_tui_{len(client.app.state.store.list_approvals())}",
+        "action_id": "act_tui_start",
+        "node_id": client.app.state.settings.node_id,
+        "agent_id": "agent_mock",
+        "session_id": "tui",
+        "requested_tool": "tui.start",
+        "risk_level": "high",
+        "risk_category": "terminal",
+        "risk_family": "external_effect",
+        "params_fingerprint": build_params_fingerprint(
+            payload_redacted=payload,
+            extensions={},
+        ),
+        "summary": "Start a TUI command",
+        "full_payload_redacted": payload,
+        "resource_scope": working_directory,
+        "state": state,
+        "options": ["approve_once", "deny"],
+        "expires_at": expires_at or expires_in(300).isoformat().replace("+00:00", "Z"),
+    }
+    created = client.app.state.store.create_approval(approval)
+    if state != "pending":
+        client.app.state.store.resolve_approval(
+            created["approval_id"],
+            state,
+            decision_scope="once" if state == "approved" else None,
+            decision_metadata=metadata,
+        )
+        return client.app.state.store.get_approval(created["approval_id"])
+    return created

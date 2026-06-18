@@ -457,6 +457,7 @@ class CreateTuiSessionRequest(StrictModel):
     agent_id: str = "agent_mock"
     node_id: str | None = None
     session_context_id: str | None = None
+    approval_id: str | None = None
     command: str | None = None
     working_directory: str | None = None
     risk_level: RiskLevel = "high"
@@ -474,6 +475,7 @@ class TuiSession(BaseModel):
     last_activity_at: datetime
     closed_at: datetime | None = None
     risk_level: RiskLevel
+    risk_family: RiskFamily = "external_effect"
     risk_label: str
     output_retention_enabled: bool = False
     audit_refs: list[str] = Field(default_factory=list)

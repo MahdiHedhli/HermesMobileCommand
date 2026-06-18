@@ -37,6 +37,8 @@ class Settings:
     tui_allowed_commands: tuple[str, ...] = ("/bin/sh",)
     tui_default_command: str = "/bin/sh"
     tui_allowed_working_directory: str = "."
+    tui_command_risk_family: dict[str, str] | None = None
+    tui_allow_shell_commands: bool = False
     tui_max_sessions: int = 2
     tui_idle_timeout_seconds: int = 900
     tui_attach_token_ttl_seconds: int = 60
@@ -79,6 +81,11 @@ class Settings:
             tui_allowed_working_directory=os.getenv(
                 "HERMES_TUI_ALLOWED_WORKING_DIRECTORY",
                 cls.tui_allowed_working_directory,
+            ),
+            tui_command_risk_family=_map_env("HERMES_TUI_COMMAND_RISK_FAMILY"),
+            tui_allow_shell_commands=_bool_env(
+                "HERMES_TUI_ALLOW_SHELL_COMMANDS",
+                cls.tui_allow_shell_commands,
             ),
             tui_max_sessions=int(os.getenv("HERMES_TUI_MAX_SESSIONS", str(cls.tui_max_sessions))),
             tui_idle_timeout_seconds=int(
@@ -144,4 +151,17 @@ def _risk_channel_map_env() -> dict[str, tuple[str, ...]] | None:
         mapping[risk.strip()] = tuple(
             channel.strip() for channel in channels.split(",") if channel.strip()
         )
+    return mapping
+
+
+def _map_env(name: str) -> dict[str, str] | None:
+    raw = os.getenv(name)
+    if not raw:
+        return None
+    mapping: dict[str, str] = {}
+    for entry in raw.split(";"):
+        if not entry.strip() or "=" not in entry:
+            continue
+        key, value = entry.split("=", 1)
+        mapping[key.strip()] = value.strip()
     return mapping

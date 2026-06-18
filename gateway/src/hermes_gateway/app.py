@@ -11,9 +11,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from .capabilities import require_device_capability, require_runtime_capability
 from .clearance_contract import (
     build_clearance_contract_fields,
+    build_params_fingerprint,
     sanitize_operator_message,
 )
 from .clearance_policy import (
+    LOW_RISK_FAMILIES,
     ClearanceChannelPolicy,
     decision_metadata,
     enforce_clearance_channel,
@@ -21,6 +23,7 @@ from .clearance_policy import (
     risk_family_from_request,
 )
 from .config import Settings
+from .handoff import _require_bound_clearance
 from .handoff import engage_handoff as _engage_handoff
 from .ids import new_id
 from .local_binding import HermesLocalCaller, verify_hermes_local_request
@@ -87,7 +90,12 @@ from .schemas import (
 from .security import expires_in, has_secret_text, new_token, now_utc, parse_utc
 from .signing import VerifiedDevice, verify_signed_request
 from .store import SQLiteStore
-from .tui import LocalPtyManager, validate_tui_frame, validate_tui_request
+from .tui import (
+    LocalPtyManager,
+    tui_command_risk_family,
+    validate_tui_frame,
+    validate_tui_request,
+)
 
 DEFAULT_PERMISSIONS = ["read_state", "chat", "approve", "intervene"]
 
@@ -889,6 +897,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             command=payload.command,
             working_directory=payload.working_directory,
         )
+        risk_family = tui_command_risk_family(resolved_settings, command)
+        params_fingerprint = build_params_fingerprint(
+            payload_redacted={
+                "command": command,
+                "working_directory": working_directory,
+            },
+            extensions={},
+        )
+        clearance, clearance_metadata = _require_tui_start_clearance(
+            store=store,
+            node_id=node_id,
+            agent_id=payload.agent_id,
+            work_ref=payload.session_context_id or "tui",
+            risk_family=risk_family,
+            clearance_ref=payload.approval_id,
+            params_fingerprint=params_fingerprint,
+            request_id=_request_id(request),
+            device=device,
+        )
         session_id = new_id("tui")
         _require_tui_capability(store, node_id=node_id, agent_id=payload.agent_id)
         session = store.create_tui_session(
@@ -901,6 +928,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "command": command,
                 "working_directory": working_directory,
                 "risk_level": payload.risk_level,
+                "risk_family": risk_family,
                 "risk_label": _tui_risk_label(payload.risk_level),
                 "output_retention_enabled": resolved_settings.tui_output_retention_enabled,
             }
@@ -921,6 +949,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
                 "TUI session failed to start",
             ) from exc
+        if clearance is not None:
+            store.update_approval_decision_metadata(
+                clearance["approval_id"],
+                {
+                    "tui_consumed_by": session_id,
+                    "tui_consumed_at": now_utc().isoformat().replace("+00:00", "Z"),
+                },
+            )
 
         audit = store.append_audit_event(
             event_type="tui_session_created",
@@ -934,6 +970,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "command": command,
                 "working_directory": working_directory,
                 "risk_level": payload.risk_level,
+                "risk_family": risk_family,
+                "clearance_ref": payload.approval_id,
+                "channel": clearance_metadata.get("channel"),
+                "decision": "started",
+                "eligibility_result": clearance_metadata.get("eligibility_result"),
                 "hermes_session_id": payload.session_context_id,
             },
         )
@@ -951,6 +992,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "command": command,
                     "working_directory": working_directory,
                     "risk_level": payload.risk_level,
+                    "risk_family": risk_family,
+                    "approval_id": payload.approval_id,
                 },
             }
         )
@@ -2376,6 +2419,36 @@ def _tui_risk_label(risk_level: str) -> str:
         "high": "operator terminal - high risk",
         "critical": "operator terminal - critical risk",
     }.get(risk_level, "operator terminal - high risk")
+
+
+def _require_tui_start_clearance(
+    *,
+    store: SQLiteStore,
+    node_id: str,
+    agent_id: str,
+    work_ref: str,
+    risk_family: str,
+    clearance_ref: str | None,
+    params_fingerprint: str,
+    request_id: str,
+    device: VerifiedDevice,
+) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    if risk_family in LOW_RISK_FAMILIES:
+        return None, {"eligibility_result": "not_required"}
+    return _require_bound_clearance(
+        store=store,
+        handoff_kind="tui_start",
+        handoff_ref="new",
+        node_id=node_id,
+        agent_id=agent_id,
+        work_ref=work_ref,
+        risk_family=risk_family,
+        clearance_ref=clearance_ref,
+        request_id=request_id,
+        actor_type="device",
+        actor_id=device.device_id,
+        params_fingerprint=params_fingerprint,
+    )
 
 
 def _owned_tui_session(

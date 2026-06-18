@@ -136,7 +136,8 @@ def _require_bound_clearance(
     checks = {
         "approved": approval.get("state") == "approved",
         "not_expired": parse_utc(approval["expires_at"]) > now_utc(),
-        "not_consumed": not metadata.get("handoff_consumed_by"),
+        "not_consumed": not metadata.get("handoff_consumed_by")
+        and not metadata.get("tui_consumed_by"),
         "same_node": approval.get("node_id") == node_id,
         "same_actor": approval.get("agent_id") == agent_id,
         "same_work": approval.get("session_id") == work_ref,

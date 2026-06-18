@@ -9,6 +9,7 @@ from typing import Any
 
 from fastapi import HTTPException, status
 
+from .clearance_policy import ALL_RISK_FAMILIES
 from .config import Settings
 from .security import now_utc, parse_utc
 from .store import SQLiteStore
@@ -196,6 +197,11 @@ def validate_tui_request(
         raise HTTPException(status.HTTP_403_FORBIDDEN, "TUI command allowlist is empty")
     if selected_command not in allowed_commands:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "TUI command is not allowlisted")
+    if is_shell_command(selected_command) and not settings.tui_allow_shell_commands:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "TUI shell commands require explicit opt-in",
+        )
 
     allowed_root = Path(settings.tui_allowed_working_directory).expanduser().resolve()
     requested_workdir = Path(working_directory or allowed_root).expanduser().resolve()
@@ -208,6 +214,22 @@ def validate_tui_request(
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "TUI working directory invalid")
 
     return selected_command, str(requested_workdir)
+
+
+def tui_command_risk_family(settings: Settings, command: str) -> str:
+    if is_shell_command(command):
+        return "external_effect"
+    mapped = (settings.tui_command_risk_family or {}).get(command)
+    if mapped in ALL_RISK_FAMILIES:
+        return mapped
+    return "external_effect"
+
+
+def is_shell_command(command: str) -> bool:
+    name = Path(command).name
+    if command in {"/usr/bin/env sh", "/usr/bin/env bash"}:
+        return True
+    return name in {"sh", "bash", "zsh", "fish", "ksh", "dash", "csh", "tcsh"}
 
 
 def validate_tui_frame(raw: Any) -> dict[str, Any]:

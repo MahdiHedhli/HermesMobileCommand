@@ -15,6 +15,7 @@ boundary is the backend-neutral `RuntimeAdapter` seam.
 - [System architecture](architecture/system-architecture.md)
 - [Threat model](security/threat-model.md)
 - [API contract](api/openapi.yaml)
+- [Canonical clearance contract](../contracts/clearance/README.md)
 - [Roadmap](roadmap-next.md)
 - [Parking lot](parking-lot.md)
 

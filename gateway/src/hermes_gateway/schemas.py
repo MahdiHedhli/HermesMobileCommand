@@ -11,6 +11,7 @@ Permission = Literal[
     "approve",
     "intervene",
     "manage_devices",
+    "manage_capabilities",
     "voice",
     "tui",
     "browser_assist",
@@ -45,7 +46,7 @@ MissionState = Literal[
     "cancelled",
 ]
 ApprovalState = Literal["pending", "approved", "denied", "expired", "cancelled"]
-ClearanceContractVersion = Literal["act.clearance.v1"]
+ClearanceContractVersion = Literal["act.clearance.v1", "act.clearance.v2"]
 RiskLevel = Literal["low", "medium", "high", "critical"]
 RiskFamily = Literal[
     "observe",
@@ -252,6 +253,7 @@ class Agent(BaseModel):
     current_tool: str | None = None
     current_target: str | None = None
     deployment_trust_context: DeploymentTrustContext = "untrusted_host"
+    require_classified_capabilities: bool = False
     tags: list[str] = Field(default_factory=list)
     capabilities: list[Capability] = Field(default_factory=list)
     last_seen_at: datetime | None = None
@@ -312,6 +314,7 @@ class ApprovalRequest(BaseModel):
     agent_id: str
     session_id: str
     requested_tool: str
+    capability: str | None = None
     risk_level: RiskLevel
     risk_category: str | None = None
     risk_family: RiskFamily = "external_effect"
@@ -320,7 +323,7 @@ class ApprovalRequest(BaseModel):
     operator_message: str | None = None
     audit_correlation_id: str | None = None
     tower_id: str | None = None
-    contract_version: ClearanceContractVersion = "act.clearance.v1"
+    contract_version: ClearanceContractVersion = "act.clearance.v2"
     proof: dict[str, Any] | None = None
     extensions: dict[str, dict[str, Any]] = Field(default_factory=dict)
     extensions_digest: str | None = None
@@ -348,6 +351,7 @@ class CreateApprovalRequest(StrictModel):
     node_id: str | None = None
     risk_category: str | None = None
     risk_family: RiskFamily
+    capability: str | None = None
     params_fingerprint: str | None = None
     operator_message: str | None = None
     audit_correlation_id: str | None = None
@@ -373,6 +377,7 @@ class HermesApprovalRequestedRequest(StrictModel):
     node_id: str | None = None
     risk_category: str | None = None
     risk_family: RiskFamily
+    capability: str | None = None
     operator_message: str | None = None
     audit_correlation_id: str | None = None
     short_code: str | None = None
@@ -393,6 +398,7 @@ class ApprovalStatusResponse(BaseModel):
     selected_scope: ApprovalScope | None = None
     decided_at: datetime | None = None
     decision_metadata: dict[str, Any] | None = None
+    capability: str | None = None
     risk_family: RiskFamily = "external_effect"
     expires_at: datetime | None = None
     params_fingerprint: str | None = None
@@ -401,7 +407,7 @@ class ApprovalStatusResponse(BaseModel):
     audit_correlation_id: str | None = None
     reason: str | None = None
     tower_id: str | None = None
-    contract_version: ClearanceContractVersion = "act.clearance.v1"
+    contract_version: ClearanceContractVersion = "act.clearance.v2"
     proof: dict[str, Any] | None = None
     extensions: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
@@ -641,6 +647,36 @@ class CreateCapabilityGrantRequest(StrictModel):
     expires_at: datetime | None = None
 
 
+class CapabilityRiskProposalEntry(StrictModel):
+    capability: str
+    risk_family: RiskFamily
+
+
+class CapabilityRiskProposalRequest(StrictModel):
+    node_id: str | None = None
+    agent_id: str
+    entries: list[CapabilityRiskProposalEntry]
+
+
+class CapabilityRiskDecisionRequest(StrictModel):
+    decision: Literal["approve", "reject"]
+
+
+class CapabilityRiskRegistryEntry(BaseModel):
+    entry_id: str
+    node_id: str
+    agent_id: str
+    aircraft: str
+    capability: str
+    risk_family: RiskFamily
+    status: Literal["pending", "approved"]
+    version: int
+    proposed_at: datetime
+    proposed_by: str
+    approved_by: str | None = None
+    approved_at: datetime | None = None
+
+
 class OperatorSession(BaseModel):
     session_id: str
     session_type: OperatorSessionType
@@ -662,6 +698,7 @@ class RuntimeApprovalResult(BaseModel):
     decided_at: datetime | None = None
     decision_metadata: dict[str, Any] = Field(default_factory=dict)
     responses: list[ApprovalResponse] = Field(default_factory=list)
+    capability: str | None = None
     risk_family: RiskFamily = "external_effect"
     expires_at: datetime | None = None
     params_fingerprint: str | None = None
@@ -670,7 +707,7 @@ class RuntimeApprovalResult(BaseModel):
     audit_correlation_id: str | None = None
     reason: str | None = None
     tower_id: str | None = None
-    contract_version: ClearanceContractVersion = "act.clearance.v1"
+    contract_version: ClearanceContractVersion = "act.clearance.v2"
     proof: dict[str, Any] | None = None
     extensions: dict[str, dict[str, Any]] = Field(default_factory=dict)
 

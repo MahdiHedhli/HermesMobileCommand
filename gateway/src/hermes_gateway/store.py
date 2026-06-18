@@ -117,6 +117,7 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                     current_tool TEXT,
                     current_target TEXT,
                     deployment_trust_context TEXT NOT NULL DEFAULT 'untrusted_host',
+                    require_classified_capabilities INTEGER NOT NULL DEFAULT 0,
                     tags_json TEXT NOT NULL,
                     capabilities_json TEXT NOT NULL,
                     last_seen_at TEXT,
@@ -159,6 +160,7 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                     agent_id TEXT NOT NULL,
                     session_id TEXT NOT NULL,
                     requested_tool TEXT NOT NULL,
+                    capability TEXT,
                     risk_level TEXT NOT NULL,
                     risk_category TEXT,
                     risk_family TEXT NOT NULL DEFAULT 'external_effect',
@@ -167,7 +169,7 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                     operator_message TEXT,
                     audit_correlation_id TEXT,
                     tower_id TEXT,
-                    contract_version TEXT NOT NULL DEFAULT 'act.clearance.v1',
+                    contract_version TEXT NOT NULL DEFAULT 'act.clearance.v2',
                     proof_json TEXT NOT NULL DEFAULT '{}',
                     extensions_json TEXT NOT NULL DEFAULT '{}',
                     extensions_digest TEXT,
@@ -360,6 +362,21 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                     expires_at TEXT
                 );
 
+                CREATE TABLE IF NOT EXISTS capability_risk_registry (
+                    entry_id TEXT PRIMARY KEY,
+                    node_id TEXT NOT NULL,
+                    agent_id TEXT NOT NULL,
+                    aircraft TEXT NOT NULL,
+                    capability TEXT NOT NULL,
+                    risk_family TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    version INTEGER NOT NULL,
+                    proposed_at TEXT NOT NULL,
+                    proposed_by TEXT NOT NULL,
+                    approved_by TEXT,
+                    approved_at TEXT
+                );
+
                 CREATE TABLE IF NOT EXISTS audit_events (
                     sequence INTEGER PRIMARY KEY AUTOINCREMENT,
                     audit_event_id TEXT NOT NULL UNIQUE,
@@ -407,6 +424,12 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                 "deployment_trust_context",
                 "TEXT NOT NULL DEFAULT 'untrusted_host'",
             )
+            _ensure_column(
+                db,
+                "agents",
+                "require_classified_capabilities",
+                "INTEGER NOT NULL DEFAULT 0",
+            )
             db.execute(
                 """
                 UPDATE agents
@@ -434,6 +457,7 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                 "TEXT NOT NULL DEFAULT 'external_effect'",
             )
             _ensure_column(db, "approval_requests", "params_fingerprint", "TEXT")
+            _ensure_column(db, "approval_requests", "capability", "TEXT")
             _ensure_column(db, "approval_requests", "short_code", "TEXT")
             _ensure_column(db, "approval_requests", "operator_message", "TEXT")
             _ensure_column(db, "approval_requests", "audit_correlation_id", "TEXT")
@@ -442,7 +466,7 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                 db,
                 "approval_requests",
                 "contract_version",
-                "TEXT NOT NULL DEFAULT 'act.clearance.v1'",
+                "TEXT NOT NULL DEFAULT 'act.clearance.v2'",
             )
             _ensure_column(
                 db,
@@ -587,15 +611,24 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                 )
             except KeyError:
                 agent["deployment_trust_context"] = "untrusted_host"
+        if "require_classified_capabilities" not in agent:
+            try:
+                existing = self.get_agent(agent["node_id"], agent["agent_id"])
+                agent["require_classified_capabilities"] = existing.get(
+                    "require_classified_capabilities",
+                    False,
+                )
+            except KeyError:
+                agent["require_classified_capabilities"] = False
         with self.connect() as db:
             db.execute(
                 """
                 INSERT INTO agents (
                     agent_id, node_id, display_name, agent_kind, status, active_session_id,
-                    current_tool, current_target, deployment_trust_context, tags_json,
-                    capabilities_json, last_seen_at
+                    current_tool, current_target, deployment_trust_context,
+                    require_classified_capabilities, tags_json, capabilities_json, last_seen_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(node_id, agent_id) DO UPDATE SET
                     display_name=excluded.display_name,
                     agent_kind=excluded.agent_kind,
@@ -604,6 +637,7 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                     current_tool=excluded.current_tool,
                     current_target=excluded.current_target,
                     deployment_trust_context=excluded.deployment_trust_context,
+                    require_classified_capabilities=excluded.require_classified_capabilities,
                     tags_json=excluded.tags_json,
                     capabilities_json=excluded.capabilities_json,
                     last_seen_at=excluded.last_seen_at
@@ -618,6 +652,7 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                     agent.get("current_tool"),
                     agent.get("current_target"),
                     agent.get("deployment_trust_context", "untrusted_host"),
+                    1 if agent.get("require_classified_capabilities") else 0,
                     json.dumps(agent.get("tags", [])),
                     json.dumps(agent.get("capabilities", [])),
                     agent.get("last_seen_at") or utc_iso(),
@@ -633,6 +668,9 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
         if row is None:
             raise KeyError(agent_id)
         agent = dict(row)
+        agent["require_classified_capabilities"] = bool(
+            agent.get("require_classified_capabilities")
+        )
         agent["tags"] = json.loads(agent.pop("tags_json"))
         agent["capabilities"] = json.loads(agent.pop("capabilities_json"))
         return agent
@@ -669,6 +707,9 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
         agents = []
         for row in rows:
             agent = dict(row)
+            agent["require_classified_capabilities"] = bool(
+                agent.get("require_classified_capabilities")
+            )
             agent["tags"] = json.loads(agent.pop("tags_json"))
             agent["capabilities"] = json.loads(agent.pop("capabilities_json"))
             agents.append(agent)
@@ -814,6 +855,7 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                 """
                 INSERT INTO approval_requests (
                     approval_id, action_id, node_id, agent_id, session_id, requested_tool,
+                    capability,
                     risk_level, risk_category, risk_family, params_fingerprint, short_code,
                     operator_message, audit_correlation_id, tower_id, contract_version,
                     proof_json, extensions_json, extensions_digest, aircraft, requested_by, summary,
@@ -822,7 +864,7 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                 )
                 VALUES (
                     ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
                 """,
                 (
@@ -832,6 +874,7 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                     approval["agent_id"],
                     approval["session_id"],
                     approval["requested_tool"],
+                    approval.get("capability"),
                     approval["risk_level"],
                     approval.get("risk_category"),
                     approval.get("risk_family", "external_effect"),
@@ -840,7 +883,7 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                     approval.get("operator_message"),
                     approval.get("audit_correlation_id"),
                     approval.get("tower_id"),
-                    approval.get("contract_version", "act.clearance.v1"),
+                    approval.get("contract_version", "act.clearance.v2"),
                     json.dumps(approval.get("proof") or {}),
                     json.dumps(approval.get("extensions") or {}),
                     approval.get("extensions_digest"),
@@ -857,6 +900,147 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                 ),
             )
         return self.get_approval(approval["approval_id"])
+
+    def create_capability_risk_entry(self, entry: dict[str, Any]) -> dict[str, Any]:
+        proposed_at = entry.get("proposed_at") or utc_iso()
+        version = entry.get("version") or self.next_capability_risk_version(
+            node_id=entry["node_id"],
+            agent_id=entry["agent_id"],
+            capability=entry["capability"],
+        )
+        with self.connect() as db:
+            db.execute(
+                """
+                INSERT INTO capability_risk_registry (
+                    entry_id, node_id, agent_id, aircraft, capability, risk_family,
+                    status, version, proposed_at, proposed_by, approved_by, approved_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    entry["entry_id"],
+                    entry["node_id"],
+                    entry["agent_id"],
+                    entry["aircraft"],
+                    entry["capability"],
+                    entry["risk_family"],
+                    entry.get("status", "pending"),
+                    version,
+                    proposed_at,
+                    entry["proposed_by"],
+                    entry.get("approved_by"),
+                    entry.get("approved_at"),
+                ),
+            )
+        return self.get_capability_risk_entry(entry["entry_id"])
+
+    def next_capability_risk_version(
+        self,
+        *,
+        node_id: str,
+        agent_id: str,
+        capability: str,
+    ) -> int:
+        with self.connect() as db:
+            row = db.execute(
+                """
+                SELECT MAX(version) AS max_version
+                FROM capability_risk_registry
+                WHERE node_id = ? AND agent_id = ? AND capability = ?
+                """,
+                (node_id, agent_id, capability),
+            ).fetchone()
+        return int(row["max_version"] or 0) + 1
+
+    def get_capability_risk_entry(self, entry_id: str) -> dict[str, Any]:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM capability_risk_registry WHERE entry_id = ?",
+                (entry_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(entry_id)
+        return dict(row)
+
+    def list_capability_risk_entries(
+        self,
+        *,
+        node_id: str | None = None,
+        agent_id: str | None = None,
+        status: str | None = None,
+    ) -> list[dict[str, Any]]:
+        where = []
+        args: list[Any] = []
+        if node_id:
+            where.append("node_id = ?")
+            args.append(node_id)
+        if agent_id:
+            where.append("agent_id = ?")
+            args.append(agent_id)
+        if status:
+            where.append("status = ?")
+            args.append(status)
+        sql = "SELECT * FROM capability_risk_registry"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY proposed_at DESC"
+        with self.connect() as db:
+            rows = db.execute(sql, tuple(args)).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_approved_capability_risk(
+        self,
+        *,
+        node_id: str,
+        agent_id: str,
+        capability: str,
+    ) -> dict[str, Any] | None:
+        with self.connect() as db:
+            row = db.execute(
+                """
+                SELECT *
+                FROM capability_risk_registry
+                WHERE node_id = ?
+                  AND agent_id = ?
+                  AND capability = ?
+                  AND status = 'approved'
+                ORDER BY version DESC, approved_at DESC
+                LIMIT 1
+                """,
+                (node_id, agent_id, capability),
+            ).fetchone()
+        return dict(row) if row else None
+
+    def approve_capability_risk_entry(
+        self,
+        *,
+        entry_id: str,
+        approved_by: str,
+    ) -> dict[str, Any]:
+        approved_at = utc_iso()
+        with self.connect() as db:
+            cursor = db.execute(
+                """
+                UPDATE capability_risk_registry
+                SET status = 'approved', approved_by = ?, approved_at = ?
+                WHERE entry_id = ? AND status = 'pending'
+                """,
+                (approved_by, approved_at, entry_id),
+            )
+        if cursor.rowcount == 0:
+            raise KeyError(entry_id)
+        return self.get_capability_risk_entry(entry_id)
+
+    def reject_capability_risk_entry(self, entry_id: str) -> dict[str, Any]:
+        entry = self.get_capability_risk_entry(entry_id)
+        if entry["status"] != "pending":
+            raise KeyError(entry_id)
+        with self.connect() as db:
+            db.execute(
+                "DELETE FROM capability_risk_registry WHERE entry_id = ?",
+                (entry_id,),
+            )
+        return entry
 
     def get_approval(self, approval_id: str) -> dict[str, Any]:
         with self.connect() as db:
@@ -934,7 +1118,7 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
         )
         approval["proof"] = json.loads(approval.pop("proof_json", "{}") or "{}") or None
         approval["extensions"] = json.loads(approval.pop("extensions_json", "{}") or "{}")
-        approval["contract_version"] = approval.get("contract_version") or "act.clearance.v1"
+        approval["contract_version"] = approval.get("contract_version") or "act.clearance.v2"
         approval.pop("decision_actor_device_id", None)
         approval.pop("payload_hash", None)
         approval.pop("requested_at", None)

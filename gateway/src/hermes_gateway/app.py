@@ -2022,7 +2022,7 @@ def _create_approval_request(
         payload_redacted=payload.full_payload_redacted,
         extensions=payload.extensions,
         risk_family=risk_family,
-        expires_at=payload.expires_at.isoformat(),
+        expires_at=payload.expires_at.isoformat().replace("+00:00", "Z"),
         requested_short_code=payload.short_code,
     )
     operator_message, operator_message_audit = sanitize_operator_message(
@@ -2056,7 +2056,7 @@ def _create_approval_request(
             "resource_scope": payload.resource_scope,
             "state": "pending",
             "options": payload.options or ["deny"],
-            "expires_at": payload.expires_at.isoformat(),
+            "expires_at": payload.expires_at.isoformat().replace("+00:00", "Z"),
         }
     )
     store.append_audit_event(

@@ -1,0 +1,31 @@
+{
+  "tower_public_key": "OGpHYc-bD8rOc-IQfh8jWn6nO1gc3qpEvm8EbHXXWAc",
+  "material": {
+    "approval_id": "appr_test_vector",
+    "params_fingerprint": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+    "short_code": "ABC123DEF0",
+    "risk_family": "external_effect",
+    "expires_at": "2026-06-18T12:00:00Z",
+    "tower_id": "tower_test",
+    "contract_version": "act.clearance.v1",
+    "extensions_digest": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "proof": {
+    "algorithm": "Ed25519",
+    "canonicalization": "ACT-CLEARANCE-PROOF-V1",
+    "key_id": "tower:tower_test",
+    "signed_at": "2026-06-18T12:00:01Z",
+    "fields": [
+      "approval_id",
+      "params_fingerprint",
+      "short_code",
+      "risk_family",
+      "expires_at",
+      "tower_id",
+      "contract_version",
+      "extensions_digest"
+    ],
+    "extensions_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+    "signature": "TVHXYcAhQTn8oh9uF-QPrn_7nmtNVakgT4JX9KDxh0stPBlGCI7uv9eXAlR4KrudzhkZJiFZKgzUFYCog-l5Cg"
+  }
+}

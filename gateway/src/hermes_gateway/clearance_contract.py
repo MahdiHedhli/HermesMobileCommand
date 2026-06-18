@@ -61,7 +61,7 @@ def extensions_digest(extensions: dict[str, Any] | None) -> str:
 
 
 def build_short_code(approval_id: str, params_fingerprint: str) -> str:
-    return hashlib.sha256(f"{approval_id}:{params_fingerprint}".encode("utf-8")).hexdigest()[
+    return hashlib.sha256(f"{approval_id}:{params_fingerprint}".encode()).hexdigest()[
         :10
     ].upper()
 

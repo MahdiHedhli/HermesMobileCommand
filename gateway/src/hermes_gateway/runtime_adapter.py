@@ -583,7 +583,7 @@ class HermesRuntimeAdapter:
             risk_category=payload.risk_category,
             risk_level=payload.risk_level,
         )
-        expires_at = expires_in(payload.expires_in_seconds).isoformat()
+        expires_at = expires_in(payload.expires_in_seconds).isoformat().replace("+00:00", "Z")
         contract_fields = build_clearance_contract_fields(
             settings=self.settings,
             approval_id=approval_id,

@@ -163,6 +163,16 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                     risk_category TEXT,
                     risk_family TEXT NOT NULL DEFAULT 'external_effect',
                     params_fingerprint TEXT,
+                    short_code TEXT,
+                    operator_message TEXT,
+                    audit_correlation_id TEXT,
+                    tower_id TEXT,
+                    contract_version TEXT NOT NULL DEFAULT 'act.clearance.v1',
+                    proof_json TEXT NOT NULL DEFAULT '{}',
+                    extensions_json TEXT NOT NULL DEFAULT '{}',
+                    extensions_digest TEXT,
+                    aircraft TEXT,
+                    requested_by TEXT,
                     summary TEXT NOT NULL,
                     full_payload_redacted_json TEXT NOT NULL,
                     payload_hash TEXT NOT NULL,
@@ -423,6 +433,31 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                 "TEXT NOT NULL DEFAULT 'external_effect'",
             )
             _ensure_column(db, "approval_requests", "params_fingerprint", "TEXT")
+            _ensure_column(db, "approval_requests", "short_code", "TEXT")
+            _ensure_column(db, "approval_requests", "operator_message", "TEXT")
+            _ensure_column(db, "approval_requests", "audit_correlation_id", "TEXT")
+            _ensure_column(db, "approval_requests", "tower_id", "TEXT")
+            _ensure_column(
+                db,
+                "approval_requests",
+                "contract_version",
+                "TEXT NOT NULL DEFAULT 'act.clearance.v1'",
+            )
+            _ensure_column(
+                db,
+                "approval_requests",
+                "proof_json",
+                "TEXT NOT NULL DEFAULT '{}'",
+            )
+            _ensure_column(
+                db,
+                "approval_requests",
+                "extensions_json",
+                "TEXT NOT NULL DEFAULT '{}'",
+            )
+            _ensure_column(db, "approval_requests", "extensions_digest", "TEXT")
+            _ensure_column(db, "approval_requests", "aircraft", "TEXT")
+            _ensure_column(db, "approval_requests", "requested_by", "TEXT")
             self._ensure_column(db, "approval_requests", "decision_scope", "TEXT")
             self._ensure_column(db, "approval_requests", "decision_actor_device_id", "TEXT")
             self._ensure_column(
@@ -772,11 +807,13 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                 """
                 INSERT INTO approval_requests (
                     approval_id, action_id, node_id, agent_id, session_id, requested_tool,
-                    risk_level, risk_category, risk_family, params_fingerprint, summary,
+                    risk_level, risk_category, risk_family, params_fingerprint, short_code,
+                    operator_message, audit_correlation_id, tower_id, contract_version,
+                    proof_json, extensions_json, extensions_digest, aircraft, requested_by, summary,
                     full_payload_redacted_json, payload_hash, resource_scope, state,
                     options_json, requested_at, expires_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     approval["approval_id"],
@@ -789,6 +826,16 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                     approval.get("risk_category"),
                     approval.get("risk_family", "external_effect"),
                     approval.get("params_fingerprint") or content_hash(payload),
+                    approval.get("short_code"),
+                    approval.get("operator_message"),
+                    approval.get("audit_correlation_id"),
+                    approval.get("tower_id"),
+                    approval.get("contract_version", "act.clearance.v1"),
+                    json.dumps(approval.get("proof") or {}),
+                    json.dumps(approval.get("extensions") or {}),
+                    approval.get("extensions_digest"),
+                    approval.get("aircraft"),
+                    approval.get("requested_by"),
                     approval["summary"],
                     json.dumps(payload),
                     approval.get("payload_hash") or content_hash(payload),
@@ -875,6 +922,9 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
         approval["decision_metadata"] = json.loads(
             approval.pop("decision_metadata_json", "{}") or "{}"
         )
+        approval["proof"] = json.loads(approval.pop("proof_json", "{}") or "{}") or None
+        approval["extensions"] = json.loads(approval.pop("extensions_json", "{}") or "{}")
+        approval["contract_version"] = approval.get("contract_version") or "act.clearance.v1"
         approval.pop("decision_actor_device_id", None)
         approval.pop("payload_hash", None)
         approval.pop("requested_at", None)

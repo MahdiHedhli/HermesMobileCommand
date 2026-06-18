@@ -9,6 +9,10 @@ from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSock
 from fastapi.middleware.cors import CORSMiddleware
 
 from .capabilities import require_device_capability, require_runtime_capability
+from .clearance_contract import (
+    build_clearance_contract_fields,
+    sanitize_operator_message,
+)
 from .clearance_policy import (
     ClearanceChannelPolicy,
     decision_metadata,
@@ -422,6 +426,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 node_ref=payload.node_id,
                 risk_category=payload.risk_category,
                 risk_family=payload.risk_family,
+                operator_message=payload.operator_message,
+                audit_correlation_id=payload.audit_correlation_id,
+                short_code=payload.short_code,
+                params_fingerprint=payload.params_fingerprint,
+                extensions=payload.extensions,
+                aircraft=payload.aircraft,
+                requested_by=payload.requested_by,
                 resource_scope=payload.resource_scope,
             ),
             request_id=_request_id(request),
@@ -433,7 +444,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         approval_id: str,
         _caller: HermesLocalCaller = hermes_local_dependency,
     ) -> RuntimeApprovalResult:
-        return runtime_adapter.check_clearance(approval_id).raw
+        return runtime_adapter.check_clearance(approval_id).result
 
     @app.post("/v1/runtime/approvals/{approval_id}/cancel", response_model=RuntimeApprovalResult)
     def runtime_cancel_approval(
@@ -445,7 +456,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             approval_id,
             request_id=_request_id(request),
             actor_ref="runtime",
-        ).raw
+        ).result
 
     @app.post(
         "/v1/runtime/tua/requests",
@@ -568,6 +579,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             settings=resolved_settings,
             request=request,
             payload=payload,
+            caller=_caller,
         )
 
     @app.post(
@@ -600,6 +612,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             settings=resolved_settings,
             request=request,
             payload=approval_payload,
+            caller=_caller,
         )
 
     @app.post("/v1/hermes/tools/approval_status", response_model=ApprovalStatusResponse)
@@ -618,6 +631,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             selected_scope=approval["decision_scope"] if approval["state"] == "approved" else None,
             decided_at=approval["decided_at"],
             decision_metadata=approval["decision_metadata"],
+            risk_family=approval["risk_family"],
+            expires_at=approval["expires_at"],
+            params_fingerprint=approval["params_fingerprint"],
+            short_code=approval.get("short_code"),
+            operator_message=approval.get("operator_message"),
+            audit_correlation_id=approval.get("audit_correlation_id"),
+            reason=(approval["decision_metadata"] or {}).get("reason"),
+            tower_id=approval.get("tower_id"),
+            contract_version=approval.get("contract_version") or "act.clearance.v1",
+            proof=approval.get("proof"),
+            extensions=approval.get("extensions") or {},
         )
 
     @app.get("/v1/approvals")
@@ -1983,12 +2007,34 @@ def _create_approval_request(
     settings: Settings,
     request: Request,
     payload: CreateApprovalRequest,
+    caller: HermesLocalCaller,
 ) -> ApprovalRequest:
     node_id = payload.node_id or settings.node_id
     approval_id = new_id("appr")
-    params_fingerprint = payload.params_fingerprint or content_hash(
-        payload.full_payload_redacted
+    risk_family = risk_family_from_request(
+        risk_family=payload.risk_family,
+        risk_category=payload.risk_category,
+        risk_level=payload.risk_level,
     )
+    contract_fields = build_clearance_contract_fields(
+        settings=settings,
+        approval_id=approval_id,
+        payload_redacted=payload.full_payload_redacted,
+        extensions=payload.extensions,
+        risk_family=risk_family,
+        expires_at=payload.expires_at.isoformat(),
+        requested_short_code=payload.short_code,
+    )
+    operator_message, operator_message_audit = sanitize_operator_message(
+        raw_message=payload.operator_message,
+        settings=settings,
+        agent_id=payload.agent_id,
+        session_id=payload.session_id,
+        risk_family=risk_family,
+        requested_tool=payload.requested_tool,
+    )
+    aircraft = f"local:{caller.host or 'unknown'}"
+    requested_by = f"local:{caller.host or 'unknown'}"
     approval = store.create_approval(
         {
             "approval_id": approval_id,
@@ -1999,12 +2045,12 @@ def _create_approval_request(
             "requested_tool": payload.requested_tool,
             "risk_level": payload.risk_level,
             "risk_category": payload.risk_category or "unknown_action",
-            "risk_family": risk_family_from_request(
-                risk_family=payload.risk_family,
-                risk_category=payload.risk_category,
-                risk_level=payload.risk_level,
-            ),
-            "params_fingerprint": params_fingerprint,
+            "risk_family": risk_family,
+            **contract_fields,
+            "operator_message": operator_message,
+            "audit_correlation_id": payload.audit_correlation_id,
+            "aircraft": aircraft,
+            "requested_by": requested_by,
             "summary": payload.summary,
             "full_payload_redacted": payload.full_payload_redacted,
             "resource_scope": payload.resource_scope,
@@ -2027,6 +2073,17 @@ def _create_approval_request(
             "risk_level": payload.risk_level,
             "risk_category": payload.risk_category or "unknown_action",
             "risk_family": approval["risk_family"],
+            "operator_message": operator_message_audit,
+            "audit_correlation_id": payload.audit_correlation_id,
+            "ignored_self_declared_fields": [
+                field
+                for field, value in {
+                    "aircraft": payload.aircraft,
+                    "requested_by": payload.requested_by,
+                    "params_fingerprint": payload.params_fingerprint,
+                }.items()
+                if value is not None
+            ],
         },
     )
     store.create_event(

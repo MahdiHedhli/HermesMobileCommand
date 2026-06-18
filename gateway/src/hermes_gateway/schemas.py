@@ -45,6 +45,7 @@ MissionState = Literal[
     "cancelled",
 ]
 ApprovalState = Literal["pending", "approved", "denied", "expired", "cancelled"]
+ClearanceContractVersion = Literal["act.clearance.v1"]
 RiskLevel = Literal["low", "medium", "high", "critical"]
 RiskFamily = Literal[
     "observe",
@@ -315,6 +316,16 @@ class ApprovalRequest(BaseModel):
     risk_category: str | None = None
     risk_family: RiskFamily = "external_effect"
     params_fingerprint: str
+    short_code: str | None = None
+    operator_message: str | None = None
+    audit_correlation_id: str | None = None
+    tower_id: str | None = None
+    contract_version: ClearanceContractVersion = "act.clearance.v1"
+    proof: dict[str, Any] | None = None
+    extensions: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    extensions_digest: str | None = None
+    aircraft: str | None = None
+    requested_by: str | None = None
     summary: str
     full_payload_redacted: dict[str, Any]
     resource_scope: str | None = None
@@ -338,6 +349,12 @@ class CreateApprovalRequest(StrictModel):
     risk_category: str | None = None
     risk_family: RiskFamily
     params_fingerprint: str | None = None
+    operator_message: str | None = None
+    audit_correlation_id: str | None = None
+    short_code: str | None = None
+    extensions: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    aircraft: str | None = None
+    requested_by: str | None = None
     resource_scope: str | None = None
     options: list[str] = Field(default_factory=lambda: ["approve_once", "deny"])
     expires_at: datetime
@@ -356,6 +373,13 @@ class HermesApprovalRequestedRequest(StrictModel):
     node_id: str | None = None
     risk_category: str | None = None
     risk_family: RiskFamily
+    operator_message: str | None = None
+    audit_correlation_id: str | None = None
+    short_code: str | None = None
+    params_fingerprint: str | None = None
+    extensions: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    aircraft: str | None = None
+    requested_by: str | None = None
     resource_scope: str | None = None
 
 
@@ -369,6 +393,17 @@ class ApprovalStatusResponse(BaseModel):
     selected_scope: ApprovalScope | None = None
     decided_at: datetime | None = None
     decision_metadata: dict[str, Any] | None = None
+    risk_family: RiskFamily = "external_effect"
+    expires_at: datetime | None = None
+    params_fingerprint: str | None = None
+    short_code: str | None = None
+    operator_message: str | None = None
+    audit_correlation_id: str | None = None
+    reason: str | None = None
+    tower_id: str | None = None
+    contract_version: ClearanceContractVersion = "act.clearance.v1"
+    proof: dict[str, Any] | None = None
+    extensions: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 class ApprovalDecisionRequest(StrictModel):
@@ -625,6 +660,17 @@ class RuntimeApprovalResult(BaseModel):
     decided_at: datetime | None = None
     decision_metadata: dict[str, Any] = Field(default_factory=dict)
     responses: list[ApprovalResponse] = Field(default_factory=list)
+    risk_family: RiskFamily = "external_effect"
+    expires_at: datetime | None = None
+    params_fingerprint: str | None = None
+    short_code: str | None = None
+    operator_message: str | None = None
+    audit_correlation_id: str | None = None
+    reason: str | None = None
+    tower_id: str | None = None
+    contract_version: ClearanceContractVersion = "act.clearance.v1"
+    proof: dict[str, Any] | None = None
+    extensions: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 class RuntimeTuaResult(BaseModel):

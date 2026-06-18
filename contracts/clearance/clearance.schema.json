@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentic-control-tower.local/contracts/clearance/act.clearance.v1.schema.json",
+  "title": "Agentic Control Tower Clearance Contract",
+  "type": "object",
+  "required": [
+    "contract_version",
+    "request_id",
+    "state",
+    "params_fingerprint",
+    "risk_family",
+    "short_code",
+    "expires_at",
+    "tower_id",
+    "proof"
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "act.clearance.v1"
+    },
+    "request_id": {
+      "type": "string",
+      "description": "Canonical clearance request identifier. ACT approval_id maps to request_id."
+    },
+    "approval_id": {
+      "type": "string",
+      "description": "Backward-compatible ACT approval identifier."
+    },
+    "state": {
+      "$ref": "#/$defs/clearance_state"
+    },
+    "aircraft": {
+      "type": ["string", "null"],
+      "description": "Tower-derived backend/runtime identity."
+    },
+    "requested_by": {
+      "type": ["string", "null"],
+      "description": "Tower-derived requester identity."
+    },
+    "session_id": {
+      "type": ["string", "null"]
+    },
+    "target": {
+      "type": ["string", "null"]
+    },
+    "provider": {
+      "type": ["string", "null"]
+    },
+    "capability": {
+      "type": ["string", "null"]
+    },
+    "params_fingerprint": {
+      "type": "string",
+      "description": "Tower-computed SHA-256 hash over canonical redacted payload plus extensions."
+    },
+    "risk_family": {
+      "$ref": "#/$defs/risk_family"
+    },
+    "risk_summary": {
+      "type": ["string", "null"]
+    },
+    "operator_message": {
+      "type": ["string", "null"],
+      "description": "ACT-composed/sanitized operator-visible message, never raw aircraft text."
+    },
+    "created_at": {
+      "type": ["string", "null"],
+      "format": "date-time"
+    },
+    "expires_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "short_code": {
+      "type": "string"
+    },
+    "policy_context": {
+      "type": ["object", "null"],
+      "additionalProperties": true
+    },
+    "audit_correlation_id": {
+      "type": ["string", "null"]
+    },
+    "tower_id": {
+      "type": "string"
+    },
+    "reason": {
+      "type": ["string", "null"]
+    },
+    "proof": {
+      "$ref": "#/$defs/proof"
+    },
+    "extensions": {
+      "$ref": "#/$defs/extensions"
+    }
+  },
+  "$defs": {
+    "clearance_state": {
+      "enum": ["pending", "approved", "denied", "expired", "cancelled"]
+    },
+    "risk_family": {
+      "enum": [
+        "observe",
+        "read_only",
+        "routine",
+        "external_effect",
+        "destructive",
+        "credential_or_secret",
+        "safety_critical",
+        "irreversible"
+      ]
+    },
+    "proof": {
+      "type": "object",
+      "required": ["algorithm", "canonicalization", "key_id", "fields", "signature"],
+      "properties": {
+        "algorithm": {
+          "const": "Ed25519"
+        },
+        "canonicalization": {
+          "const": "ACT-CLEARANCE-PROOF-V1"
+        },
+        "key_id": {
+          "type": "string"
+        },
+        "signed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "extensions_digest": {
+          "type": "string"
+        },
+        "signature": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "extensions": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": true
+      },
+      "properties": {
+        "agentickvm": {
+          "$ref": "#/$defs/agentickvm_extension"
+        }
+      }
+    },
+    "agentickvm_extension": {
+      "type": "object",
+      "properties": {
+        "target": {
+          "type": ["string", "null"]
+        },
+        "provider": {
+          "type": ["string", "null"]
+        },
+        "capability": {
+          "type": ["string", "null"]
+        },
+        "risk_summary": {
+          "type": ["string", "null"]
+        },
+        "policy_context": {
+          "type": ["object", "null"],
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

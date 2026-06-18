@@ -6,6 +6,10 @@ from typing import Any, Protocol
 from fastapi import HTTPException, status
 
 from .capabilities import require_runtime_capability
+from .clearance_contract import (
+    build_clearance_contract_fields,
+    sanitize_operator_message,
+)
 from .clearance_policy import risk_family_from_request
 from .config import Settings
 from .handoff import engage_handoff as _engage_handoff
@@ -84,6 +88,13 @@ class RuntimeClearanceRequest:
     risk_category: str | None = None
     risk_family: str = "external_effect"
     resource_scope: str | None = None
+    operator_message: str | None = None
+    audit_correlation_id: str | None = None
+    short_code: str | None = None
+    params_fingerprint: str | None = None
+    extensions: dict[str, dict[str, Any]] | None = None
+    aircraft: str | None = None
+    requested_by: str | None = None
 
 
 @dataclass(frozen=True)
@@ -102,7 +113,7 @@ class RuntimeClearanceDecision:
     alternate_directive: str | None
     user_message: str | None
     constraints: list[dict[str, Any]]
-    raw: Any
+    result: RuntimeApprovalResult
 
 
 @dataclass(frozen=True)
@@ -258,6 +269,13 @@ class HermesRuntimeAdapter:
                 node_id=clearance.node_ref,
                 risk_category=clearance.risk_category,
                 risk_family=clearance.risk_family,
+                operator_message=clearance.operator_message,
+                audit_correlation_id=clearance.audit_correlation_id,
+                short_code=clearance.short_code,
+                params_fingerprint=clearance.params_fingerprint,
+                extensions=clearance.extensions or {},
+                aircraft=clearance.aircraft,
+                requested_by=clearance.requested_by,
                 resource_scope=clearance.resource_scope,
             ),
             request_id=request_id,
@@ -284,7 +302,7 @@ class HermesRuntimeAdapter:
             constraints=[constraint.model_dump() for constraint in latest.constraints]
             if latest
             else [],
-            raw=result,
+            result=result,
         )
 
     def cancel_clearance(
@@ -560,6 +578,29 @@ class HermesRuntimeAdapter:
     ) -> ApprovalRequest:
         node_id = payload.node_id or self.settings.node_id
         approval_id = new_id("appr")
+        risk_family = risk_family_from_request(
+            risk_family=payload.risk_family,
+            risk_category=payload.risk_category,
+            risk_level=payload.risk_level,
+        )
+        expires_at = expires_in(payload.expires_in_seconds).isoformat()
+        contract_fields = build_clearance_contract_fields(
+            settings=self.settings,
+            approval_id=approval_id,
+            payload_redacted=payload.payload_redacted,
+            extensions=payload.extensions,
+            risk_family=risk_family,
+            expires_at=expires_at,
+            requested_short_code=payload.short_code,
+        )
+        operator_message, operator_message_audit = sanitize_operator_message(
+            raw_message=payload.operator_message,
+            settings=self.settings,
+            agent_id=payload.agent_id,
+            session_id=payload.session_id,
+            risk_family=risk_family,
+            requested_tool=payload.requested_tool,
+        )
         approval = self.store.create_approval(
             {
                 "approval_id": approval_id,
@@ -570,17 +611,18 @@ class HermesRuntimeAdapter:
                 "requested_tool": payload.requested_tool,
                 "risk_level": payload.risk_level,
                 "risk_category": payload.risk_category or "unknown_action",
-                "risk_family": risk_family_from_request(
-                    risk_family=payload.risk_family,
-                    risk_category=payload.risk_category,
-                    risk_level=payload.risk_level,
-                ),
+                "risk_family": risk_family,
+                **contract_fields,
+                "operator_message": operator_message,
+                "audit_correlation_id": payload.audit_correlation_id,
+                "aircraft": "runtime:local",
+                "requested_by": "runtime:local",
                 "summary": payload.summary,
                 "full_payload_redacted": payload.payload_redacted,
                 "resource_scope": payload.resource_scope,
                 "state": "pending",
                 "options": _approval_options_from_scopes(payload.suggested_scopes),
-                "expires_at": expires_in(payload.expires_in_seconds).isoformat(),
+                "expires_at": expires_at,
             }
         )
         self._set_agent_runtime_state(
@@ -604,6 +646,17 @@ class HermesRuntimeAdapter:
                 "risk_level": payload.risk_level,
                 "risk_category": payload.risk_category or "unknown_action",
                 "risk_family": approval["risk_family"],
+                "operator_message": operator_message_audit,
+                "audit_correlation_id": payload.audit_correlation_id,
+                "ignored_self_declared_fields": [
+                    field
+                    for field, value in {
+                        "aircraft": payload.aircraft,
+                        "requested_by": payload.requested_by,
+                        "params_fingerprint": payload.params_fingerprint,
+                    }.items()
+                    if value is not None
+                ],
             },
         )
         self.store.create_event(
@@ -639,6 +692,17 @@ class HermesRuntimeAdapter:
             decided_at=approval["decided_at"],
             decision_metadata=approval["decision_metadata"] or {},
             responses=responses,
+            risk_family=approval["risk_family"],
+            expires_at=approval["expires_at"],
+            params_fingerprint=approval["params_fingerprint"],
+            short_code=approval.get("short_code"),
+            operator_message=approval.get("operator_message"),
+            audit_correlation_id=approval.get("audit_correlation_id"),
+            reason=(approval["decision_metadata"] or {}).get("reason"),
+            tower_id=approval.get("tower_id"),
+            contract_version=approval.get("contract_version") or "act.clearance.v1",
+            proof=approval.get("proof"),
+            extensions=approval.get("extensions") or {},
         )
 
     def cancel_approval(

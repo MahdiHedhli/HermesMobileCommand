@@ -6,6 +6,7 @@ from typing import Any, Protocol
 from fastapi import HTTPException, status
 
 from .capabilities import require_runtime_capability
+from .capability_registry import capability_from_request, resolve_capability_risk
 from .clearance_contract import (
     build_clearance_contract_fields,
     sanitize_operator_message,
@@ -87,6 +88,7 @@ class RuntimeClearanceRequest:
     node_ref: str | None = None
     risk_category: str | None = None
     risk_family: str = "external_effect"
+    capability: str | None = None
     resource_scope: str | None = None
     operator_message: str | None = None
     audit_correlation_id: str | None = None
@@ -269,6 +271,7 @@ class HermesRuntimeAdapter:
                 node_id=clearance.node_ref,
                 risk_category=clearance.risk_category,
                 risk_family=clearance.risk_family,
+                capability=clearance.capability,
                 operator_message=clearance.operator_message,
                 audit_correlation_id=clearance.audit_correlation_id,
                 short_code=clearance.short_code,
@@ -583,6 +586,23 @@ class HermesRuntimeAdapter:
             risk_category=payload.risk_category,
             risk_level=payload.risk_level,
         )
+        capability, from_extension = capability_from_request(
+            capability=payload.capability,
+            extensions=payload.extensions,
+        )
+        resolution = resolve_capability_risk(
+            store=self.store,
+            settings=self.settings,
+            node_id=node_id,
+            agent_id=payload.agent_id,
+            session_id=payload.session_id,
+            capability=capability,
+            requested_risk_family=risk_family,
+            request_id=request_id,
+            actor_type="hermes",
+            actor_id=payload.agent_id,
+        )
+        risk_family = resolution.resolved_risk_family
         expires_at = expires_in(payload.expires_in_seconds).isoformat().replace("+00:00", "Z")
         contract_fields = build_clearance_contract_fields(
             settings=self.settings,
@@ -609,13 +629,14 @@ class HermesRuntimeAdapter:
                 "agent_id": payload.agent_id,
                 "session_id": payload.session_id,
                 "requested_tool": payload.requested_tool,
+                "capability": capability,
                 "risk_level": payload.risk_level,
                 "risk_category": payload.risk_category or "unknown_action",
                 "risk_family": risk_family,
                 **contract_fields,
                 "operator_message": operator_message,
                 "audit_correlation_id": payload.audit_correlation_id,
-                "aircraft": "runtime:local",
+                "aircraft": resolution.aircraft,
                 "requested_by": "runtime:local",
                 "summary": payload.summary,
                 "full_payload_redacted": payload.payload_redacted,
@@ -646,6 +667,9 @@ class HermesRuntimeAdapter:
                 "risk_level": payload.risk_level,
                 "risk_category": payload.risk_category or "unknown_action",
                 "risk_family": approval["risk_family"],
+                "capability": approval.get("capability"),
+                "capability_risk_source": resolution.source,
+                "capability_registry_entry_id": resolution.registry_entry_id,
                 "operator_message": operator_message_audit,
                 "audit_correlation_id": payload.audit_correlation_id,
                 "ignored_self_declared_fields": [
@@ -654,6 +678,7 @@ class HermesRuntimeAdapter:
                         "aircraft": payload.aircraft,
                         "requested_by": payload.requested_by,
                         "params_fingerprint": payload.params_fingerprint,
+                        "capability_extension": "agentickvm.capability" if from_extension else None,
                     }.items()
                     if value is not None
                 ],
@@ -692,6 +717,7 @@ class HermesRuntimeAdapter:
             decided_at=approval["decided_at"],
             decision_metadata=approval["decision_metadata"] or {},
             responses=responses,
+            capability=approval.get("capability"),
             risk_family=approval["risk_family"],
             expires_at=approval["expires_at"],
             params_fingerprint=approval["params_fingerprint"],
@@ -700,7 +726,7 @@ class HermesRuntimeAdapter:
             audit_correlation_id=approval.get("audit_correlation_id"),
             reason=(approval["decision_metadata"] or {}).get("reason"),
             tower_id=approval.get("tower_id"),
-            contract_version=approval.get("contract_version") or "act.clearance.v1",
+            contract_version=approval.get("contract_version") or "act.clearance.v2",
             proof=approval.get("proof"),
             extensions=approval.get("extensions") or {},
         )

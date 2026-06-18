@@ -9,6 +9,12 @@ from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSock
 from fastapi.middleware.cors import CORSMiddleware
 
 from .capabilities import require_device_capability, require_runtime_capability
+from .capability_registry import (
+    aircraft_principal,
+    capability_from_request,
+    create_capability_alert_notification,
+    resolve_capability_risk,
+)
 from .clearance_contract import (
     build_clearance_contract_fields,
     build_params_fingerprint,
@@ -52,6 +58,9 @@ from .schemas import (
     AssistanceSession,
     BrowserAssistanceEventRequest,
     BrowserAssistanceSession,
+    CapabilityRiskDecisionRequest,
+    CapabilityRiskProposalRequest,
+    CapabilityRiskRegistryEntry,
     CreateApprovalRequest,
     CreateApprovalResponseRequest,
     CreateAssistanceMessageRequest,
@@ -280,6 +289,136 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
         return Agent.model_validate(updated)
 
+    @app.post(
+        "/v1/capability-registry/proposals",
+        status_code=status.HTTP_201_CREATED,
+    )
+    def propose_capability_risks(
+        payload: CapabilityRiskProposalRequest,
+        request: Request,
+        _caller: HermesLocalCaller = hermes_local_dependency,
+    ) -> dict[str, list[CapabilityRiskRegistryEntry]]:
+        node_id = payload.node_id or resolved_settings.node_id
+        aircraft = aircraft_principal(node_id=node_id, agent_id=payload.agent_id)
+        entries = []
+        for proposed in payload.entries:
+            entry = store.create_capability_risk_entry(
+                {
+                    "entry_id": new_id("caprisk"),
+                    "node_id": node_id,
+                    "agent_id": payload.agent_id,
+                    "aircraft": aircraft,
+                    "capability": proposed.capability,
+                    "risk_family": proposed.risk_family,
+                    "status": "pending",
+                    "proposed_by": aircraft,
+                }
+            )
+            entries.append(entry)
+            store.append_audit_event(
+                event_type="capability_risk_proposed",
+                actor_type="runtime",
+                actor_id=aircraft,
+                node_id=node_id,
+                agent_id=payload.agent_id,
+                request_id=_request_id(request),
+                payload_redacted={
+                    "capability": proposed.capability,
+                    "risk_family": proposed.risk_family,
+                    "status": "pending",
+                    "version": entry["version"],
+                },
+            )
+        return {
+            "entries": [
+                CapabilityRiskRegistryEntry.model_validate(entry) for entry in entries
+            ]
+        }
+
+    @app.get("/v1/capability-registry")
+    def list_capability_registry(
+        node_id: str | None = None,
+        agent_id: str | None = None,
+        status_filter: str | None = None,
+        device: VerifiedDevice = signed_device_dependency,
+    ) -> dict[str, list[CapabilityRiskRegistryEntry]]:
+        _require_permission(device, "manage_capabilities")
+        return {
+            "entries": [
+                CapabilityRiskRegistryEntry.model_validate(entry)
+                for entry in store.list_capability_risk_entries(
+                    node_id=node_id,
+                    agent_id=agent_id,
+                    status=status_filter,
+                )
+            ]
+        }
+
+    @app.post(
+        "/v1/capability-registry/{entry_id}/decision",
+        response_model=CapabilityRiskRegistryEntry,
+    )
+    def decide_capability_risk(
+        entry_id: str,
+        payload: CapabilityRiskDecisionRequest,
+        request: Request,
+        device: VerifiedDevice = signed_device_dependency,
+    ) -> CapabilityRiskRegistryEntry:
+        _require_permission(device, "manage_capabilities")
+        try:
+            existing = store.get_capability_risk_entry(entry_id)
+            if payload.decision == "approve":
+                is_downgrade = _is_downgrade(store, existing)
+                entry = store.approve_capability_risk_entry(
+                    entry_id=entry_id,
+                    approved_by=device.device_id,
+                )
+                event_type = "capability_risk_approved"
+                audit_payload = {
+                    "capability": entry["capability"],
+                    "risk_family": entry["risk_family"],
+                    "status": "approved",
+                    "version": entry["version"],
+                }
+                if is_downgrade:
+                    create_capability_alert_notification(
+                        store=store,
+                        settings=resolved_settings,
+                        node_id=entry["node_id"],
+                        agent_id=entry["agent_id"],
+                        session_id="capability_registry",
+                        request_id=_request_id(request),
+                        event_type="capability_risk_downgrade_approved",
+                        capability=entry["capability"],
+                        requested_risk_family=entry["risk_family"],
+                        resolved_risk_family=entry["risk_family"],
+                        severity="drift",
+                    )
+            else:
+                entry = store.reject_capability_risk_entry(entry_id)
+                event_type = "capability_risk_rejected"
+                audit_payload = {
+                    "capability": entry["capability"],
+                    "risk_family": entry["risk_family"],
+                    "status": "rejected",
+                    "version": entry["version"],
+                }
+        except KeyError as exc:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                "capability registry entry not found",
+            ) from exc
+        store.append_audit_event(
+            event_type=event_type,
+            actor_type="device",
+            actor_id=device.device_id,
+            node_id=entry["node_id"],
+            agent_id=entry["agent_id"],
+            request_id=_request_id(request),
+            payload_redacted=audit_payload,
+        )
+        return CapabilityRiskRegistryEntry.model_validate(entry)
+
     @app.get("/v1/sessions")
     def list_sessions(
         node_id: str | None = None,
@@ -434,6 +573,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 node_ref=payload.node_id,
                 risk_category=payload.risk_category,
                 risk_family=payload.risk_family,
+                capability=payload.capability,
                 operator_message=payload.operator_message,
                 audit_correlation_id=payload.audit_correlation_id,
                 short_code=payload.short_code,
@@ -606,6 +746,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             agent_id=payload.agent_id,
             session_id=payload.session_id,
             requested_tool=payload.requested_tool,
+            capability=payload.capability,
             risk_level=payload.risk_level,
             risk_category=payload.risk_category,
             risk_family=payload.risk_family,
@@ -639,6 +780,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             selected_scope=approval["decision_scope"] if approval["state"] == "approved" else None,
             decided_at=approval["decided_at"],
             decision_metadata=approval["decision_metadata"],
+            capability=approval.get("capability"),
             risk_family=approval["risk_family"],
             expires_at=approval["expires_at"],
             params_fingerprint=approval["params_fingerprint"],
@@ -647,7 +789,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             audit_correlation_id=approval.get("audit_correlation_id"),
             reason=(approval["decision_metadata"] or {}).get("reason"),
             tower_id=approval.get("tower_id"),
-            contract_version=approval.get("contract_version") or "act.clearance.v1",
+            contract_version=approval.get("contract_version") or "act.clearance.v2",
             proof=approval.get("proof"),
             extensions=approval.get("extensions") or {},
         )
@@ -2059,6 +2201,23 @@ def _create_approval_request(
         risk_category=payload.risk_category,
         risk_level=payload.risk_level,
     )
+    capability, from_extension = capability_from_request(
+        capability=payload.capability,
+        extensions=payload.extensions,
+    )
+    resolution = resolve_capability_risk(
+        store=store,
+        settings=settings,
+        node_id=node_id,
+        agent_id=payload.agent_id,
+        session_id=payload.session_id,
+        capability=capability,
+        requested_risk_family=risk_family,
+        request_id=_request_id(request),
+        actor_type="hermes",
+        actor_id=payload.agent_id,
+    )
+    risk_family = resolution.resolved_risk_family
     contract_fields = build_clearance_contract_fields(
         settings=settings,
         approval_id=approval_id,
@@ -2076,7 +2235,6 @@ def _create_approval_request(
         risk_family=risk_family,
         requested_tool=payload.requested_tool,
     )
-    aircraft = f"local:{caller.host or 'unknown'}"
     requested_by = f"local:{caller.host or 'unknown'}"
     approval = store.create_approval(
         {
@@ -2086,13 +2244,14 @@ def _create_approval_request(
             "agent_id": payload.agent_id,
             "session_id": payload.session_id,
             "requested_tool": payload.requested_tool,
+            "capability": capability,
             "risk_level": payload.risk_level,
             "risk_category": payload.risk_category or "unknown_action",
             "risk_family": risk_family,
             **contract_fields,
             "operator_message": operator_message,
             "audit_correlation_id": payload.audit_correlation_id,
-            "aircraft": aircraft,
+            "aircraft": resolution.aircraft,
             "requested_by": requested_by,
             "summary": payload.summary,
             "full_payload_redacted": payload.full_payload_redacted,
@@ -2116,6 +2275,9 @@ def _create_approval_request(
             "risk_level": payload.risk_level,
             "risk_category": payload.risk_category or "unknown_action",
             "risk_family": approval["risk_family"],
+            "capability": approval.get("capability"),
+            "capability_risk_source": resolution.source,
+            "capability_registry_entry_id": resolution.registry_entry_id,
             "operator_message": operator_message_audit,
             "audit_correlation_id": payload.audit_correlation_id,
             "ignored_self_declared_fields": [
@@ -2124,6 +2286,7 @@ def _create_approval_request(
                     "aircraft": payload.aircraft,
                     "requested_by": payload.requested_by,
                     "params_fingerprint": payload.params_fingerprint,
+                    "capability_extension": "agentickvm.capability" if from_extension else None,
                 }.items()
                 if value is not None
             ],
@@ -2392,6 +2555,30 @@ def _audit_channel_auth_failure(
 def _require_permission(device: VerifiedDevice, permission: str) -> None:
     if permission not in device.permissions:
         raise HTTPException(status.HTTP_403_FORBIDDEN, f"device lacks {permission} permission")
+
+
+def _is_downgrade(store: SQLiteStore, entry: dict[str, Any]) -> bool:
+    approved = store.get_approved_capability_risk(
+        node_id=entry["node_id"],
+        agent_id=entry["agent_id"],
+        capability=entry["capability"],
+    )
+    if approved is None:
+        return False
+    return _risk_rank(entry["risk_family"]) < _risk_rank(approved["risk_family"])
+
+
+def _risk_rank(risk_family: str) -> int:
+    return {
+        "observe": 0,
+        "read_only": 1,
+        "routine": 2,
+        "external_effect": 3,
+        "destructive": 4,
+        "credential_or_secret": 5,
+        "safety_critical": 6,
+        "irreversible": 7,
+    }.get(risk_family, 3)
 
 
 def _require_tui_capability(store: SQLiteStore, *, node_id: str, agent_id: str) -> None:

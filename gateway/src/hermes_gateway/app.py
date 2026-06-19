@@ -120,6 +120,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         store=store,
         settings=resolved_settings,
     )
+    from .push import ApnsPushDispatcher
+
+    push_dispatcher = ApnsPushDispatcher(resolved_settings)
+
+    def _dispatch_clearance_push(approval: dict) -> None:
+        """Best-effort APNs hint to the operator's phone for a new clearance.
+        Hint only — no secrets / no raw aircraft text (ADR-0005)."""
+        if not push_dispatcher.configured:
+            return
+        try:
+            node_id = approval.get("node_id") or resolved_settings.node_id
+            tokens = store.push_targets(node_id)
+            if not tokens:
+                return
+            short_code = approval.get("short_code") or ""
+            risk_family = approval.get("risk_family") or "clearance"
+            push_dispatcher.dispatch_clearance(
+                tokens,
+                title="Clearance required",
+                body=f"An agent needs your approval · {risk_family} · {short_code}",
+                approval_id=approval.get("approval_id") or approval.get("request_id") or "",
+                short_code=short_code,
+            )
+        except Exception:  # never let push break the approval flow
+            pass
+
+    def _create_approval_request_and_notify(**kwargs):
+        result = _create_approval_request(**kwargs)
+        try:
+            _dispatch_clearance_push(result.model_dump())
+        except Exception:
+            pass
+        return result
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -171,7 +204,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "database": "healthy",
                 "pairing": "healthy",
                 "event_stream": "healthy",
-                "push_dispatch": "unavailable",
+                "push_dispatch": "healthy"
+                if resolved_settings.push_configured
+                else "unavailable",
                 "tui_pty": "healthy"
                 if resolved_settings.tui_enable_local_pty
                 else "unavailable",
@@ -722,7 +757,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         request: Request,
         _caller: HermesLocalCaller = hermes_local_dependency,
     ) -> ApprovalRequest:
-        return _create_approval_request(
+        return _create_approval_request_and_notify(
             store=store,
             settings=resolved_settings,
             request=request,
@@ -756,7 +791,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             options=_approval_options_from_scopes(payload.suggested_scopes),
             expires_at=expires_in(payload.expires_in_seconds),
         )
-        return _create_approval_request(
+        return _create_approval_request_and_notify(
             store=store,
             settings=resolved_settings,
             request=request,

@@ -85,6 +85,7 @@ class IdentityStoreMixin:
         permissions: list[str],
         clearance_channel: str = "local_terminal",
         device_key_algorithm: str = "ed25519",
+        push_token: str | None = None,
     ) -> dict[str, Any]:
         device_id = new_id("dev")
         registered_at = utc_iso()
@@ -94,9 +95,9 @@ class IdentityStoreMixin:
                 INSERT INTO devices (
                     device_id, user_id, node_id, device_name, platform, app_instance_id,
                     app_version, device_public_key, device_key_algorithm, clearance_channel,
-                    status, permissions_json, registered_at, last_seen_at
+                    push_token, status, permissions_json, registered_at, last_seen_at
                 )
-                VALUES (?, 'owner', ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
+                VALUES (?, 'owner', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
                 """,
                 (
                     device_id,
@@ -108,12 +109,27 @@ class IdentityStoreMixin:
                     device_public_key,
                     device_key_algorithm,
                     clearance_channel,
+                    push_token,
                     json.dumps(permissions),
                     registered_at,
                     registered_at,
                 ),
             )
         return self.get_device(device_id)
+
+    def push_targets(self, node_id: str) -> list[str]:
+        """Active mobile_signed devices on a node that have a push token."""
+        with self.connect() as db:
+            rows = db.execute(
+                """
+                SELECT push_token FROM devices
+                WHERE node_id = ? AND status = 'active'
+                  AND clearance_channel = 'mobile_signed'
+                  AND push_token IS NOT NULL AND push_token != ''
+                """,
+                (node_id,),
+            ).fetchall()
+        return [row["push_token"] for row in rows]
 
     def get_device(self, device_id: str) -> dict[str, Any]:
         with self.connect() as db:

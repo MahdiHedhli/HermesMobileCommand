@@ -200,6 +200,7 @@ def register_identity_routes(
             permissions=permissions,
             clearance_channel=pairing["clearance_channel"],
             device_key_algorithm=device_key_algorithm,
+            push_token=payload.device.push_token,
         )
         access_token = new_token()
         refresh_token = new_token()

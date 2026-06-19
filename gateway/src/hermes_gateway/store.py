@@ -83,6 +83,7 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                     device_public_key TEXT NOT NULL,
                     device_key_algorithm TEXT NOT NULL DEFAULT 'ed25519',
                     clearance_channel TEXT NOT NULL DEFAULT 'local_terminal',
+                    push_token TEXT,
                     status TEXT NOT NULL,
                     permissions_json TEXT NOT NULL,
                     registered_at TEXT NOT NULL,
@@ -451,6 +452,7 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                 "device_key_algorithm",
                 "TEXT NOT NULL DEFAULT 'ed25519'",
             )
+            _ensure_column(db, "devices", "push_token", "TEXT")
             _ensure_column(
                 db,
                 "pairing_sessions",

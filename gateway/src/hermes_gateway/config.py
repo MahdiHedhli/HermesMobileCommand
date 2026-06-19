@@ -48,6 +48,17 @@ class Settings:
     clearance_local_terminal_enabled: bool = False
     clearance_default_deployment_trust_context: str = "untrusted_host"
     clearance_risk_channel_map: dict[str, tuple[str, ...]] | None = None
+    # APNs push (token-based / .p8 key). Push payloads are wake-up hints only —
+    # no secrets (ADR-0005). Unset => push_dispatch reports "unavailable".
+    apns_key_path: str | None = None
+    apns_key_id: str | None = None
+    apns_team_id: str | None = None
+    apns_topic: str = "app.act.agenticControlTower"
+    apns_environment: str = "production"  # "production" or "sandbox"
+
+    @property
+    def push_configured(self) -> bool:
+        return bool(self.apns_key_path and self.apns_key_id and self.apns_team_id)
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -120,6 +131,11 @@ class Settings:
             ),
             clearance_risk_channel_map=_risk_channel_map_env()
             or dict(cls.default_clearance_risk_channel_map),
+            apns_key_path=os.getenv("APNS_KEY_PATH") or None,
+            apns_key_id=os.getenv("APNS_KEY_ID") or None,
+            apns_team_id=os.getenv("APNS_TEAM_ID") or None,
+            apns_topic=os.getenv("APNS_TOPIC", cls.apns_topic),
+            apns_environment=os.getenv("APNS_ENVIRONMENT", cls.apns_environment),
         )
 
     @property

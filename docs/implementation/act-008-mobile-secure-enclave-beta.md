@@ -84,15 +84,18 @@ Notes:
 
 | Capability (Android) | CC | emulator | DEV (StrongBox/TEE) | GW | store |
 |---|:--:|:--:|:--:|:--:|:--:|
-| Android runner builds (`flutter build apk --debug` ✅) | ✓ | — | — | n/a | — |
+| Android runner builds (`flutter build apk --debug` ✅) + launches/renders | ✓ | ✓ | — | n/a | — |
+| Native Keystore channel registered + Settings stable | ✓ | ✓ | — | — | — |
 | Keystore P-256 key, non-exportable, user-auth-required | ✓ | ⚠️⁷ | — | — | — |
 | BiometricPrompt-gated signing (BIOMETRIC_STRONG \| credential) | ✓ | ⚠️⁷ | — | — | — |
 | Same `act/secure_enclave` channel → gateway P-256 verifies | ✓ | — | — | — | — |
 
 7. Tracks iOS: an **emulator** has only software keymaster (no StrongBox/TEE), so it
-   can prove the flow but is honestly reported `hardwareBacked: false`. A real
+   can prove the flow but would be honestly reported `hardwareBacked: false`. A real
    StrongBox/TEE signature needs a **physical Android device** (none present). The APK
-   builds; emulator launch + real-device verification are next steps.
+   builds and the app launches + renders on the `act_test` (pixel_7, API 35) emulator;
+   key generation round-trips through the channel only after pairing against a reachable
+   gateway (GW). Real-device verification is the remaining step.
 
 **Backend no-regression**: `uv run --project gateway pytest` → 148 passed (was 141).
 `flutter analyze` clean. `flutter test` → 40 passed. `specify check` green

@@ -35,8 +35,9 @@ from typing import Any, Dict, List, Optional
 
 _DEFAULT_GATEWAY = "http://127.0.0.1:8788/v1"
 _DEFAULT_GATED_TOOLS = (
-    "shell,execute_command,run_command,bash,write_file,edit_file,delete_file,"
-    "apply_patch,browser_submit,send_email,git_push"
+    # Real Hermes high-impact tool names + common aliases.
+    "terminal,execute_code,shell,execute_command,run_command,bash,"
+    "write_file,edit_file,delete_file,apply_patch,browser_submit,send_email,git_push"
 )
 
 

@@ -55,9 +55,11 @@ pointed at the live ACT gateway, with the **real paired iPhone** approving.
 | Gateway unreachable | **block** (fail-closed) ✓ |
 | Timeout, no approval (180s/4s) | **block** (fail-closed) ✓ |
 | **Approve on phone** (`git_push`) | `None` after 70s → **tool released**; gateway shows `approved`/`once` by the `p256` Secure-Enclave device ✓ |
+| **In a real Hermes agent run** (`hermes -z`, the model called the `terminal` tool, approved on the phone) | the agent's command **ran** — one-shot printed `hello from hermes`; gateway `appr_fwqEkQurdKY` `terminal` → `approved`/`once` by the `p256` device, 0 sig failures ✓ |
 
-So the full chain is real: **Hermes `pre_tool_call` hook → ACT `/hermes/tools/approval_requested`
-→ phone (real Secure Enclave P-256 + Face ID) → decision → tool released/blocked.**
+So the full chain is real: **Hermes agent → `terminal` tool → `pre_tool_call` hook → ACT
+`/hermes/tools/approval_requested` → phone (real Secure Enclave P-256 + Face ID) → decision
+→ tool released/blocked.**
 
 ## Enabling in a real Hermes session
 
@@ -67,16 +69,17 @@ So the full chain is real: **Hermes `pre_tool_call` hook → ACT `/hermes/tools/
 
 ## Honest limits / open bugs
 
-- **Verified via direct hook invocation**, not yet inside a full Hermes agent run where a
-  model drives a real gated tool call. The hook contract + fail-closed/allow behavior are
-  proven; the in-agent wiring (config-enable + a real tool call) is the remaining step.
-- **BUG — ACT should push-notify the phone for clearances.** Today the only realtime
-  channel is the WebSocket event stream, and `push_dispatch` is `unavailable` (no APNs).
-  When the app is backgrounded or the stream drops, the operator is **not alerted** — they
-  must open/refresh the app. Real APNs (or another push) is needed for production usability.
-- **GAP — WS stream access-token is not auto-refreshed.** The paired-device access token
-  has a 15-min TTL; after it expires the WS `/v1/events/stream` returns `403` and live
-  delivery silently stops (the signed REST path still works on manual refresh). The app
-  should refresh the token (or re-establish the stream) before expiry.
+- **Verified in a real Hermes one-shot agent run** (`hermes -z` + `--yolo` so the ACT hook
+  is the sole gate): the model called the `terminal` tool, the plugin gated it through ACT,
+  the operator approved on the phone, and the tool then ran. Tool→risk mapping is still a
+  static set (gates `terminal`/`execute_code`/… by name); it does not yet consult ACT's
+  capability registry to derive `risk_family` per tool.
+- **BUG (ACT side) — push notifications.** Fixed on the gateway (`push.py` APNs dispatch,
+  fires on clearance creation); needs the operator's APNs `.p8` to configure delivery and
+  the app-side APNs registration. Until deployed, the phone is alerted only via the live WS
+  stream (and must be refreshed manually when that drops).
+- **GAP — WS access-token auto-refresh.** Fixed in the app (`app_runtime` refreshes on a
+  403 and reconnects); not yet deployed to the test device, so the current build still shows
+  the stream dropping after ~15 min.
 - Risk mapping is a static tool list; it does not yet consult ACT's capability registry to
   derive `risk_family` per tool.

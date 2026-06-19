@@ -1,8 +1,14 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'clearance/clearance_proof_verifier.dart' hide base64UrlDecodeNoPadding;
+import 'clearance/tower_key.dart';
+import 'security/secure_enclave_channel.dart';
+import 'security/secure_enclave_signer.dart';
 import 'api/gateway_api_client.dart';
 import 'api/gateway_event_stream_client.dart';
 import 'api/tui_stream_client.dart';
@@ -34,6 +40,8 @@ class HermesAppRuntime extends ChangeNotifier {
 
   final GatewayConfigStore _configStore;
   final SecureKeyStore _keyStore;
+  final SecureEnclaveChannel _enclave = const SecureEnclaveChannel();
+  final ClearanceProofVerifier _proofVerifier = const ClearanceProofVerifier();
   final AlphaRepository _mockRepository = const MockAlphaRepository();
 
   GatewayConfig _config = GatewayConfig.loopback;
@@ -42,6 +50,8 @@ class HermesAppRuntime extends ChangeNotifier {
   String? _refreshToken;
   String? _privateKey;
   String? _publicKey;
+  String? _keyAlgorithm;
+  String? _towerPublicKeyB64;
   String _connectionStatus = 'Not checked';
   String _secureStorageStatus = 'Storage not checked';
   ClearanceKeyProtection _clearanceKeyProtection =
@@ -77,8 +87,9 @@ class HermesAppRuntime extends ChangeNotifier {
   GatewayEvent? get lastEvent => _lastEvent;
   List<GatewayEvent> get recentEvents => List.unmodifiable(_recentEvents);
   PairingSessionModel? get lastPairing => _lastPairing;
-  bool get isPaired =>
-      _deviceId != null && _privateKey != null && _publicKey != null;
+  bool get isPaired => _deviceId != null && _publicKey != null;
+  String? get keyAlgorithm => _keyAlgorithm;
+  bool get isEnclaveBacked => _keyAlgorithm == 'p256';
   bool get hasAccessToken => _accessToken != null && _refreshToken != null;
   String get dataModeLabel => isPaired ? 'Gateway data' : 'Mock alpha data';
 
@@ -146,8 +157,10 @@ class HermesAppRuntime extends ChangeNotifier {
     _refreshToken = await _keyStore.readRefreshToken();
     _privateKey = await _keyStore.readDevicePrivateKey();
     _publicKey = await _keyStore.readDevicePublicKey();
+    _keyAlgorithm = await _keyStore.readDeviceKeyAlgorithm();
+    _towerPublicKeyB64 = await _keyStore.readTowerPublicKey();
     _secureStorageStatus = await _keyStore.storageWarning();
-    _clearanceKeyProtection = await _keyStore.clearanceKeyProtection();
+    _clearanceKeyProtection = await _resolveProtection();
     if (!await _storedDeviceKeyIsValid()) {
       await _keyStore.clear();
       _deviceId = null;
@@ -196,6 +209,63 @@ class HermesAppRuntime extends ChangeNotifier {
   }
 
   Future<void> completePairing(PairingSessionModel session) async {
+    final towerKeyB64 =
+        base64UrlNoPadding(await deriveTowerPublicKey(session.nodeFingerprint));
+    final completion = await (await _enclave.isAvailable()
+        ? _completePairingWithEnclave(session, towerKeyB64)
+        : _completePairingWithSoftwareKey(session, towerKeyB64));
+
+    await _keyStore.saveDeviceSession(
+      deviceId: completion.deviceId,
+      accessToken: completion.accessToken,
+      refreshToken: completion.refreshToken,
+    );
+    _deviceId = completion.deviceId;
+    _accessToken = completion.accessToken;
+    _refreshToken = completion.refreshToken;
+    _towerPublicKeyB64 = towerKeyB64;
+    _clearanceKeyProtection = await _resolveProtection();
+    _lastPairing = null;
+    _connectionStatus = 'Paired with ${completion.node.displayName}';
+    await _restartEventStream();
+    notifyListeners();
+  }
+
+  /// Secure-Enclave path: generate a non-exportable P-256 key, prove key
+  /// possession by signing the pairing challenge inside the enclave, and enrol as
+  /// a `p256` mobile_signed device. No private key is ever stored by the app.
+  Future<PairingCompletionModel> _completePairingWithEnclave(
+    PairingSessionModel session,
+    String towerKeyB64,
+  ) async {
+    final key = await _enclave.generateKey(requireBiometry: true);
+    final possessionProof = await _enclave.sign(
+      data: Uint8List.fromList(utf8.encode(session.challenge)),
+      reason: 'Pair this device with your control tower',
+    );
+    final completion =
+        await PairingRepository(_unsignedApiClient()).completePairing(
+      pairing: session,
+      devicePublicKey: key.publicKeyBase64,
+      deviceKeyAlgorithm: key.algorithm,
+      devicePossessionProof: possessionProof,
+    );
+    await _keyStore.saveDeviceEnrollment(
+      publicKey: key.publicKeyBase64,
+      algorithm: key.algorithm,
+      towerPublicKey: towerKeyB64,
+    );
+    _privateKey = null;
+    _publicKey = key.publicKeyBase64;
+    _keyAlgorithm = key.algorithm;
+    return completion;
+  }
+
+  /// Legacy/dev (web) path: software Ed25519 key. Clearly non-hardware-backed.
+  Future<PairingCompletionModel> _completePairingWithSoftwareKey(
+    PairingSessionModel session,
+    String towerKeyB64,
+  ) async {
     final keyPair = await DeviceKeyPair.generate();
     final completion =
         await PairingRepository(_unsignedApiClient()).completePairing(
@@ -206,34 +276,53 @@ class HermesAppRuntime extends ChangeNotifier {
       privateKey: keyPair.privateKeyBase64,
       publicKey: keyPair.publicKeyBase64,
     );
-    await _keyStore.saveDeviceSession(
-      deviceId: completion.deviceId,
-      accessToken: completion.accessToken,
-      refreshToken: completion.refreshToken,
-    );
-    _deviceId = completion.deviceId;
-    _accessToken = completion.accessToken;
-    _refreshToken = completion.refreshToken;
     _privateKey = keyPair.privateKeyBase64;
     _publicKey = keyPair.publicKeyBase64;
-    _clearanceKeyProtection = await _keyStore.clearanceKeyProtection();
-    _lastPairing = null;
-    _connectionStatus = 'Paired with ${completion.node.displayName}';
-    await _restartEventStream();
-    notifyListeners();
+    _keyAlgorithm = 'ed25519';
+    return completion;
+  }
+
+  /// Resolve the honest protection record: native-sourced on iOS (enclave or
+  /// software-dev), key-store-sourced otherwise.
+  Future<ClearanceKeyProtection> _resolveProtection() async {
+    final status = await _enclave.status();
+    if (status != null && (_keyAlgorithm == 'p256' || status.hasKey)) {
+      return status.toProtection();
+    }
+    return _keyStore.clearanceKeyProtection();
+  }
+
+  /// Verify a clearance object's published proof against the pinned tower key,
+  /// fail-closed. Returns a non-verified result if no tower key is pinned.
+  Future<ProofVerification> verifyClearanceProof(
+    Map<String, dynamic> clearance, {
+    String? expectedCapability,
+  }) async {
+    final towerKeyB64 = _towerPublicKeyB64;
+    if (towerKeyB64 == null) {
+      return ProofVerification.fail('tower_key_unpinned');
+    }
+    return _proofVerifier.verifyClearance(
+      clearance: clearance,
+      towerPublicKey: base64UrlDecodeNoPadding(towerKeyB64),
+      expectedCapability: expectedCapability,
+    );
   }
 
   Future<void> clearPairing() async {
     await _stopEventStream();
+    await _enclave.clearKey();
     await _keyStore.clear();
     _deviceId = null;
     _accessToken = null;
     _refreshToken = null;
     _privateKey = null;
     _publicKey = null;
+    _keyAlgorithm = null;
+    _towerPublicKeyB64 = null;
     _lastPairing = null;
     _connectionStatus = 'Pairing cleared';
-    _clearanceKeyProtection = await _keyStore.clearanceKeyProtection();
+    _clearanceKeyProtection = await _resolveProtection();
     _eventStreamStatus = 'Live stream idle';
     _eventStreamConnected = false;
     _eventRevision += 1;
@@ -257,9 +346,22 @@ class HermesAppRuntime extends ChangeNotifier {
 
   GatewayApiClient _signedApiClient() {
     final deviceId = _deviceId;
+    if (deviceId == null) {
+      return _unsignedApiClient();
+    }
+    if (_keyAlgorithm == 'p256') {
+      return GatewayApiClient(
+        config: _config,
+        signer: SecureEnclaveDeviceRequestSigner(
+          deviceId: deviceId,
+          channel: _enclave,
+          protection: _clearanceKeyProtection,
+        ),
+      );
+    }
     final privateKey = _privateKey;
     final publicKey = _publicKey;
-    if (deviceId == null || privateKey == null || publicKey == null) {
+    if (privateKey == null || publicKey == null) {
       return _unsignedApiClient();
     }
     return GatewayApiClient(
@@ -275,12 +377,21 @@ class HermesAppRuntime extends ChangeNotifier {
   }
 
   Future<bool> _storedDeviceKeyIsValid() async {
-    final privateKey = _privateKey;
     final publicKey = _publicKey;
-    if (privateKey == null && publicKey == null && _deviceId == null) {
-      return true;
+    if (publicKey == null && _privateKey == null && _deviceId == null) {
+      return true; // fresh, never paired
     }
-    if (privateKey == null || publicKey == null || _deviceId == null) {
+    if (_deviceId == null || publicKey == null) {
+      return false;
+    }
+    if (_keyAlgorithm == 'p256') {
+      // Non-exportable enclave key: validate by presence only — signing here
+      // would force a biometric prompt at launch.
+      final status = await _enclave.status();
+      return status?.hasKey ?? false;
+    }
+    final privateKey = _privateKey;
+    if (privateKey == null) {
       return false;
     }
     try {

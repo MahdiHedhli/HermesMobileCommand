@@ -16,6 +16,19 @@ abstract class SecureKeyStore {
     required String privateKey,
     required String publicKey,
   });
+
+  /// Persist a Secure-Enclave (or software-P256) enrolment. No private key is
+  /// stored — the private key never leaves the enclave. [publicKey], [algorithm]
+  /// and [towerPublicKey] are all non-secret.
+  Future<void> saveDeviceEnrollment({
+    required String publicKey,
+    required String algorithm,
+    required String towerPublicKey,
+  });
+
+  Future<String?> readDeviceKeyAlgorithm();
+  Future<String?> readTowerPublicKey();
+
   Future<void> saveDeviceSession({
     required String deviceId,
     required String accessToken,
@@ -83,6 +96,32 @@ class PlatformAwareSecureKeyStore implements SecureKeyStore {
   }
 
   @override
+  Future<void> saveDeviceEnrollment({
+    required String publicKey,
+    required String algorithm,
+    required String towerPublicKey,
+  }) async {
+    // No private key is persisted for an enclave enrolment; clear any stale one.
+    await _fallback.preferences.remove(_devicePrivateKeyKey);
+    if (!_useFallback) {
+      try {
+        await _secureStorage.delete(key: _devicePrivateKeyKey);
+      } on Object {
+        // best-effort
+      }
+    }
+    await _write(_devicePublicKeyKey, publicKey);
+    await _write(_deviceKeyAlgorithmKey, algorithm);
+    await _write(_towerPublicKeyKey, towerPublicKey);
+  }
+
+  @override
+  Future<String?> readDeviceKeyAlgorithm() => _read(_deviceKeyAlgorithmKey);
+
+  @override
+  Future<String?> readTowerPublicKey() => _read(_towerPublicKeyKey);
+
+  @override
   Future<void> saveDeviceSession({
     required String deviceId,
     required String accessToken,
@@ -100,6 +139,8 @@ class PlatformAwareSecureKeyStore implements SecureKeyStore {
   @override
   Future<void> clear() async {
     await _fallback.clear();
+    await _fallback.preferences.remove(_deviceKeyAlgorithmKey);
+    await _fallback.preferences.remove(_towerPublicKeyKey);
     if (_useFallback) {
       return;
     }
@@ -107,6 +148,8 @@ class PlatformAwareSecureKeyStore implements SecureKeyStore {
     await _secureStorage.delete(key: _refreshTokenKey);
     await _secureStorage.delete(key: _devicePrivateKeyKey);
     await _secureStorage.delete(key: _devicePublicKeyKey);
+    await _secureStorage.delete(key: _deviceKeyAlgorithmKey);
+    await _secureStorage.delete(key: _towerPublicKeyKey);
   }
 
   Future<String?> _read(String key) async {
@@ -175,6 +218,26 @@ class SharedPreferencesSecureKeyStore implements SecureKeyStore {
   }
 
   @override
+  Future<void> saveDeviceEnrollment({
+    required String publicKey,
+    required String algorithm,
+    required String towerPublicKey,
+  }) async {
+    await preferences.remove(_devicePrivateKeyKey);
+    await preferences.setString(_devicePublicKeyKey, publicKey);
+    await preferences.setString(_deviceKeyAlgorithmKey, algorithm);
+    await preferences.setString(_towerPublicKeyKey, towerPublicKey);
+  }
+
+  @override
+  Future<String?> readDeviceKeyAlgorithm() async =>
+      preferences.getString(_deviceKeyAlgorithmKey);
+
+  @override
+  Future<String?> readTowerPublicKey() async =>
+      preferences.getString(_towerPublicKeyKey);
+
+  @override
   Future<void> saveDeviceSession({
     required String deviceId,
     required String accessToken,
@@ -192,6 +255,8 @@ class SharedPreferencesSecureKeyStore implements SecureKeyStore {
     await preferences.remove(_refreshTokenKey);
     await preferences.remove(_devicePrivateKeyKey);
     await preferences.remove(_devicePublicKeyKey);
+    await preferences.remove(_deviceKeyAlgorithmKey);
+    await preferences.remove(_towerPublicKeyKey);
   }
 }
 
@@ -201,6 +266,8 @@ class InMemorySecureKeyStore implements SecureKeyStore {
   String? _refreshToken;
   String? _devicePrivateKey;
   String? _devicePublicKey;
+  String? _keyAlgorithm;
+  String? _towerPublicKey;
 
   @override
   Future<String?> readAccessToken() async => _accessToken;
@@ -234,6 +301,24 @@ class InMemorySecureKeyStore implements SecureKeyStore {
   }
 
   @override
+  Future<void> saveDeviceEnrollment({
+    required String publicKey,
+    required String algorithm,
+    required String towerPublicKey,
+  }) async {
+    _devicePrivateKey = null;
+    _devicePublicKey = publicKey;
+    _keyAlgorithm = algorithm;
+    _towerPublicKey = towerPublicKey;
+  }
+
+  @override
+  Future<String?> readDeviceKeyAlgorithm() async => _keyAlgorithm;
+
+  @override
+  Future<String?> readTowerPublicKey() async => _towerPublicKey;
+
+  @override
   Future<void> saveDeviceSession({
     required String deviceId,
     required String accessToken,
@@ -251,6 +336,8 @@ class InMemorySecureKeyStore implements SecureKeyStore {
     _refreshToken = null;
     _devicePrivateKey = null;
     _devicePublicKey = null;
+    _keyAlgorithm = null;
+    _towerPublicKey = null;
   }
 }
 
@@ -259,3 +346,5 @@ const _accessTokenKey = 'hmcp.device.access_token';
 const _refreshTokenKey = 'hmcp.device.refresh_token';
 const _devicePrivateKeyKey = 'hmcp.device.private_key';
 const _devicePublicKeyKey = 'hmcp.device.public_key';
+const _deviceKeyAlgorithmKey = 'hmcp.device.key_algorithm';
+const _towerPublicKeyKey = 'hmcp.tower.public_key';

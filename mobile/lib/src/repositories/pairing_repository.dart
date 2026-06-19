@@ -30,6 +30,8 @@ class PairingRepository {
   Future<PairingCompletionModel> completePairing({
     required PairingSessionModel pairing,
     required String devicePublicKey,
+    String? deviceKeyAlgorithm,
+    String? devicePossessionProof,
   }) async {
     final response = await apiClient.postJson(
       '/pairing/complete',
@@ -38,6 +40,10 @@ class PairingRepository {
         'pairing_id': pairing.pairingId,
         'challenge_response': pairing.pairingToken,
         'device_public_key': devicePublicKey,
+        if (deviceKeyAlgorithm != null)
+          'device_key_algorithm': deviceKeyAlgorithm,
+        if (devicePossessionProof != null)
+          'device_key_possession_proof': devicePossessionProof,
         'device': {
           'device_name': 'ACT Operator Alpha',
           'platform': 'ios',

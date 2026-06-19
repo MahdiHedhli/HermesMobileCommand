@@ -1,5 +1,10 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
 import '../api/gateway_api_client.dart';
+import '../clearance/canonical_json.dart';
 import '../models/core_models.dart';
+import '../security/secure_enclave_signer.dart';
 
 class ApprovalsRepository {
   const ApprovalsRepository(this.apiClient);
@@ -61,6 +66,7 @@ class ApprovalsRepository {
       'decision_id': decisionId,
       'params_fingerprint': approval.paramsFingerprint,
     };
+    final signature = await _signDecision(signedPayload, approvalId);
     return await apiClient.postJson(
       '/approvals/$approvalId/decisions',
       body: {
@@ -68,9 +74,28 @@ class ApprovalsRepository {
         'decision': decision,
         'scope': scope,
         'signed_payload': signedPayload,
-        'signature': 'hmcp-device-request-signature',
+        'signature': signature,
       },
     );
+  }
+
+  /// Produce a real per-decision signature over the canonical signed_payload when
+  /// the device key is enclave-backed (gated by user presence). The gateway does
+  /// not yet independently verify this field — the authoritative, server-verified
+  /// signature is the HMCP transport signature on this request — but this is
+  /// honest crypto rather than a placeholder.
+  Future<String> _signDecision(
+    Map<String, dynamic> signedPayload,
+    String approvalId,
+  ) async {
+    final signer = apiClient.signer;
+    if (signer is SecureEnclaveDeviceRequestSigner) {
+      final bytes = Uint8List.fromList(utf8.encode(canonicalJson(signedPayload)));
+      return signer.signPayload(bytes, reason: 'Approve clearance $approvalId');
+    }
+    // Legacy/dev (web) signer cannot produce a non-exportable per-decision
+    // signature; the transport signature still authenticates the request.
+    return 'hmcp-device-request-signature';
   }
 }
 

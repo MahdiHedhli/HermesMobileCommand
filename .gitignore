@@ -1,4 +1,8 @@
 .DS_Store
+# Secrets — never commit
+.env
+.env.*
+*.pem
 .pytest_cache/
 .ruff_cache/
 __pycache__/

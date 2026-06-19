@@ -81,6 +81,7 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                     app_instance_id TEXT NOT NULL,
                     app_version TEXT,
                     device_public_key TEXT NOT NULL,
+                    device_key_algorithm TEXT NOT NULL DEFAULT 'ed25519',
                     clearance_channel TEXT NOT NULL DEFAULT 'local_terminal',
                     status TEXT NOT NULL,
                     permissions_json TEXT NOT NULL,
@@ -443,6 +444,12 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                 "devices",
                 "clearance_channel",
                 "TEXT NOT NULL DEFAULT 'local_terminal'",
+            )
+            _ensure_column(
+                db,
+                "devices",
+                "device_key_algorithm",
+                "TEXT NOT NULL DEFAULT 'ed25519'",
             )
             _ensure_column(
                 db,

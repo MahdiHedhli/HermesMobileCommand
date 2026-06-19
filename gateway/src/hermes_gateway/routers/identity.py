@@ -4,6 +4,7 @@ from collections.abc import Callable
 from datetime import timedelta
 from typing import Any
 
+from cryptography.exceptions import InvalidSignature
 from fastapi import FastAPI, HTTPException, Request, status
 
 from ..config import Settings
@@ -18,7 +19,12 @@ from ..schemas import (
     RefreshTokenRequest,
 )
 from ..security import compare_token, expires_in, new_token, now_utc
-from ..signing import VerifiedDevice
+from ..signing import (
+    DEFAULT_KEY_ALGORITHM,
+    SUPPORTED_KEY_ALGORITHMS,
+    VerifiedDevice,
+    verify_payload_signature,
+)
 from ..store import SQLiteStore
 
 
@@ -123,6 +129,67 @@ def register_identity_routes(
                 },
             )
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "device clearance channel mismatch")
+
+        device_key_algorithm = (payload.device_key_algorithm or DEFAULT_KEY_ALGORITHM).lower()
+        if device_key_algorithm not in SUPPORTED_KEY_ALGORITHMS:
+            store.append_audit_event(
+                event_type="pairing_rejected",
+                actor_type="gateway",
+                actor_id="gateway",
+                node_id=pairing["node_id"],
+                request_id=request_id(request),
+                payload_redacted={
+                    "pairing_id": pairing["pairing_id"],
+                    "reason": "unsupported_key_algorithm",
+                    "device_key_algorithm": device_key_algorithm,
+                },
+            )
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "unsupported device key algorithm")
+
+        # A hardware-backed (p256) enrolment MUST prove control of the private key by signing the
+        # session challenge. Legacy ed25519 enrolments may supply the proof but are not required to,
+        # preserving backward compatibility. The proof is verified against the same canonical bytes
+        # (the challenge) both sides agree on.
+        possession_proof = payload.device_key_possession_proof
+        if device_key_algorithm == "p256" and not possession_proof:
+            store.append_audit_event(
+                event_type="pairing_rejected",
+                actor_type="gateway",
+                actor_id="gateway",
+                node_id=pairing["node_id"],
+                request_id=request_id(request),
+                payload_redacted={
+                    "pairing_id": pairing["pairing_id"],
+                    "reason": "device_key_possession_proof_required",
+                },
+            )
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "device key possession proof required"
+            )
+        if possession_proof is not None:
+            try:
+                verify_payload_signature(
+                    algorithm=device_key_algorithm,
+                    public_key_b64=payload.device_public_key,
+                    signature_b64=possession_proof,
+                    message=pairing["challenge"].encode("utf-8"),
+                )
+            except (ValueError, InvalidSignature) as exc:
+                store.append_audit_event(
+                    event_type="pairing_rejected",
+                    actor_type="gateway",
+                    actor_id="gateway",
+                    node_id=pairing["node_id"],
+                    request_id=request_id(request),
+                    payload_redacted={
+                        "pairing_id": pairing["pairing_id"],
+                        "reason": "device_key_possession_proof_invalid",
+                    },
+                )
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST, "invalid device key possession proof"
+                ) from exc
+
         device = store.create_device(
             node_id=pairing["node_id"],
             device_name=payload.device.device_name,
@@ -132,6 +199,7 @@ def register_identity_routes(
             device_public_key=payload.device_public_key,
             permissions=permissions,
             clearance_channel=pairing["clearance_channel"],
+            device_key_algorithm=device_key_algorithm,
         )
         access_token = new_token()
         refresh_token = new_token()

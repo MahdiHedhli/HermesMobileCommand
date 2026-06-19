@@ -6,6 +6,8 @@ import time
 from dataclasses import dataclass
 
 from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from fastapi import HTTPException, Request, status
 
@@ -16,6 +18,17 @@ from .store import SQLiteStore
 
 SIGNING_VERSION = "HMCP-SIGN-V1"
 TIMESTAMP_TOLERANCE_SECONDS = 300
+
+# Device signing-key algorithms accepted for the mobile_signed channel.
+# ed25519: legacy/software keys (raw 32-byte public key, EdDSA, raw 64-byte signature).
+# p256:    Apple Secure Enclave / Android Keystore keys. The Secure Enclave only supports
+#          ECDSA P-256 (secp256r1), so a genuine hardware-backed key must use this algorithm.
+#          Public key = X9.63 uncompressed point (0x04 || X || Y, 65 bytes); signature = DER
+#          ECDSA over SHA-256. Adding this is purely additive: the canonical signing string
+#          (canonical_request) is unchanged, the per-device algorithm is recorded at enrolment,
+#          and the ed25519 path is preserved.
+DEFAULT_KEY_ALGORITHM = "ed25519"
+SUPPORTED_KEY_ALGORITHMS = ("ed25519", "p256")
 
 DEVICE_ID_HEADER = "X-HMCP-Device-Id"
 TIMESTAMP_HEADER = "X-HMCP-Timestamp"
@@ -51,6 +64,32 @@ def canonical_request(
             body_hash,
         ]
     )
+
+
+def verify_payload_signature(
+    *,
+    algorithm: str | None,
+    public_key_b64: str,
+    signature_b64: str,
+    message: bytes,
+) -> None:
+    """Verify a device signature over ``message`` for the device's enrolled key algorithm.
+
+    Raises ``ValueError`` (malformed key/algorithm) or
+    ``cryptography.exceptions.InvalidSignature`` (bad signature) on failure; returns ``None``
+    on success. All encoded values are base64url (padding optional). The message bytes are the
+    exact UTF-8 canonical string both sides agree on — this helper never changes that string.
+    """
+    algorithm = (algorithm or DEFAULT_KEY_ALGORITHM).lower()
+    signature = _b64decode(signature_b64 or "")
+    public_bytes = _b64decode(public_key_b64)
+    if algorithm == "ed25519":
+        Ed25519PublicKey.from_public_bytes(public_bytes).verify(signature, message)
+    elif algorithm == "p256":
+        public_key = ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), public_bytes)
+        public_key.verify(signature, message, ec.ECDSA(hashes.SHA256()))
+    else:
+        raise ValueError(f"unsupported key algorithm: {algorithm}")
 
 
 async def verify_signed_request(
@@ -139,8 +178,12 @@ async def verify_signed_request(
         body=body,
     )
     try:
-        public_key = Ed25519PublicKey.from_public_bytes(_b64decode(device["device_public_key"]))
-        public_key.verify(_b64decode(signature or ""), canonical.encode("utf-8"))
+        verify_payload_signature(
+            algorithm=device.get("device_key_algorithm", DEFAULT_KEY_ALGORITHM),
+            public_key_b64=device["device_public_key"],
+            signature_b64=signature or "",
+            message=canonical.encode("utf-8"),
+        )
     except (ValueError, InvalidSignature) as exc:
         _audit_auth_failure(
             store,

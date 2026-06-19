@@ -195,6 +195,7 @@ class Device(BaseModel):
     device_name: str
     platform: Platform
     clearance_channel: ClearanceChannel = "mobile_signed"
+    device_key_algorithm: str = "ed25519"
     status: DeviceStatus
     permissions: list[Permission]
     registered_at: datetime
@@ -224,6 +225,12 @@ class CompletePairingRequest(StrictModel):
     challenge_response: str
     device_public_key: str
     device: DeviceRegistration
+    # Signing-key algorithm for device_public_key. None defaults to ed25519 (legacy/software).
+    # "p256" enrols a Secure-Enclave / Keystore ECDSA P-256 key and REQUIRES a possession proof.
+    device_key_algorithm: str | None = None
+    # base64url signature over the pairing session `challenge`, proving control of the private key
+    # paired with device_public_key. Required when device_key_algorithm == "p256".
+    device_key_possession_proof: str | None = None
 
 
 class AuthTokenSet(BaseModel):

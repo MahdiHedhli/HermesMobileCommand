@@ -84,6 +84,7 @@ class IdentityStoreMixin:
         device_public_key: str,
         permissions: list[str],
         clearance_channel: str = "local_terminal",
+        device_key_algorithm: str = "ed25519",
     ) -> dict[str, Any]:
         device_id = new_id("dev")
         registered_at = utc_iso()
@@ -92,10 +93,10 @@ class IdentityStoreMixin:
                 """
                 INSERT INTO devices (
                     device_id, user_id, node_id, device_name, platform, app_instance_id,
-                    app_version, device_public_key, clearance_channel, status, permissions_json,
-                    registered_at, last_seen_at
+                    app_version, device_public_key, device_key_algorithm, clearance_channel,
+                    status, permissions_json, registered_at, last_seen_at
                 )
-                VALUES (?, 'owner', ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
+                VALUES (?, 'owner', ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)
                 """,
                 (
                     device_id,
@@ -105,6 +106,7 @@ class IdentityStoreMixin:
                     app_instance_id,
                     app_version,
                     device_public_key,
+                    device_key_algorithm,
                     clearance_channel,
                     json.dumps(permissions),
                     registered_at,

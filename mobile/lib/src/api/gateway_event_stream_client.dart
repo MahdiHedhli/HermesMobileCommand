@@ -16,6 +16,7 @@ class GatewayEventStreamClient {
     this.initialBackoff = const Duration(seconds: 1),
     this.maxBackoff = const Duration(seconds: 20),
     this.maxReconnects,
+    this.onConnectError,
   }) : _socketConnector = socketConnector;
 
   final GatewayConfig config;
@@ -24,6 +25,11 @@ class GatewayEventStreamClient {
   final Duration initialBackoff;
   final Duration maxBackoff;
   final int? maxReconnects;
+
+  /// Called on each failed connection attempt with the raw error. Lets the
+  /// caller distinguish an auth failure (expired access token -> HTTP 403/401 in
+  /// the error) from a transient network drop and refresh the token if needed.
+  final void Function(Object error)? onConnectError;
 
   Uri streamUri({String? after}) {
     final httpUri = config.resolve('/events/stream', {
@@ -49,10 +55,12 @@ class GatewayEventStreamClient {
           reconnects = 0;
           yield event;
         }
-      } on Object {
+      } on Object catch (error) {
         // The caller observes liveness through missing events and the next
         // successful event. Requests remain fail-closed because approvals still
-        // require signed HTTP decisions.
+        // require signed HTTP decisions. Surface the error so the caller can
+        // refresh an expired access token and reconnect.
+        onConnectError?.call(error);
       }
 
       reconnects += 1;

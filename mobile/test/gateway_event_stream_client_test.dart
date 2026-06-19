@@ -56,6 +56,26 @@ void main() {
     expect(events.map((event) => event.cursor), ['cursor-1', 'cursor-2']);
     expect(seenUris[1].queryParameters['after'], 'cursor-1');
   });
+
+  test('surfaces connection errors via onConnectError (for token refresh)',
+      () async {
+    final errors = <Object>[];
+    final client = GatewayEventStreamClient(
+      config: GatewayConfig.fromInput('http://127.0.0.1:8787/v1'),
+      accessToken: 'stale-token',
+      initialBackoff: Duration.zero,
+      maxReconnects: 0,
+      onConnectError: errors.add,
+      socketConnector: (uri) => Stream<dynamic>.error(
+        StateError('WebSocket handshake failed: 403 Forbidden'),
+      ),
+    );
+
+    await client.connect().toList();
+
+    expect(errors, isNotEmpty);
+    expect(errors.first.toString(), contains('403'));
+  });
 }
 
 Map<String, dynamic> _eventJson({

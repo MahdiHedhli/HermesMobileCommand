@@ -63,6 +63,7 @@ class HermesAppRuntime extends ChangeNotifier {
   GatewayEvent? _lastEvent;
   final List<GatewayEvent> _recentEvents = [];
   StreamSubscription<GatewayEvent>? _eventSubscription;
+  bool _refreshingToken = false;
   PairingSessionModel? _lastPairing;
 
   static Future<HermesAppRuntime> create() async {
@@ -423,6 +424,7 @@ class HermesAppRuntime extends ChangeNotifier {
     _eventSubscription = GatewayEventStreamClient(
       config: _config,
       accessToken: token,
+      onConnectError: _onStreamConnectError,
     ).connect(after: _lastEventCursor).listen(
       _handleGatewayEvent,
       onError: (Object error) {
@@ -441,6 +443,67 @@ class HermesAppRuntime extends ChangeNotifier {
   Future<void> _restartEventStream() async {
     await _stopEventStream();
     await _startEventStream();
+  }
+
+  /// The paired-device access token has a short TTL; when it expires the event
+  /// stream gets HTTP 403 and stops delivering. Detect that and refresh the
+  /// token (signed) then reconnect, instead of looping forever on a dead token.
+  void _onStreamConnectError(Object error) {
+    final text = error.toString().toLowerCase();
+    final looksLikeAuth = text.contains('403') ||
+        text.contains('401') ||
+        text.contains('forbidden') ||
+        text.contains('unauthor');
+    if (looksLikeAuth) {
+      unawaited(_refreshTokenAndRestartStream());
+    }
+  }
+
+  Future<void> _refreshTokenAndRestartStream() async {
+    if (_refreshingToken) {
+      return;
+    }
+    _refreshingToken = true;
+    try {
+      _eventStreamStatus = 'Live stream re-authenticating';
+      notifyListeners();
+      if (await refreshAccessToken()) {
+        await _restartEventStream();
+      }
+    } finally {
+      _refreshingToken = false;
+    }
+  }
+
+  /// Exchange the refresh token for a fresh access token (signed request).
+  /// Returns true on success. Persists the rotated tokens.
+  Future<bool> refreshAccessToken() async {
+    final refresh = _refreshToken;
+    final deviceId = _deviceId;
+    if (refresh == null || deviceId == null) {
+      return false;
+    }
+    try {
+      final response = await _signedApiClient().postJson(
+        '/auth/token/refresh',
+        body: {'refresh_token': refresh},
+      );
+      final newAccess = response['access_token'] as String?;
+      final newRefresh = response['refresh_token'] as String?;
+      if (newAccess == null || newRefresh == null) {
+        return false;
+      }
+      _accessToken = newAccess;
+      _refreshToken = newRefresh;
+      await _keyStore.saveDeviceSession(
+        deviceId: deviceId,
+        accessToken: newAccess,
+        refreshToken: newRefresh,
+      );
+      return true;
+    } on Object {
+      return false;
+    }
   }
 
   Future<void> _stopEventStream() async {

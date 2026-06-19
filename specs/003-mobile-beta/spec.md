@@ -171,7 +171,7 @@ A simulator/dev fallback path MUST NEVER be reported as hardware-backed.
 
 ## Non-Goals
 
-- Android / Keystore parity this sprint (deferred; no Android SDK present — see Decisions Pending).
+- ~~Android / Keystore parity~~ — brought into scope 2026-06-19 (D6) as code-complete; see Android Keystore module. Real-hardware Android verification remains out of scope until a physical Android device is available.
 - APNs push delivery (the gateway's `push_dispatch` is unavailable; the beta uses the existing realtime stream).
 - High-risk mandatory families as the demo path, intervention (pause/stop/quarantine), Approve-Forever enforcement, and modified/conditional payloads.
 - Changing the published clearance contract, proof format, canonical signing string, channel policy, or capability registry.
@@ -191,7 +191,8 @@ A simulator/dev fallback path MUST NEVER be reported as hardware-backed.
 - **D2 — Build/verify environment: agent builds here.** Flutter is installed on this Mac; the agent scaffolds `mobile/ios/`, builds, and deploys to the paired physical iPhone for real-device + live-gateway verification. The operator performs only the interactive Apple signing-identity selection (and TestFlight 2FA later).
 - **D3 — Apple beta path: free/personal on-device first, then TestFlight.** Stage 1 uses free personal-team provisioning to install on the physical device (achieves real-device + live-gateway verification without a paid account). Stage 2 (TestFlight) follows with the operator's paid Apple Developer account and interactive 2FA. Team id and bundle id confirmed out-of-band.
 - **D4 — Test gateway endpoint.** Real-device + live-gateway verification uses an operator-provided reachable gateway host (Tailscale/LAN); the gateway URL is operator-configurable in the app. (Value confirmed out-of-band.)
-- **D5 — Beta MVP feature set: core loop + multi-clearance queue.** The core loop (pair with hardware key → receive a low-risk clearance → Face-ID-approve with a real enclave signature → verify ACT's proof fail-closed → signed decision back, over the realtime stream) **plus a multi-clearance inbox/queue** handling multiple simultaneous pending clearances. APNs push, `local_terminal` UI, intervention/pause-stop, Approve-Forever, modified payloads, and Android remain deferred (Non-Goals).
+- **D5 — Beta MVP feature set: core loop + multi-clearance queue.** The core loop (pair with hardware key → receive a low-risk clearance → Face-ID-approve with a real enclave signature → verify ACT's proof fail-closed → signed decision back, over the realtime stream) **plus a multi-clearance inbox/queue** handling multiple simultaneous pending clearances. APNs push, `local_terminal` UI, intervention/pause-stop, Approve-Forever, and modified payloads remain deferred (Non-Goals).
+- **D6 — Platform scope updated 2026-06-19: iOS + Android.** Android was initially deferred, but the operator installed the Android SDK, so Android Keystore signing was brought in as **code-complete** parity: a non-exportable ECDSA P-256 key in the Android Keystore (StrongBox-preferred, TEE fallback) with `setUserAuthenticationRequired`, signing gated by `BiometricPrompt`, on the same `act/secure_enclave` MethodChannel. The APK builds. iOS remains the priority; real-hardware Android verification (StrongBox/TEE) needs a physical Android device (none present).
 
 ## Open Questions
 

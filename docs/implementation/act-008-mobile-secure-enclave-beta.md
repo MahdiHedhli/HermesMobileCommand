@@ -80,6 +80,20 @@ Notes:
 6. The native→UI protection mapping is implemented; not yet visually confirmed on
    device/sim.
 
+### Android (added 2026-06-19, D6 — code-complete parity)
+
+| Capability (Android) | CC | emulator | DEV (StrongBox/TEE) | GW | store |
+|---|:--:|:--:|:--:|:--:|:--:|
+| Android runner builds (`flutter build apk --debug` ✅) | ✓ | — | — | n/a | — |
+| Keystore P-256 key, non-exportable, user-auth-required | ✓ | ⚠️⁷ | — | — | — |
+| BiometricPrompt-gated signing (BIOMETRIC_STRONG \| credential) | ✓ | ⚠️⁷ | — | — | — |
+| Same `act/secure_enclave` channel → gateway P-256 verifies | ✓ | — | — | — | — |
+
+7. Tracks iOS: an **emulator** has only software keymaster (no StrongBox/TEE), so it
+   can prove the flow but is honestly reported `hardwareBacked: false`. A real
+   StrongBox/TEE signature needs a **physical Android device** (none present). The APK
+   builds; emulator launch + real-device verification are next steps.
+
 **Backend no-regression**: `uv run --project gateway pytest` → 148 passed (was 141).
 `flutter analyze` clean. `flutter test` → 40 passed. `specify check` green
 (it validates installed tooling only, not spec content). ACT-001..007 behavior

@@ -47,38 +47,70 @@ States: **CC** code-complete · **SIM** simulator-verified · **DEV** real-devic
 
 | Capability | CC | SIM | DEV | GW | TF |
 |---|---|---|---|---|---|
-| iOS Runner builds (`xcodebuild` BUILD SUCCEEDED) + launches/renders | ✓ | ✓ | — | n/a | — |
-| **Secure-Enclave P-256 key, non-exportable** (the row that matters most) | ✓ | ⚠️¹ | — | — | — |
-| Biometric (Face ID) gate per signature | ✓ | ⚠️² | — | — | — |
-| Gateway accepts P-256 device signatures (additive) | ✓ | ✓³ | n/a | — | n/a |
-| Pairing: enclave pubkey + enclave-signed possession proof | ✓ | — | — | — | — |
-| Tower public key pinned at pairing (TOFU) | ✓ | — | — | — | — |
-| HMCP transport signature (P-256) accepted by gateway | ✓ | — | — | — | — |
-| Real per-decision signature over canonical signed_payload | ✓ | — | — | — | — |
-| ACT-CLEARANCE-PROOF-V1 verify PASS on valid proof | ✓ | ✓⁴ | — | — | — |
-| Proof verify FAILS CLOSED (mutation/expiry/unknown-key/bad-sig/bad-algo) | ✓ | ✓⁴ | — | — | — |
-| Version-aware: committed v1 vector + v2 proof | ✓ | ⚠️⁵ | — | — | — |
-| Honest ClearanceKeyProtection reporting | ✓ | ⚠️⁶ | — | n/a | — |
-| Multi-clearance queue (existing inbox) | ✓ | ✓ | — | — | — |
-| Single-shot decision (double-submit → 409) | ✓ | ✓³ | — | — | — |
-| End-to-end low-risk clearance loop | ✓ | — | — | — | — |
+| iOS Runner builds (`xcodebuild` BUILD SUCCEEDED) + launches/renders | ✓ | ✓ | ✓ | n/a | — |
+| **Secure-Enclave P-256 key, non-exportable** (the row that matters most) | ✓ | ⚠️¹ | ✓ | ✓ | — |
+| Biometric (Face ID) gate per signature | ✓ | ⚠️² | ✓ | ✓ | — |
+| Gateway accepts P-256 device signatures (additive) | ✓ | ✓³ | n/a | ✓ | n/a |
+| Pairing: enclave pubkey + enclave-signed possession proof | ✓ | — | ✓ | ✓ | — |
+| Tower public key pinned at pairing (TOFU) | ✓ | — | ✓ | ✓ | — |
+| HMCP transport signature (P-256) accepted by gateway | ✓ | — | ✓ | ✓ | — |
+| Real per-decision signature over canonical signed_payload | ✓ | — | ⚠️⁷ | ⚠️⁷ | — |
+| ACT-CLEARANCE-PROOF-V1 verify PASS on valid proof | ✓ | ✓⁴ | — | ✓⁸ | — |
+| Proof verify FAILS CLOSED (mutation/expiry/unknown-key/bad-sig/bad-algo) | ✓ | ✓⁴ | — | ✓⁸ | — |
+| Version-aware: committed v1 vector + live v2 proof | ✓ | ✓ | — | ✓⁸ | — |
+| Honest ClearanceKeyProtection reporting | ✓ | ⚠️⁶ | ✓⁹ | n/a | — |
+| Multi-clearance queue (existing inbox) | ✓ | ✓ | ✓ | ✓ | — |
+| Single-shot decision (one-time, scope=once) | ✓ | ✓³ | ✓ | ✓ | — |
+| **End-to-end low-risk clearance loop** | ✓ | — | ✓ | ✓ | — |
 
 Notes:
-1. The Simulator has **no Secure Enclave**; the SIM run uses the honest software-P256
-   fallback, reported as `hardwareBacked: false`. A real enclave key is **only**
-   "DEV" once it signs on the physical iPhone 15 Pro Max — **not yet done**.
-2. Biometric enforcement is via the enclave key's `SecAccessControl`; not yet
-   exercised on device. The Simulator can simulate Face ID for UX.
-3. Gateway pytest: **148 passing** (141 baseline + 7 new P-256 tests). Direct,
-   not via the iOS app yet.
+1. The Simulator has **no Secure Enclave** (SIM run uses the honest software-P256
+   fallback, `hardwareBacked: false`). **DEV achieved 2026-06-19**: a non-exportable
+   P-256 key was generated in the real Secure Enclave on the physical iPhone 15 Pro
+   Max and its possession proof verified by the gateway — see Live Verification below.
+2. Biometric enforcement is the enclave key's `SecAccessControl`; **exercised on
+   device** — Face ID gated both pairing and the approve decision.
+3. Gateway pytest: **148 passing** (141 baseline + 7 new P-256 tests). The live loop
+   additionally exercised the P-256 path through the real iOS app (GW).
 4. Dart unit tests (21) against the committed `contracts/clearance/test-vector.json`
-   (v1) and a self-consistent generated v2 clearance, run on the Dart VM / Flutter
-   test (counts as SIM-equivalent). The committed-vector signature passing proves the
-   canonical proof-string reconstruction matches the gateway byte-for-byte.
-5. v1 vector verified; v2 verified against a **synthetic** self-signed clearance. A
-   **real** live v2 proof from a running gateway is **not yet** verified (GW).
-6. The native→UI protection mapping is implemented; not yet visually confirmed on
-   device/sim.
+   (v1) and a self-consistent generated v2 clearance (Dart VM / Flutter test ≈ SIM).
+   The committed-vector signature passing proves the canonical proof-string
+   reconstruction matches the gateway byte-for-byte.
+5. v1 vector (SIM) **and a real live `act.clearance.v2` proof (GW)** both verified by
+   the Dart verifier; the live proof also failed closed on a tampered field and a
+   wrong tower key.
+6. Protection is native-sourced; the device enrolled `p256` via the enclave path
+   (so `hardwareBacked: true`). See note 9.
+7. The **approve-once** flow was used: the HMCP transport signature on that request
+   IS a real enclave P-256 signature, gateway-verified (200, 0 failures). The explicit
+   per-decision body signature over `signed_payload` (the `decide()` session/agent path)
+   is code-complete but was not exercised by approve_once.
+8. The live v2 proof was verified **out-of-band** by the Dart verifier (signature +
+   full fail-closed recipe + tamper/wrong-key rejection). Surfacing the VERIFIED/REJECTED
+   verdict **in the approval UI** is still pending (`app_runtime.verifyClearanceProof`
+   is wired but not yet called from the reduced approval screen).
+9. The device enrolled `p256` (native enclave path → `hardwareBacked: true`); the
+   Settings "Safety Defaults" values were not separately screenshotted on-device.
+
+### Live verification (2026-06-19, real device + live gateway over Tailscale)
+
+Physical iPhone 15 Pro Max (`Meta42iPhone`) → release/AOT app → test gateway on the
+operator's tailnet (`100.66.42.21:8788`, separate DB). Evidence from the gateway:
+
+- Device `dev_MeQu39Y18hSdwj` enrolled: `device_key_algorithm = p256`,
+  `clearance_channel = mobile_signed`, public key 87 chars (X9.63 P-256 point);
+  audit `device_registered`, **0 `pairing_rejected`** → enclave possession proof verified.
+- Clearance `appr_0AEFN3VgTq87wqhy` (risk_family `read_only`) delivered over the
+  WebSocket event stream; resolved `approved` / scope `once` by `dev_MeQu39Y18hSdwj`.
+- Phone signed requests all `200 OK`: `GET /v1/approvals`, `GET /v1/approvals/{id}`,
+  `POST /v1/approvals/{id}/approve_once`; **`auth_signature_failed` count = 0** →
+  every P-256 signature verified.
+- The issued `act.clearance.v2` proof verified by the Dart verifier (and failed closed
+  on tamper / wrong key).
+
+**Honest limit:** verified against a controlled **test** gateway instance (not the
+operator's primary loopback-bound Hermes), and the in-app proof-verdict UI + the
+`decide()` body-signature path are not yet exercised (notes 7–8). TestFlight not done.
 
 ### Android (added 2026-06-19, D6 — code-complete parity)
 

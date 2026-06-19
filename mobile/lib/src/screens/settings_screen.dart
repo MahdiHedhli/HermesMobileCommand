@@ -239,26 +239,64 @@ class _PairingPanel extends StatelessWidget {
             const SizedBox(height: 10),
             _PairingTokenBlock(pairing: pairing),
           ],
+          // Two-step flow: once a session is started, make Complete the obvious
+          // next action (highlighted) and demote Start to "Restart".
+          if (pairing != null && !runtime.isPaired) ...[
+            const SizedBox(height: 10),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.arrow_downward_rounded,
+                    size: 16, color: Theme.of(context).colorScheme.primary),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    'Session started — now tap Complete to finish pairing (Face ID).',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                  ),
+                ),
+              ],
+            ),
+          ],
           const SizedBox(height: 14),
           Row(
             children: [
               Expanded(
-                child: CommandButton(
-                  label: 'Start',
-                  icon: Icons.qr_code_2_outlined,
-                  onPressed:
-                      busy ? () {} : () => runAction(runtime.startPairing),
-                ),
+                child: pairing != null && !runtime.isPaired
+                    ? OutlinedButton.icon(
+                        onPressed:
+                            busy ? null : () => runAction(runtime.startPairing),
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Restart'),
+                      )
+                    : CommandButton(
+                        label: 'Start',
+                        icon: Icons.qr_code_2_outlined,
+                        primary: true,
+                        onPressed:
+                            busy ? () {} : () => runAction(runtime.startPairing),
+                      ),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: busy || pairing == null
-                      ? null
-                      : () => runAction(() => runtime.completePairing(pairing)),
-                  icon: const Icon(Icons.verified_user_outlined),
-                  label: const Text('Complete'),
-                ),
+                child: pairing != null && !runtime.isPaired
+                    ? CommandButton(
+                        label: 'Complete',
+                        icon: Icons.verified_user_outlined,
+                        primary: true,
+                        onPressed: busy
+                            ? () {}
+                            : () =>
+                                runAction(() => runtime.completePairing(pairing)),
+                      )
+                    : OutlinedButton.icon(
+                        onPressed: null,
+                        icon: const Icon(Icons.verified_user_outlined),
+                        label: const Text('Complete'),
+                      ),
               ),
             ],
           ),

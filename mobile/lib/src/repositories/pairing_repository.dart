@@ -14,6 +14,10 @@ class PairingRepository {
       signed: false,
       body: {
         'display_name': displayName,
+        // The operator initiates pairing from their own mobile surface and pins
+        // the clearance channel to mobile_signed. The gateway still rejects any
+        // device-side override of this at /pairing/complete (ACT-003.1.1).
+        'clearance_channel': 'mobile_signed',
         'requested_permissions': [
           'read_state',
           'approve',

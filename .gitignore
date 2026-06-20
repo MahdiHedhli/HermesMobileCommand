@@ -6,3 +6,8 @@ __pycache__/
 .venv/
 gateway/.venv/
 .hermes-mobile-gateway/
+
+# Secrets / local env
+.env
+.env.*
+*.env

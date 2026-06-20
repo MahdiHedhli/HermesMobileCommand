@@ -44,9 +44,10 @@ class _TuaScreenState extends State<TuaScreen> {
     if (_loadedRoute) {
       return;
     }
-    final sessionId = ModalRoute.of(context)?.settings.arguments as String? ??
-        'assist-release';
-    _load = _loadSession(sessionId);
+    final contextId = ModalRoute.of(context)?.settings.arguments as String?;
+    _load = (contextId == null || contextId.isEmpty)
+        ? Future<void>.value()
+        : _loadSession(contextId);
     _loadedRoute = true;
   }
 
@@ -147,7 +148,8 @@ class _TuaScreenState extends State<TuaScreen> {
         }
       }
       if (matched == null) {
-        await _viewModel.load(contextId);
+        // Paired but no real request matches this id — show an explicit empty
+        // state rather than leaking mock assistance data.
         return;
       }
       _gatewaySession = await repository.createSession(
@@ -156,7 +158,8 @@ class _TuaScreenState extends State<TuaScreen> {
       );
       _gatewayMode = true;
     } on Object {
-      await _viewModel.load(contextId);
+      // Paired but the gateway call failed — surface empty/error, never mock.
+      return;
     }
   }
 

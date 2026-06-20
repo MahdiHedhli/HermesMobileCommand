@@ -4,8 +4,15 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:agentic_control_tower/src/api/gateway_api_client.dart';
 import 'package:agentic_control_tower/src/config/gateway_config.dart';
+import 'package:agentic_control_tower/src/models/alpha_models.dart';
+import 'package:agentic_control_tower/src/repositories/agents_repository.dart';
 import 'package:agentic_control_tower/src/repositories/approval_responses_repository.dart';
+import 'package:agentic_control_tower/src/repositories/approvals_repository.dart';
 import 'package:agentic_control_tower/src/repositories/browser_assistance_repository.dart';
+import 'package:agentic_control_tower/src/repositories/dashboard_repository.dart';
+import 'package:agentic_control_tower/src/repositories/gateway_alpha_repository.dart';
+import 'package:agentic_control_tower/src/repositories/missions_repository.dart';
+import 'package:agentic_control_tower/src/repositories/notifications_repository.dart';
 import 'package:agentic_control_tower/src/repositories/tua_repository.dart';
 import 'package:agentic_control_tower/src/repositories/voice_repository.dart';
 import 'package:agentic_control_tower/src/security/device_request_signer.dart';
@@ -51,6 +58,61 @@ void main() {
       '/v1/tua/requests/tua_req_1/sessions',
       '/v1/tua/sessions/tua_sess_1/return-control',
     ]);
+  });
+
+  test('gateway alpha repository surfaces real TUA requests as assistance '
+      'inbox items and dedupes the agent_blocked notification', () async {
+    final client = _client((request) async {
+      final path = request.url.path;
+      if (path == '/v1/approvals') {
+        return http.Response(jsonEncode({'approvals': const []}), 200);
+      }
+      if (path == '/v1/notifications') {
+        return http.Response(
+          jsonEncode({
+            'notifications': [_agentBlockedNotificationJson()],
+          }),
+          200,
+        );
+      }
+      if (path == '/v1/tua/requests') {
+        return http.Response(
+          jsonEncode({
+            'requests': [
+              _assistanceRequestJson('tua_req_open', 'requested'),
+              _assistanceRequestJson('tua_req_done', 'closed'),
+            ],
+          }),
+          200,
+        );
+      }
+      return http.Response('{}', 200);
+    });
+    final repository = GatewayAlphaRepository(
+      dashboardRepository: DashboardRepository(client),
+      agentsRepository: AgentsRepository(client),
+      approvalsRepository: ApprovalsRepository(client),
+      missionsRepository: MissionsRepository(client),
+      notificationsRepository: NotificationsRepository(client),
+      tuaRepository: TuaRepository(client),
+    );
+
+    final inbox = await repository.loadInbox();
+    final assistance =
+        inbox.where((item) => item.kind == InboxKind.assistance).toList();
+
+    expect(
+      assistance.length,
+      1,
+      reason: 'only the open TUA request becomes an assistance item — the '
+          'closed request and the agent_blocked notification do not',
+    );
+    expect(
+      assistance.single.id,
+      'tua_req_open',
+      reason: 'assistance item id must be the real TUA requestId so the TUA '
+          'screen can open a real session',
+    );
   });
 
   test('browser assistance repository records event', () async {
@@ -133,6 +195,32 @@ Map<String, dynamic> _approvalResponseJson() {
     'created_by_device_id': 'dev_test',
     'constraints': [],
     'created_at': '2026-06-05T12:00:00Z',
+  };
+}
+
+Map<String, dynamic> _assistanceRequestJson(String requestId, String state) {
+  return {
+    'request_id': requestId,
+    'node_id': 'node_test',
+    'agent_id': 'colpanic_m2',
+    'session_id': 'sess_test',
+    'reason': 'Should I deploy build 42 to production?',
+    'state': state,
+    'created_at': '2026-06-05T12:00:00Z',
+    'updated_at': '2026-06-05T12:00:01Z',
+  };
+}
+
+Map<String, dynamic> _agentBlockedNotificationJson() {
+  return {
+    'notification_id': 'notif_1',
+    'category': 'agent_blocked',
+    'urgency': 'high',
+    'state': 'unread',
+    'created_at': '2026-06-05T12:00:00Z',
+    'title_safe': 'Agent blocked',
+    'body_safe': 'Needs help',
+    'agent_id': 'colpanic_m2',
   };
 }
 

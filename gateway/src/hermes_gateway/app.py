@@ -114,7 +114,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     store = SQLiteStore(resolved_settings.database_path)
     store.initialize()
     _ensure_local_node(store, resolved_settings)
-    store.seed_mock_data(node_id=resolved_settings.node_id)
+    if resolved_settings.seed_mock_data:
+        store.seed_mock_data(node_id=resolved_settings.node_id)
     tui_manager = LocalPtyManager(store=store, settings=resolved_settings)
     runtime_adapter: RuntimeAdapter = HermesRuntimeAdapter(
         store=store,

@@ -105,6 +105,7 @@ class HermesAppRuntime extends ChangeNotifier {
       approvalsRepository: ApprovalsRepository(apiClient),
       missionsRepository: MissionsRepository(apiClient),
       notificationsRepository: NotificationsRepository(apiClient),
+      tuaRepository: TuaRepository(apiClient),
     );
   }
 

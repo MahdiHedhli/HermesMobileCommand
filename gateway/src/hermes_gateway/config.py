@@ -55,6 +55,9 @@ class Settings:
     apns_team_id: str | None = None
     apns_topic: str = "app.act.agenticControlTower"
     apns_environment: str = "production"  # "production" or "sandbox"
+    # Seed demo agents/sessions for an empty dashboard. Disable in real
+    # deployments so the fleet shows only real (bridge-fed) agents.
+    seed_mock_data: bool = True
 
     @property
     def push_configured(self) -> bool:
@@ -136,6 +139,7 @@ class Settings:
             apns_team_id=os.getenv("APNS_TEAM_ID") or None,
             apns_topic=os.getenv("APNS_TOPIC", cls.apns_topic),
             apns_environment=os.getenv("APNS_ENVIRONMENT", cls.apns_environment),
+            seed_mock_data=_bool_env("ACT_SEED_MOCK_DATA", cls.seed_mock_data),
         )
 
     @property

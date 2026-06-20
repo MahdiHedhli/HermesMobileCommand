@@ -9,6 +9,7 @@ import 'dashboard_repository.dart';
 import 'mock_alpha_repository.dart';
 import 'missions_repository.dart';
 import 'notifications_repository.dart';
+import 'tua_repository.dart';
 
 class GatewayAlphaRepository implements AlphaRepository {
   const GatewayAlphaRepository({
@@ -17,6 +18,7 @@ class GatewayAlphaRepository implements AlphaRepository {
     required this.approvalsRepository,
     required this.missionsRepository,
     required this.notificationsRepository,
+    required this.tuaRepository,
     this.fallback = const MockAlphaRepository(),
   });
 
@@ -25,17 +27,27 @@ class GatewayAlphaRepository implements AlphaRepository {
   final ApprovalsRepository approvalsRepository;
   final MissionsRepository missionsRepository;
   final NotificationsRepository notificationsRepository;
+  final TuaRepository tuaRepository;
   final AlphaRepository fallback;
 
   @override
   Future<HomeAlphaSnapshot> loadHome() async {
     final snapshot = await dashboardRepository.loadSnapshot();
     final fallbackHome = await fallback.loadHome();
+    final assistance = await _loadOpenAssistanceInbox();
     final agents = snapshot.agents.map(_agentFromGateway).toList();
     final approvals =
         snapshot.pendingApprovals.map(_approvalFromGateway).toList();
-    final notifications =
-        snapshot.notifications.map(_inboxFromNotification).toList();
+    // Real agent questions (TUA) replace the notification-derived assistance
+    // rows so each carries its true requestId for the answer flow.
+    final notifications = [
+      ...snapshot.notifications
+          .where((notification) =>
+              _kindFromNotification(notification.category) !=
+              InboxKind.assistance)
+          .map(_inboxFromNotification),
+      ...assistance,
+    ];
     final missions =
         snapshot.missions.map((mission) => _missionFromGateway(mission)).toList();
     final activeMissions =
@@ -122,10 +134,32 @@ class GatewayAlphaRepository implements AlphaRepository {
   Future<List<InboxItem>> loadInbox() async {
     final approvals = await approvalsRepository.listPending();
     final notifications = await notificationsRepository.listRecent();
+    final assistance = await _loadOpenAssistanceInbox();
     return [
       ...approvals.map(_inboxFromApproval),
-      ...notifications.map(_inboxFromNotification),
+      ...notifications
+          .where((notification) =>
+              _kindFromNotification(notification.category) !=
+              InboxKind.assistance)
+          .map(_inboxFromNotification),
+      ...assistance,
     ];
+  }
+
+  /// Real, operator-actionable TUA assistance requests as inbox items, each
+  /// carrying its true requestId so the TUA screen can open a real session.
+  /// Best-effort: a gateway without /tua/requests degrades to no items rather
+  /// than failing the whole inbox.
+  Future<List<InboxItem>> _loadOpenAssistanceInbox() async {
+    try {
+      final requests = await tuaRepository.listRequests();
+      return requests
+          .where((request) => _isOpenAssistance(request.state))
+          .map(_inboxFromAssistanceRequest)
+          .toList();
+    } on Object {
+      return const [];
+    }
   }
 
   @override
@@ -244,6 +278,28 @@ InboxItem _inboxFromNotification(NotificationRecord notification) {
     unread: notification.state != 'read',
     priority: notification.urgency,
   );
+}
+
+InboxItem _inboxFromAssistanceRequest(AssistanceRequestModel request) {
+  return InboxItem(
+    id: request.requestId,
+    kind: InboxKind.assistance,
+    title: 'Agent needs your input',
+    subtitle: request.reason,
+    agentName: request.agentId,
+    timeLabel: _timeAgo(request.updatedAt),
+    unread: true,
+    priority: 'high',
+  );
+}
+
+/// Assistance states that still need an operator. Terminal states
+/// (returned_to_agent / closed / cancelled) are not actionable.
+bool _isOpenAssistance(String state) {
+  return switch (state) {
+    'requested' || 'active' || 'waiting_on_user' || 'user_controlling' => true,
+    _ => false,
+  };
 }
 
 AgentRunStatus _statusFromGateway(String status) {

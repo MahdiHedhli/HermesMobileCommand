@@ -246,7 +246,7 @@ void _openItem(BuildContext context, InboxItem item) {
   }
   if (item.kind == InboxKind.security) {
     Navigator.of(context)
-        .pushNamed(HermesRoutes.approvalDetail, arguments: 'appr-network');
+        .pushNamed(HermesRoutes.approvalDetail, arguments: item.id);
     return;
   }
   if (item.kind == InboxKind.assistance) {

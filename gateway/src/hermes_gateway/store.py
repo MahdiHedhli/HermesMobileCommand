@@ -1015,6 +1015,30 @@ class SQLiteStore:
                 raise ValueError(f"approval not committable from state {current[0]!r}")
         return self.get_approval(approval_id)
 
+    def release_approval(self, approval_id: str) -> dict[str, Any]:
+        """Two-phase consume, symmetric inverse of ``commit`` (BrowserBridge
+        seam). Release only succeeds from ``reserved`` -> ``cancelled``,
+        preserving one-time consumption: a released clearance can never
+        afterward be committed or re-reserved (both guard on the prior state),
+        and ``committed`` clearances are left untouched (release -> ValueError)."""
+        with self.connect() as db:
+            cursor = db.execute(
+                """
+                UPDATE approval_requests SET state = 'cancelled'
+                WHERE approval_id = ? AND state = 'reserved'
+                """,
+                (approval_id,),
+            )
+            if cursor.rowcount == 0:
+                current = db.execute(
+                    "SELECT state FROM approval_requests WHERE approval_id = ?",
+                    (approval_id,),
+                ).fetchone()
+                if current is None:
+                    raise KeyError(approval_id)
+                raise ValueError(f"approval not releasable from state {current[0]!r}")
+        return self.get_approval(approval_id)
+
     def bulk_invalidate_approvals(
         self, *, session_id: str, reason: str = "panic"
     ) -> list[str]:

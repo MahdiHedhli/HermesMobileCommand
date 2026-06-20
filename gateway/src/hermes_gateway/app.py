@@ -467,6 +467,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return ApprovalRequest.model_validate(approval)
 
     @app.post(
+        "/v1/runtime/approvals/{approval_id}/release",
+        response_model=ApprovalRequest,
+    )
+    def runtime_release_approval(
+        approval_id: str,
+        request: Request,
+        _caller: HermesLocalCaller = hermes_local_dependency,
+    ) -> ApprovalRequest:
+        # Change 3 — two-phase consume, symmetric inverse of commit. Release a
+        # reserved clearance back to cancelled (only from reserved), so a
+        # reserved-but-not-executed clearance never dangles. Fail-closed: 404 if
+        # missing, 409 if not reserved; one-time consumption preserved.
+        try:
+            approval = store.release_approval(approval_id)
+        except KeyError as exc:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "approval not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+        store.append_audit_event(
+            event_type="approval_released",
+            actor_type="runtime",
+            actor_id="runtime",
+            node_id=approval["node_id"],
+            agent_id=approval["agent_id"],
+            session_id=approval["session_id"],
+            approval_id=approval_id,
+            request_id=_request_id(request),
+            payload_redacted={"state": "cancelled"},
+        )
+        return ApprovalRequest.model_validate(approval)
+
+    @app.post(
         "/v1/runtime/tua/requests",
         response_model=AssistanceRequest,
         status_code=status.HTTP_201_CREATED,

@@ -64,6 +64,18 @@ def _get(client: TestClient, paired: dict, approval_id: str) -> dict:
     return response.json()
 
 
+def _audit_events(client: TestClient, paired: dict, event_type: str) -> list[dict]:
+    response = signed_request(
+        client,
+        "GET",
+        f"/v1/audit/events?event_type={event_type}",
+        private_key=paired["private_key"],
+        device_id=paired["device"]["device_id"],
+    )
+    assert response.status_code == 200, response.text
+    return response.json()["audit_events"]
+
+
 # --- Change 1: authority provenance -----------------------------------------
 
 def test_provenance_defaults_then_round_trips(client: TestClient) -> None:
@@ -140,6 +152,70 @@ def test_reserve_requires_approved(client: TestClient) -> None:
     approval = _create(client, action_id="rc_4")  # still pending
     aid = approval["approval_id"]
     assert client.post(f"/v1/runtime/approvals/{aid}/reserve").status_code == 409
+
+
+# --- Change 3b: single-clearance release (symmetric inverse of commit) -------
+
+def test_reserve_then_release(client: TestClient) -> None:
+    paired = pair_device(client)
+    approval = _create(client, action_id="rl_1")
+    assert _approve(client, paired, approval["approval_id"]).status_code == 200
+    aid = approval["approval_id"]
+
+    reserved = client.post(f"/v1/runtime/approvals/{aid}/reserve")
+    assert reserved.status_code == 200, reserved.text
+    assert reserved.json()["state"] == "reserved"
+
+    released = client.post(f"/v1/runtime/approvals/{aid}/release")
+    assert released.status_code == 200, released.text
+    assert released.json()["state"] == "cancelled"
+
+    # The release must be audited (approval_released) — fail-closed evidence,
+    # not just a silent state flip.
+    events = _audit_events(client, paired, "approval_released")
+    assert any(
+        e["approval_id"] == aid
+        and e.get("payload_redacted", {}).get("state") == "cancelled"
+        for e in events
+    ), "expected an approval_released audit event for the released clearance"
+
+
+def test_commit_after_release_is_rejected(client: TestClient) -> None:
+    paired = pair_device(client)
+    approval = _create(client, action_id="rl_2")
+    assert _approve(client, paired, approval["approval_id"]).status_code == 200
+    aid = approval["approval_id"]
+
+    assert client.post(f"/v1/runtime/approvals/{aid}/reserve").status_code == 200
+    assert client.post(f"/v1/runtime/approvals/{aid}/release").status_code == 200
+    # Released (cancelled) clearance can never afterward be committed — replay
+    # denial / one-time consumption preserved.
+    assert client.post(f"/v1/runtime/approvals/{aid}/commit").status_code == 409
+    assert _get(client, paired, aid)["state"] == "cancelled"
+
+
+def test_release_leaves_committed_intact(client: TestClient) -> None:
+    paired = pair_device(client)
+    approval = _create(client, action_id="rl_3")
+    assert _approve(client, paired, approval["approval_id"]).status_code == 200
+    aid = approval["approval_id"]
+
+    assert client.post(f"/v1/runtime/approvals/{aid}/reserve").status_code == 200
+    assert client.post(f"/v1/runtime/approvals/{aid}/commit").status_code == 200
+    # Release on a committed clearance is rejected and leaves state committed.
+    assert client.post(f"/v1/runtime/approvals/{aid}/release").status_code == 409
+    assert _get(client, paired, aid)["state"] == "committed"
+
+
+def test_release_missing_is_404(client: TestClient) -> None:
+    assert client.post("/v1/runtime/approvals/apr_does_not_exist/release").status_code == 404
+
+
+def test_release_requires_reserved(client: TestClient) -> None:
+    # Pending (never-reserved) clearance: release must conflict, not no-op.
+    approval = _create(client, action_id="rl_4")  # still pending
+    aid = approval["approval_id"]
+    assert client.post(f"/v1/runtime/approvals/{aid}/release").status_code == 409
 
 
 # --- Change 4: panic dominance ----------------------------------------------

@@ -44,9 +44,16 @@ MissionState = Literal[
     "failed",
     "cancelled",
 ]
-ApprovalState = Literal["pending", "approved", "denied", "expired", "cancelled"]
+# "reserved" / "committed" are additive two-phase-consume states (BrowserBridge
+# seam): a consumer reserves an approved clearance at validation and commits it
+# at execution dispatch. Existing pending->approved/... flows are unchanged.
+ApprovalState = Literal[
+    "pending", "approved", "denied", "expired", "cancelled", "reserved", "committed"
+]
 RiskLevel = Literal["low", "medium", "high", "critical"]
 ApprovalScope = Literal["once", "session", "agent", "permanent"]
+# Authority provenance: the typed actor class behind an approval decision.
+ApprovalAuthority = Literal["human_mobile", "human_local", "test_operator"]
 NotificationCategory = Literal[
     "approval_required",
     "security_alert",
@@ -287,6 +294,18 @@ class RuntimeContextResponse(BaseModel):
     session: Session | None = None
 
 
+class RiskVector(BaseModel):
+    """Per-surface browser risk descriptor (BrowserBridge seam, additive).
+
+    Carried alongside the scalar ``risk_level`` so browser-specific risk classes
+    round-trip. All fields optional; absence means "no per-surface vector".
+    """
+
+    field_class: str | None = None
+    submit_risk_class: str | None = None
+    click_risk_class: str | None = None
+
+
 class ApprovalRequest(BaseModel):
     approval_id: str
     action_id: str
@@ -296,6 +315,7 @@ class ApprovalRequest(BaseModel):
     requested_tool: str
     risk_level: RiskLevel
     risk_category: str | None = None
+    risk_vector: RiskVector | None = None
     summary: str
     full_payload_redacted: dict[str, Any]
     resource_scope: str | None = None
@@ -305,6 +325,9 @@ class ApprovalRequest(BaseModel):
     decision_scope: ApprovalScope | None = None
     decided_at: datetime | None = None
     decision_metadata: dict[str, Any] | None = None
+    # Authority provenance (additive, defaulted).
+    approved_by: ApprovalAuthority | None = None
+    human_approved: bool = False
 
 
 class CreateApprovalRequest(StrictModel):
@@ -317,6 +340,7 @@ class CreateApprovalRequest(StrictModel):
     full_payload_redacted: dict[str, Any]
     node_id: str | None = None
     risk_category: str | None = None
+    risk_vector: RiskVector | None = None
     resource_scope: str | None = None
     options: list[str] = Field(default_factory=lambda: ["approve_once", "deny"])
     expires_at: datetime

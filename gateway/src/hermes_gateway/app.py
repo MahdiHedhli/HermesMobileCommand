@@ -10,6 +10,12 @@ from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSock
 from fastapi.middleware.cors import CORSMiddleware
 
 from .capabilities import require_device_capability, require_runtime_capability
+from .clearance_policy import (
+    authority_from_channel,
+    channel_for_device,
+    channel_satisfies,
+    required_channels_for_risk_vector,
+)
 from .config import Settings
 from .ids import new_id
 from .local_binding import HermesLocalCaller, verify_hermes_local_request
@@ -399,6 +405,66 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             request_id=_request_id(request),
             actor_ref="runtime",
         ).raw
+
+    @app.post(
+        "/v1/runtime/approvals/{approval_id}/reserve",
+        response_model=ApprovalRequest,
+    )
+    def runtime_reserve_approval(
+        approval_id: str,
+        request: Request,
+        _caller: HermesLocalCaller = hermes_local_dependency,
+    ) -> ApprovalRequest:
+        # Change 3 — two-phase consume, phase 1. Reserve an approved clearance at
+        # validation; only one consumer can hold it (atomic state guard).
+        try:
+            approval = store.reserve_approval(approval_id)
+        except KeyError as exc:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "approval not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+        store.append_audit_event(
+            event_type="approval_reserved",
+            actor_type="runtime",
+            actor_id="runtime",
+            node_id=approval["node_id"],
+            agent_id=approval["agent_id"],
+            session_id=approval["session_id"],
+            approval_id=approval_id,
+            request_id=_request_id(request),
+            payload_redacted={"state": "reserved"},
+        )
+        return ApprovalRequest.model_validate(approval)
+
+    @app.post(
+        "/v1/runtime/approvals/{approval_id}/commit",
+        response_model=ApprovalRequest,
+    )
+    def runtime_commit_approval(
+        approval_id: str,
+        request: Request,
+        _caller: HermesLocalCaller = hermes_local_dependency,
+    ) -> ApprovalRequest:
+        # Change 3 — two-phase consume, phase 2. Commit only from reserved,
+        # preserving one-time consumption.
+        try:
+            approval = store.commit_approval(approval_id)
+        except KeyError as exc:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "approval not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+        store.append_audit_event(
+            event_type="approval_committed",
+            actor_type="runtime",
+            actor_id="runtime",
+            node_id=approval["node_id"],
+            agent_id=approval["agent_id"],
+            session_id=approval["session_id"],
+            approval_id=approval_id,
+            request_id=_request_id(request),
+            payload_redacted={"state": "committed"},
+        )
+        return ApprovalRequest.model_validate(approval)
 
     @app.post(
         "/v1/runtime/tua/requests",
@@ -946,24 +1012,47 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         }
 
     @app.post("/v1/sessions/{session_id}/interventions", response_model=InterventionResponse)
-    def intervention_placeholder(
+    def session_intervention(
         session_id: str,
         payload: InterventionRequest,
         request: Request,
         device: VerifiedDevice = signed_device_dependency,
     ) -> InterventionResponse:
+        # Change 4 — panic dominance. Emergency interventions BULK-INVALIDATE
+        # every pending AND approved-but-unconsumed (approved/reserved) clearance
+        # for the session; committed clearances are already consumed and left
+        # intact. Non-emergency interventions are recorded.
+        emergency_types = {
+            "emergency_stop",
+            "kill_task",
+            "kill_agent",
+            "quarantine_agent",
+            "cancel_task",
+        }
+        invalidated: list[str] = []
+        if payload.type in emergency_types:
+            invalidated = store.bulk_invalidate_approvals(
+                session_id=session_id, reason=f"intervention:{payload.type}"
+            )
+            resulting_state = "approvals_invalidated"
+        else:
+            resulting_state = "recorded"
         store.append_audit_event(
-            event_type="intervention_placeholder_requested",
+            event_type="intervention_requested",
             actor_type="device",
             actor_id=device.device_id,
             node_id=resolved_settings.node_id,
             session_id=session_id,
             request_id=_request_id(request),
-            payload_redacted={"type": payload.type, "reason": payload.reason},
+            payload_redacted={
+                "type": payload.type,
+                "reason": payload.reason,
+                "invalidated_count": len(invalidated),
+            },
         )
         return InterventionResponse(
             intervention_id=payload.intervention_id,
-            resulting_state="not_executed_placeholder",
+            resulting_state=resulting_state,
         )
 
     @app.post(
@@ -2120,6 +2209,9 @@ def _create_approval_request(
             "requested_tool": payload.requested_tool,
             "risk_level": payload.risk_level,
             "risk_category": payload.risk_category or "unknown_action",
+            "risk_vector": payload.risk_vector.model_dump()
+            if payload.risk_vector
+            else None,
             "summary": payload.summary,
             "full_payload_redacted": payload.full_payload_redacted,
             "resource_scope": payload.resource_scope,
@@ -2322,12 +2414,50 @@ def _transition_approval(
         )
         raise HTTPException(status.HTTP_409_CONFLICT, "approval expired")
 
+    device_channel: str | None = None
+    try:
+        device_channel = channel_for_device(store.get_device(actor_device_id))
+    except KeyError:
+        device_channel = None
+
+    # Change 5 — channel policy / risk tiering: a high-risk per-surface class can
+    # mandate the mobile-signed channel. Fail-closed if the deciding channel does
+    # not satisfy it. No risk_vector ⇒ no requirement ⇒ unchanged behavior.
+    if target_state == "approved":
+        required_channels = required_channels_for_risk_vector(
+            approval.get("risk_vector")
+        )
+        if not channel_satisfies(device_channel, required_channels):
+            store.append_audit_event(
+                event_type="approval_channel_rejected",
+                actor_type="device",
+                actor_id=actor_device_id,
+                node_id=approval["node_id"],
+                agent_id=approval["agent_id"],
+                session_id=approval["session_id"],
+                approval_id=approval_id,
+                request_id=request_id,
+                payload_redacted={"required_channels": list(required_channels or ())},
+            )
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "approval risk class requires a different decision channel",
+            )
+
+    # Change 1 — authority provenance.
+    approved_by = authority_from_channel(device_channel)
+    human_approved = target_state == "approved" and approved_by in {
+        "human_mobile",
+        "human_local",
+    }
     store.resolve_approval(
         approval_id,
         target_state,
         decision_scope=scope,
         decision_actor_device_id=actor_device_id,
         decision_metadata={"decision": decision, "state": target_state},
+        approved_by=approved_by,
+        human_approved=human_approved,
     )
     event_type = {
         "approved": "approval_decision",

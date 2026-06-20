@@ -466,6 +466,11 @@ class InterventionResponse(BaseModel):
     resulting_state: str
 
 
+class RuntimeInterventionAck(StrictModel):
+    ack_result: Literal["accepted", "rejected"] = "accepted"
+    explanation: str | None = None
+
+
 class CreateTuiSessionRequest(StrictModel):
     agent_id: str = "agent_mock"
     node_id: str | None = None

@@ -32,6 +32,7 @@ import os
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any, Dict, List, Optional
 
@@ -321,6 +322,93 @@ def _relay_clearance(tool_name: str, args: Any, session_id: str) -> Optional[Dic
 
 # --- the pre_tool_call hook (questions + monitoring + clearance) -------------
 
+# --- control: interventions (operator pause / steer / stop) -----------------
+
+_STOP_TYPES = {
+    "cancel_task",
+    "kill_task",
+    "kill_agent",
+    "quarantine_agent",
+    "emergency_stop",
+}
+
+
+def _drain_pending_interventions(session_id: str) -> List[Dict[str, Any]]:
+    try:
+        query = (
+            "/runtime/interventions/pending?session_id="
+            + urllib.parse.quote(session_id or "hermes_session")
+            + "&agent_id="
+            + urllib.parse.quote(_agent_id())
+        )
+        resp = _get(query, timeout=5.0)
+    except (urllib.error.URLError, OSError, ValueError):
+        return []
+    items = resp.get("interventions") if isinstance(resp, dict) else None
+    return items or []
+
+
+def _ack_intervention(intervention_id: str, ack_result: str = "accepted") -> None:
+    if not intervention_id:
+        return
+    try:
+        _post(
+            f"/runtime/interventions/{intervention_id}/ack",
+            {"ack_result": ack_result},
+            timeout=5.0,
+        )
+    except (urllib.error.URLError, OSError, ValueError):
+        pass
+
+
+def _pause_until_resume_or_stop(
+    session_id: str, pause_id: str
+) -> Optional[Dict[str, str]]:
+    """Hold the agent at the tool boundary until a resume or stop arrives (or a
+    timeout). Returns a block dict (stopped) or None (resume / proceed)."""
+    _post_context(agent_status="paused", session_id=session_id or None)
+    _ack_intervention(pause_id)
+    deadline = time.monotonic() + _timeout()
+    poll_s = _poll()
+    while time.monotonic() < deadline:
+        for item in _drain_pending_interventions(session_id):
+            itype = item.get("type")
+            iid = item.get("intervention_id", "")
+            if itype in _STOP_TYPES:
+                _post_context(agent_status="stopping", session_id=session_id or None)
+                _ack_intervention(iid)
+                return _block(f"operator stopped this agent while paused ({itype})")
+            if itype == "resume":
+                _ack_intervention(iid)
+                _post_context(agent_status="running", session_id=session_id or None)
+                return None
+        time.sleep(poll_s)
+    # Timed out paused — resume rather than hang the agent forever.
+    _post_context(agent_status="running", session_id=session_id or None)
+    return None
+
+
+def _apply_interventions(session_id: str) -> Optional[Dict[str, str]]:
+    """Apply pending operator interventions at the tool boundary. Returns a block
+    dict to stop/steer the tool, or None to proceed. Fail-open on errors."""
+    for item in _drain_pending_interventions(session_id):
+        itype = item.get("type")
+        iid = item.get("intervention_id", "")
+        if itype in _STOP_TYPES:
+            _post_context(agent_status="stopping", session_id=session_id or None)
+            _ack_intervention(iid)
+            return _block(f"operator stopped this agent ({itype})")
+        if itype == "inject_instruction":
+            _ack_intervention(iid)
+            instruction = item.get("instruction") or item.get("reason") or ""
+            return {"action": "block", "message": f"Operator guidance: {instruction}"}
+        if itype == "pause":
+            blocked = _pause_until_resume_or_stop(session_id, iid)
+            if blocked is not None:
+                return blocked
+    return None
+
+
 def _on_pre_tool_call(
     tool_name: str = "",
     args: Any = None,
@@ -342,7 +430,13 @@ def _on_pre_tool_call(
         session_id=session_id or None,
     )
 
-    # 3) Clearance gate for risky tools (fail-closed).
+    # 3) Interventions: apply any pending operator pause/steer/stop (fail-open
+    #    for drain errors, fail-closed once a stop/steer command is applied).
+    intervention = _apply_interventions(session_id)
+    if intervention is not None:
+        return intervention
+
+    # 4) Clearance gate for risky tools (fail-closed).
     if _is_in("ACT_CLEARANCE_GATED_TOOLS", _DEFAULT_GATED_TOOLS, tool_name):
         return _relay_clearance(tool_name, args, session_id)
 

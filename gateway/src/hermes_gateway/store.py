@@ -251,6 +251,26 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                     updated_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS interventions (
+                    intervention_id TEXT PRIMARY KEY,
+                    node_id TEXT NOT NULL,
+                    agent_id TEXT NOT NULL,
+                    session_id TEXT NOT NULL,
+                    device_id TEXT,
+                    type TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    instruction TEXT,
+                    state TEXT NOT NULL DEFAULT 'pending',
+                    resulting_state TEXT,
+                    expires_at TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    acknowledged_at TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_interventions_pending
+                    ON interventions (session_id, agent_id, state, created_at);
+
                 CREATE TABLE IF NOT EXISTS assistance_sessions (
                     assistance_session_id TEXT PRIMARY KEY,
                     request_id TEXT NOT NULL,
@@ -1385,6 +1405,95 @@ class SQLiteStore(IdentityStoreMixin, ObservabilityStoreMixin):
                 ),
             )
         return self.get_assistance_request(request_id)
+
+    # --- interventions (operator pause/steer/stop, drained by the plugin) ----
+
+    def enqueue_intervention(self, record: dict[str, Any]) -> dict[str, Any]:
+        intervention_id = record.get("intervention_id") or new_id("intv")
+        now = utc_iso()
+        with self.connect() as db:
+            db.execute(
+                """
+                INSERT INTO interventions (
+                    intervention_id, node_id, agent_id, session_id, device_id, type,
+                    reason, instruction, state, resulting_state, expires_at,
+                    created_at, updated_at, acknowledged_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    intervention_id,
+                    record["node_id"],
+                    record["agent_id"],
+                    record["session_id"],
+                    record.get("device_id"),
+                    record["type"],
+                    record["reason"],
+                    record.get("instruction"),
+                    record.get("state", "pending"),
+                    None,
+                    record["expires_at"],
+                    record.get("created_at") or now,
+                    now,
+                    None,
+                ),
+            )
+        return self.get_intervention(intervention_id)
+
+    def get_intervention(self, intervention_id: str) -> dict[str, Any]:
+        with self.connect() as db:
+            row = db.execute(
+                "SELECT * FROM interventions WHERE intervention_id = ?",
+                (intervention_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(intervention_id)
+        return self._intervention_from_row(row)
+
+    def list_pending_interventions(
+        self, session_id: str, agent_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        clauses = ["session_id = ?", "state = 'pending'"]
+        args: list[Any] = [session_id]
+        if agent_id:
+            clauses.append("agent_id = ?")
+            args.append(agent_id)
+        sql = (
+            "SELECT * FROM interventions WHERE "
+            + " AND ".join(clauses)
+            + " ORDER BY created_at ASC"
+        )
+        with self.connect() as db:
+            rows = db.execute(sql, tuple(args)).fetchall()
+        now = now_utc()
+        # Skip expired pending rows so a stale command is never applied.
+        return [
+            item
+            for row in rows
+            if parse_utc((item := self._intervention_from_row(row))["expires_at"]) > now
+        ]
+
+    def ack_intervention(
+        self, intervention_id: str, ack_result: str = "accepted"
+    ) -> dict[str, Any]:
+        now = utc_iso()
+        new_state = "rejected" if ack_result == "rejected" else "acknowledged"
+        with self.connect() as db:
+            db.execute(
+                """
+                UPDATE interventions
+                SET state = ?,
+                    resulting_state = ?,
+                    acknowledged_at = COALESCE(acknowledged_at, ?),
+                    updated_at = ?
+                WHERE intervention_id = ? AND state = 'pending'
+                """,
+                (new_state, ack_result, now, now, intervention_id),
+            )
+        return self.get_intervention(intervention_id)
+
+    def _intervention_from_row(self, row: sqlite3.Row) -> dict[str, Any]:
+        return dict(row)
 
     def get_assistance_request(self, request_id: str) -> dict[str, Any]:
         with self.connect() as db:

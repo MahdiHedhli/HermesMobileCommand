@@ -87,6 +87,7 @@ from .schemas import (
     RuntimeContextRequest,
     RuntimeContextResponse,
     RuntimeCreateVoiceSessionRequest,
+    RuntimeInterventionAck,
     RuntimeTuaResult,
     RuntimeVoiceResult,
     TuiAttachTokenResponse,
@@ -675,6 +676,45 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ) -> RuntimeTuaResult:
         return runtime_adapter.check_handoff("operator_guidance", request_id).raw
 
+    @app.get("/v1/runtime/interventions/pending")
+    def runtime_pending_interventions(
+        session_id: str,
+        agent_id: str | None = None,
+        _caller: HermesLocalCaller = hermes_local_dependency,
+    ) -> dict[str, Any]:
+        # Drained by the in-process plugin to apply operator commands at the
+        # agent's tool boundary. Loopback-only.
+        return {
+            "interventions": store.list_pending_interventions(session_id, agent_id)
+        }
+
+    @app.post("/v1/runtime/interventions/{intervention_id}/ack")
+    def runtime_ack_intervention(
+        intervention_id: str,
+        payload: RuntimeInterventionAck,
+        request: Request,
+        _caller: HermesLocalCaller = hermes_local_dependency,
+    ) -> dict[str, Any]:
+        try:
+            updated = store.ack_intervention(intervention_id, payload.ack_result)
+        except KeyError as exc:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND, "intervention not found"
+            ) from exc
+        store.append_audit_event(
+            event_type="intervention_acknowledged",
+            actor_type="runtime",
+            actor_id="hermes-local",
+            node_id=resolved_settings.node_id,
+            session_id=updated["session_id"],
+            request_id=_request_id(request),
+            payload_redacted={
+                "intervention_id": intervention_id,
+                "ack_result": payload.ack_result,
+            },
+        )
+        return {"intervention_id": intervention_id, "state": updated["state"]}
+
     @app.post(
         "/v1/runtime/browser-assistance/sessions",
         response_model=BrowserAssistanceSession,
@@ -1026,24 +1066,63 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
 
     @app.post("/v1/sessions/{session_id}/interventions", response_model=InterventionResponse)
-    def intervention_placeholder(
+    def session_intervention(
         session_id: str,
         payload: InterventionRequest,
         request: Request,
         device: VerifiedDevice = signed_device_dependency,
     ) -> InterventionResponse:
+        # Durably enqueue the operator command; the in-process plugin drains it
+        # (hermes-local) and applies it at the agent's next tool boundary.
+        node_id = resolved_settings.node_id
+        signed = payload.signed_payload or {}
+        agent_id = signed.get("agent_id")
+        if not agent_id:
+            try:
+                agent_id = store.get_session(session_id).get("agent_id")
+            except KeyError:
+                agent_id = None
+        agent_id = agent_id or "unknown"
+        require_device_capability(
+            store=store,
+            settings=resolved_settings,
+            device=device,
+            capability="intervene",
+            request_id=_request_id(request),
+            node_id=node_id,
+            agent_id=agent_id,
+        )
+        intervention_id = payload.intervention_id or new_id("intv")
+        store.enqueue_intervention(
+            {
+                "intervention_id": intervention_id,
+                "node_id": node_id,
+                "agent_id": agent_id,
+                "session_id": session_id,
+                "device_id": device.device_id,
+                "type": payload.type,
+                "reason": payload.reason,
+                "instruction": payload.instruction,
+                "state": "pending",
+                "expires_at": expires_in(300).isoformat(),
+            }
+        )
         store.append_audit_event(
-            event_type="intervention_placeholder_requested",
+            event_type="intervention_requested",
             actor_type="device",
             actor_id=device.device_id,
-            node_id=resolved_settings.node_id,
+            node_id=node_id,
             session_id=session_id,
             request_id=_request_id(request),
-            payload_redacted={"type": payload.type, "reason": payload.reason},
+            payload_redacted={
+                "intervention_id": intervention_id,
+                "type": payload.type,
+                "reason": payload.reason,
+            },
         )
         return InterventionResponse(
-            intervention_id=payload.intervention_id,
-            resulting_state="not_executed_placeholder",
+            intervention_id=intervention_id,
+            resulting_state="queued",
         )
 
     @app.post(

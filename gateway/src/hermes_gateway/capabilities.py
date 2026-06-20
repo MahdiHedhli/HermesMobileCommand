@@ -12,6 +12,7 @@ DEVICE_PERMISSION_BY_CAPABILITY = {
     "approvals": "approve",
     "tui": "tui",
     "tua": "intervene",
+    "intervene": "intervene",
     "browser_assistance": "browser_assist",
     "voice": "voice",
     "notifications": "read_state",

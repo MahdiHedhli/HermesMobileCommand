@@ -471,6 +471,13 @@ class RuntimeInterventionAck(StrictModel):
     explanation: str | None = None
 
 
+class RuntimeTuiRelayRequest(StrictModel):
+    session_id: str
+    agent_id: str
+    node_id: str | None = None
+    chunk: str = ""
+
+
 class CreateTuiSessionRequest(StrictModel):
     agent_id: str = "agent_mock"
     node_id: str | None = None

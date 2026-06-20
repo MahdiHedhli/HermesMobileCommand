@@ -18,10 +18,13 @@ from .store import SQLiteStore
 @dataclass
 class TuiRuntimeSession:
     session_id: str
-    process: asyncio.subprocess.Process
-    master_fd: int
+    process: asyncio.subprocess.Process | None = None
+    master_fd: int | None = None
     output: asyncio.Queue[str] = field(default_factory=asyncio.Queue)
     reader_task: asyncio.Task[None] | None = None
+    # A relay session mirrors an external agent's terminal output (fed via the
+    # hermes-local relay endpoint); it has no local process/PTY and is read-only.
+    is_relay: bool = False
 
 
 class LocalPtyManager:
@@ -67,6 +70,27 @@ class LocalPtyManager:
             runtime.reader_task = asyncio.create_task(self._read_output(runtime))
             self._sessions[session_id] = runtime
 
+    async def create_relay_runtime(self, *, session_id: str) -> None:
+        """Register a process-less relay session whose output is fed externally
+        (an agent's mirrored terminal). Idempotent and read-only."""
+        async with self._lock:
+            if session_id in self._sessions:
+                return
+            self._sessions[session_id] = TuiRuntimeSession(
+                session_id=session_id, is_relay=True
+            )
+
+    async def feed_output(self, session_id: str, chunk: str) -> None:
+        """Append mirrored terminal output to a relay session's queue."""
+        if not chunk:
+            return
+        runtime = self._sessions.get(session_id)
+        if runtime is None:
+            await self.create_relay_runtime(session_id=session_id)
+            runtime = self._sessions.get(session_id)
+        if runtime is not None:
+            await runtime.output.put(chunk)
+
     async def attach(self, session_id: str) -> None:
         runtime = self._sessions.get(session_id)
         if runtime is None or runtime.process.returncode is not None:
@@ -78,7 +102,7 @@ class LocalPtyManager:
 
     async def close(self, session_id: str) -> None:
         runtime = self._sessions.pop(session_id, None)
-        if runtime is not None:
+        if runtime is not None and not runtime.is_relay:
             await self._terminate(runtime)
             if runtime.reader_task is not None and not runtime.reader_task.done():
                 runtime.reader_task.cancel()
@@ -93,21 +117,27 @@ class LocalPtyManager:
             await self.close(session_id)
 
     async def write(self, session_id: str, text: str) -> None:
-        runtime = self._runtime(session_id)
+        runtime = self._sessions.get(session_id)
+        if runtime is None or runtime.is_relay or runtime.master_fd is None:
+            return  # relay sessions are read-only
         if not text:
             return
         await asyncio.to_thread(os.write, runtime.master_fd, text.encode("utf-8"))
         self._store.touch_tui_session(session_id)
 
     async def resize(self, session_id: str, *, rows: int, cols: int) -> None:
-        runtime = self._runtime(session_id)
+        runtime = self._sessions.get(session_id)
+        if runtime is None or runtime.is_relay or runtime.master_fd is None:
+            return
         if rows < 1 or cols < 1:
             return
         await asyncio.to_thread(_resize_pty, runtime.master_fd, rows, cols)
         self._store.touch_tui_session(session_id)
 
     async def next_output(self, session_id: str, timeout: float = 0.1) -> str | None:
-        runtime = self._runtime(session_id)
+        runtime = self._sessions.get(session_id)
+        if runtime is None:
+            return None
         try:
             return await asyncio.wait_for(runtime.output.get(), timeout=timeout)
         except TimeoutError:
@@ -126,7 +156,11 @@ class LocalPtyManager:
 
     def is_running(self, session_id: str) -> bool:
         runtime = self._sessions.get(session_id)
-        return runtime is not None and runtime.process.returncode is None
+        if runtime is None:
+            return False
+        if runtime.is_relay:
+            return True
+        return runtime.process is not None and runtime.process.returncode is None
 
     async def _read_output(self, runtime: TuiRuntimeSession) -> None:
         try:

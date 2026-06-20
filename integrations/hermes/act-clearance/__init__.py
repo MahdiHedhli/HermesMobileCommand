@@ -151,6 +151,8 @@ def _post_context(**fields: Any) -> None:
 
 
 def _on_session_start(session_id: str = "", model: str = "", **_: Any) -> None:
+    if session_id:
+        _current_session["id"] = session_id
     _post_context(
         agent_status="running",
         session_id=session_id or None,
@@ -409,6 +411,44 @@ def _apply_interventions(session_id: str) -> Optional[Dict[str, str]]:
     return None
 
 
+# --- TUI mirror: stream the agent's terminal output to the phone ------------
+
+# transform_terminal_output carries no session_id, so we track the live session
+# from the lifecycle hooks that do.
+_current_session: Dict[str, str] = {"id": ""}
+
+
+def _on_transform_terminal_output(
+    command: str = "",
+    output: str = "",
+    **_: Any,
+) -> None:
+    """Mirror terminal command + output to the phone's TUI screen. Returns None
+    so the agent's output is never modified (mirror only, fail-open)."""
+    if not _enabled():
+        return None
+    chunk = ""
+    if command:
+        chunk += f"$ {command}\n"
+    if output:
+        chunk += output if output.endswith("\n") else output + "\n"
+    if not chunk:
+        return None
+    try:
+        _post(
+            "/runtime/tui/relay",
+            {
+                "session_id": _current_session.get("id") or "hermes_session",
+                "agent_id": _agent_id(),
+                "chunk": chunk,
+            },
+            timeout=5.0,
+        )
+    except (urllib.error.URLError, OSError, ValueError):
+        pass
+    return None
+
+
 def _on_pre_tool_call(
     tool_name: str = "",
     args: Any = None,
@@ -417,6 +457,8 @@ def _on_pre_tool_call(
 ) -> Optional[Dict[str, str]]:
     if not _enabled() or not tool_name:
         return None
+    if session_id:
+        _current_session["id"] = session_id
 
     # 1) Interactive question: route the agent's question to the phone.
     if _is_in("ACT_QUESTION_TOOLS", _DEFAULT_QUESTION_TOOLS, tool_name):
@@ -448,6 +490,7 @@ def register(ctx) -> None:
     ctx.register_hook("post_tool_call", _on_post_tool_call)
     ctx.register_hook("on_session_start", _on_session_start)
     ctx.register_hook("on_session_end", _on_session_end)
+    ctx.register_hook("transform_terminal_output", _on_transform_terminal_output)
     # Make the agent visible immediately (idle) so the fleet shows it before the
     # first tool call. Best-effort; no-op unless enabled.
     threading.Thread(

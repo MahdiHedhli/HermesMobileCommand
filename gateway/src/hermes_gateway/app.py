@@ -89,6 +89,7 @@ from .schemas import (
     RuntimeCreateVoiceSessionRequest,
     RuntimeInterventionAck,
     RuntimeTuaResult,
+    RuntimeTuiRelayRequest,
     RuntimeVoiceResult,
     TuiAttachTokenResponse,
     TuiSession,
@@ -714,6 +715,39 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             },
         )
         return {"intervention_id": intervention_id, "state": updated["state"]}
+
+    @app.post("/v1/runtime/tui/relay")
+    async def runtime_tui_relay(
+        payload: RuntimeTuiRelayRequest,
+        _caller: HermesLocalCaller = hermes_local_dependency,
+    ) -> dict[str, Any]:
+        # Mirror an agent's terminal output to a node-owned, read-only TUI session
+        # that any paired tui-capable device can watch. Loopback-only; idempotent.
+        node_id = payload.node_id or resolved_settings.node_id
+        session_id = payload.session_id
+        try:
+            store.get_tui_session(session_id)
+        except KeyError:
+            store.create_tui_session(
+                {
+                    "session_id": session_id,
+                    "agent_id": payload.agent_id,
+                    "node_id": node_id,
+                    "user_device_id": _RELAY_TUI_OWNER,
+                    "state": "active",
+                    "command": "<agent terminal mirror>",
+                    "working_directory": ".",
+                    "risk_level": "high",
+                    "risk_family": "external_effect",
+                    "risk_label": "agent terminal mirror",
+                    "output_retention_enabled": False,
+                    "audit_refs": [],
+                }
+            )
+        await tui_manager.create_relay_runtime(session_id=session_id)
+        if payload.chunk:
+            await tui_manager.feed_output(session_id, payload.chunk)
+        return {"session_id": session_id, "state": "active"}
 
     @app.post(
         "/v1/runtime/browser-assistance/sessions",
@@ -2228,9 +2262,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except KeyError:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
-        if (
-            attach["session_id"] != session_id
-            or session["user_device_id"] != attach["device_id"]
+        if attach["session_id"] != session_id or (
+            session["user_device_id"] != _RELAY_TUI_OWNER
+            and session["user_device_id"] != attach["device_id"]
         ):
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
             return
@@ -2753,6 +2787,11 @@ def _require_tui_start_clearance(
     )
 
 
+# Relay (agent terminal mirror) sessions are node-owned and read-only; any paired
+# device with the `tui` capability may attach to watch them.
+_RELAY_TUI_OWNER = "__relay__"
+
+
 def _owned_tui_session(
     store: SQLiteStore,
     session_id: str,
@@ -2762,7 +2801,10 @@ def _owned_tui_session(
         session = store.get_tui_session(session_id)
     except KeyError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "TUI session not found") from exc
-    if session["user_device_id"] != device.device_id:
+    if (
+        session["user_device_id"] != _RELAY_TUI_OWNER
+        and session["user_device_id"] != device.device_id
+    ):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "TUI session belongs to another device")
     return session
 
